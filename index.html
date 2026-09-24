@@ -5052,7 +5052,12 @@
     const handoffs=detail.handoffs||[];
     const asset=detail.asset||null;
     const contract=detail.contract||null;
-    const c=detail.customer||null;
+    const cust=detail.customer||null;
+    const primary=detail.primary_contact||null;
+    const [staffOptions,customerCtx]=internal?await Promise.all([
+      rpc('internal_staff_options'),
+      rpc('internal_customer_unified_workspace',{p_customer_id:t.customer_id})
+    ]):[[],null];
 
     const visibilityLabel=v=>({customer:'顧客向け',support:'サポート内',internal:'社内のみ'}[v]||v||'顧客向け');
     const messagesHtml=messages.length
@@ -5069,15 +5074,8 @@
     );
 
     const handoffRows=handoffs.map(h=>
-      '<tr>'+
-        '<td>'+esc(h.state||'—')+'</td>'+
-        '<td>'+esc(h.reason||'—')+'</td>'+
-        '<td>'+esc(h.next_action||'—')+'</td>'+
-        '<td>'+esc(dateText(h.created_at))+'</td>'+
-        (internal?'<td>'+
-          (h.state==='pending'?'<button class="linkBtn handoffAccept" data-id="'+esc(h.id)+'" type="button">受理</button>':'')+
-          (h.state==='accepted'?'<button class="linkBtn handoffComplete" data-id="'+esc(h.id)+'" type="button">完了</button>':'')+
-        '</td>':'')+
+      '<tr><td>'+esc(h.state||'—')+'</td><td>'+esc(h.reason||'—')+'</td><td>'+esc(h.next_action||'—')+'</td><td>'+esc(dateText(h.created_at))+'</td>'+
+        (internal?'<td>'+(h.state==='pending'?'<button class="linkBtn handoffAccept" data-id="'+esc(h.id)+'" type="button">受理</button>':'')+(h.state==='accepted'?'<button class="linkBtn handoffComplete" data-id="'+esc(h.id)+'" type="button">完了</button>':'')+'</td>':'')+
       '</tr>'
     );
 
@@ -5085,68 +5083,55 @@
     if(customer){
       visibilitySelect='<input type="hidden" id="ticketMessageVisibility" value="customer">';
     }else if(support){
-      visibilitySelect=
-        '<div class="field"><label>公開範囲</label><select id="ticketMessageVisibility">'+
-          '<option value="customer">顧客向け</option>'+
-          '<option value="support">サポート内</option>'+
-        '</select></div>';
+      visibilitySelect='<div class="field"><label>公開範囲</label><select id="ticketMessageVisibility"><option value="customer">顧客向け</option><option value="support">サポート内</option></select></div>';
     }else{
-      visibilitySelect=
-        '<div class="field"><label>公開範囲</label><select id="ticketMessageVisibility">'+
-          '<option value="customer">顧客向け</option>'+
-          '<option value="support">サポート内</option>'+
-          '<option value="internal">社内のみ</option>'+
-        '</select></div>';
+      visibilitySelect='<div class="field"><label>公開範囲</label><select id="ticketMessageVisibility"><option value="customer">顧客向け</option><option value="support">サポート内</option><option value="internal">社内のみ</option></select></div>';
     }
+
+    const internalEdit=internal
+      ? '<section class="formSection"><div class="formSectionHead"><span class="sectionNo">01</span><h3>案件管理</h3></div>'+
+          '<form id="ticketProfileForm">'+
+            '<div class="modalGrid2">'+
+              '<div class="field"><label>優先度</label><select id="ticketProfilePriority"><option value="low" '+(t.priority==='low'?'selected':'')+'>低</option><option value="normal" '+(t.priority==='normal'?'selected':'')+'>通常</option><option value="high" '+(t.priority==='high'?'selected':'')+'>高</option><option value="urgent" '+(t.priority==='urgent'?'selected':'')+'>緊急</option></select></div>'+
+              '<div class="field"><label>社内担当</label><select id="ticketProfileAssigned"><option value="">未設定</option>'+(staffOptions||[]).map(x=>'<option value="'+esc(x.user_id)+'" '+(x.user_id===t.assigned_internal_user_id?'selected':'')+'>'+esc(x.display_name||'—')+'</option>').join('')+'</select></div>'+
+              '<div class="field"><label>契約</label><select id="ticketProfileContract"><option value="">未指定</option>'+(customerCtx?.contracts||[]).map(x=>'<option value="'+esc(x.id)+'" '+(x.id===t.contract_id?'selected':'')+'>'+esc(x.contract_number||'未採番')+' / '+esc(statusText(x.status))+'</option>').join('')+'</select></div>'+
+              '<div class="field"><label>機器</label><select id="ticketProfileAsset"><option value="">未指定</option>'+(customerCtx?.assets||[]).map(x=>'<option value="'+esc(x.id)+'" '+(x.id===t.asset_id?'selected':'')+'>'+esc(x.asset_number||'未採番')+' / '+esc(x.model_name||'')+'</option>').join('')+'</select></div>'+
+            '</div>'+
+            '<div class="field"><label>社内メモ</label><textarea id="ticketProfileInternalNote" rows="3">'+esc(t.internal_note||'')+'</textarea></div>'+
+            '<button class="primary" type="submit">案件情報を保存</button>'+
+          '</form><div id="ticketProfileMsg" class="notice hidden"></div></section>'
+      : '';
 
     const actionButtons=!customer
       ? '<div class="row" style="margin-top:14px">'+
-          (t.status==='closed'
-            ? '<button id="ticketReopenBtn" class="green" type="button">問い合わせを再開</button>'
-            : '<button id="ticketCloseBtn" class="green" type="button">問い合わせを完了</button>')+
-          (t.status!=='closed'
-            ? '<button id="ticketHandoffToggle" class="ghost" type="button">自社へ引き継ぐ</button>'
-            : '')+
+          (t.status==='closed'?'<button id="ticketReopenBtn" class="green" type="button">問い合わせを再開</button>':'<button id="ticketCloseBtn" class="green" type="button">問い合わせを完了</button>')+
+          (t.status!=='closed'?'<button id="ticketHandoffToggle" class="ghost" type="button">自社へ引き継ぐ</button>':'')+
         '</div>'+
         (t.status!=='closed'
-          ? '<div id="ticketHandoffBox" class="hidden" style="margin-top:12px">'+
-              '<div class="field"><label>引き継ぎ理由</label><textarea id="handoffReason" rows="2"></textarea></div>'+
-              '<div class="field"><label>次に行うこと</label><textarea id="handoffNextAction" rows="2"></textarea></div>'+
-              '<button id="ticketHandoffBtn" class="orange" type="button">引き継ぎを登録</button>'+
-            '</div>'
+          ? '<div id="ticketHandoffBox" class="hidden" style="margin-top:12px"><div class="field"><label>引き継ぎ理由</label><textarea id="handoffReason" rows="2"></textarea></div><div class="field"><label>次に行うこと</label><textarea id="handoffNextAction" rows="2"></textarea></div><button id="ticketHandoffBtn" class="orange" type="button">引き継ぎを登録</button></div>'
           : '')+
         '<div id="ticketActionMsg" class="notice hidden"></div>'
       : '';
 
     $('#ticketDetailHost').innerHTML=
       '<section class="card section">'+
-        '<div class="quoteDetailHead">'+
-          '<div><h2>問い合わせ詳細</h2><p class="sectionDesc">'+esc(t.ticket_number||'—')+' / '+esc(t.subject||'')+'</p></div>'+
-          '<button id="ticketDetailClose" class="ghost" type="button">閉じる</button>'+
-        '</div>'+
+        '<div class="quoteDetailHead"><div><h2>サポート案件カルテ</h2><p class="sectionDesc">'+esc(t.ticket_number||'—')+' / '+esc(t.subject||'')+'</p></div><button id="ticketDetailClose" class="ghost" type="button">閉じる</button></div>'+
         kpis([
           ['状態',statusText(t.status)],
           ['優先度',t.priority||'normal'],
           ['作成日',dateText(t.created_at)],
-          ['更新日',dateText(t.updated_at)]
+          ['更新日',dateText(t.updated_at)],
+          ['契約',contract?.contract_number||'未指定'],
+          ['機器',asset?.asset_number||'未指定']
         ])+
-        (c?'<div class="row"><span class="pill">顧客 '+esc(c.name||'—')+'</span></div>':'')+
-        '<div class="notice">'+esc(t.description||'内容なし')+'</div>'+
-        '<div class="row">'+
-          (asset?'<span class="pill">機器 '+esc(asset.asset_number||asset.model_name||'—')+'</span>':'')+
-          (contract?'<span class="pill">契約 '+esc(contract.contract_number||'—')+'</span>':'')+
+        '<div class="modalGrid2">'+
+          '<section class="card section" style="box-shadow:none;margin:0"><h3>案件概要</h3><div class="item"><strong>件名</strong><p>'+esc(t.subject||'')+'</p></div><div class="item"><strong>内容</strong><p style="white-space:pre-wrap">'+esc(t.description||'内容なし')+'</p></div><div class="item"><strong>顧客</strong><p>'+esc(cust?.customer_code||'—')+' / '+esc(cust?.name||'—')+'</p></div></section>'+
+          '<section class="card section" style="box-shadow:none;margin:0"><h3>連絡・対象情報</h3><div class="item"><strong>主担当者</strong><p>'+esc(primary?.name||'未登録')+'<br><span class="muted">'+esc(primary?.phone||primary?.email||'連絡先未登録')+'</span></p></div><div class="item"><strong>契約</strong><p>'+(contract?esc(contract.contract_number||'—'):'未指定')+'</p></div><div class="item"><strong>機器</strong><p>'+(asset?esc(asset.asset_number||'—')+' / '+esc(asset.model_name||''):'未指定')+'</p></div></section>'+
         '</div>'+
+        internalEdit+
         actionButtons+
-        '<section class="section">'+
-          '<h3>メッセージ</h3>'+
-          messagesHtml+
-          '<form id="ticketMessageForm" class="card section" style="box-shadow:none">'+
-            visibilitySelect+
-            '<div class="field"><label>返信</label><textarea id="ticketMessageBody" rows="4" required></textarea></div>'+
-            '<button class="primary" type="submit">メッセージを送信</button>'+
-          '</form>'+
-          '<div id="ticketMessageMsg" class="notice hidden"></div>'+
-        '</section>'+
+        '<section class="section"><h3>対応履歴・メッセージ</h3>'+messagesHtml+
+          '<form id="ticketMessageForm" class="card section" style="box-shadow:none">'+visibilitySelect+'<div class="field"><label>返信</label><textarea id="ticketMessageBody" rows="4" required></textarea></div><button class="primary" type="submit">メッセージを送信</button></form><div id="ticketMessageMsg" class="notice hidden"></div></section>'+
         (!customer?'<section class="section"><h3>引き継ぎ履歴</h3>'+dataTable(internal?['状態','理由','次の対応','作成日','操作']:['状態','理由','次の対応','作成日'],handoffRows)+'</section>':'')+
         '<section class="section"><h3>添付ファイル</h3>'+dataTable(['ファイル名','公開範囲','サイズ(bytes)','作成日'],attachmentRows)+'</section>'+
       '</section>';
@@ -5154,190 +5139,133 @@
     $('#ticketDetailClose').onclick=()=>{$('#ticketDetailHost').innerHTML='';};
     $('#ticketDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
 
+    if(internal){
+      $('#ticketProfileForm').onsubmit=async e=>{
+        e.preventDefault();const btn=e.submitter;if(btn)btn.disabled=true;
+        try{
+          await rpc('update_support_ticket_profile',{
+            p_ticket_id:t.id,
+            p_priority:$('#ticketProfilePriority').value,
+            p_assigned_internal_user_id:$('#ticketProfileAssigned').value||null,
+            p_asset_id:$('#ticketProfileAsset').value||null,
+            p_contract_id:$('#ticketProfileContract').value||null,
+            p_internal_note:$('#ticketProfileInternalNote').value.trim()||null
+          });
+          notice('#ticketProfileMsg','案件情報を更新しました。',true);
+          toast('案件情報を更新しました');
+          await renderTicketDetail(t.id);
+        }catch(err){notice('#ticketProfileMsg',err.message||String(err));}
+        finally{if(btn)btn.disabled=false;}
+      };
+    }
+
     $('#ticketMessageForm').onsubmit=async e=>{
       e.preventDefault();
-      const btn=e.submitter;
-      if(btn) btn.disabled=true;
+      const btn=e.submitter;if(btn)btn.disabled=true;
       try{
         await rpc('post_ticket_message',{
-          p_ticket_id:t.id,
-          p_visibility:$('#ticketMessageVisibility').value,
-          p_body:$('#ticketMessageBody').value.trim()
+          p_ticket_id:t.id,p_visibility:$('#ticketMessageVisibility').value,p_body:$('#ticketMessageBody').value.trim()
         });
         notice('#ticketMessageMsg','メッセージを送信しました。',true);
         toast('メッセージを送信しました');
         await renderTicketDetail(t.id);
-      }catch(err){
-        notice('#ticketMessageMsg',err.message||String(err));
-      }finally{
-        if(btn) btn.disabled=false;
-      }
+      }catch(err){notice('#ticketMessageMsg',err.message||String(err));}
+      finally{if(btn)btn.disabled=false;}
     };
 
     if(!customer){
       const closeBtn=$('#ticketCloseBtn');
-      if(closeBtn){
-        closeBtn.onclick=async()=>{
-          closeBtn.disabled=true;
-          try{
-            await rpc('close_support_ticket',{p_ticket_id:t.id});
-            toast('問い合わせを完了しました');
-            await renderTicketDetail(t.id);
-          }catch(err){
-            notice('#ticketActionMsg',err.message||String(err));
-          }finally{ closeBtn.disabled=false; }
-        };
-      }
+      if(closeBtn) closeBtn.onclick=async()=>{
+        closeBtn.disabled=true;
+        try{await rpc('close_support_ticket',{p_ticket_id:t.id});toast('問い合わせを完了しました');await renderTicketDetail(t.id);}
+        catch(err){notice('#ticketActionMsg',err.message||String(err));}
+        finally{closeBtn.disabled=false;}
+      };
 
       const reopenBtn=$('#ticketReopenBtn');
-      if(reopenBtn){
-        reopenBtn.onclick=async()=>{
-          reopenBtn.disabled=true;
-          try{
-            await rpc('reopen_support_ticket',{p_ticket_id:t.id});
-            toast('問い合わせを再開しました');
-            await renderTicketDetail(t.id);
-          }catch(err){
-            notice('#ticketActionMsg',err.message||String(err));
-          }finally{ reopenBtn.disabled=false; }
-        };
-      }
+      if(reopenBtn) reopenBtn.onclick=async()=>{
+        reopenBtn.disabled=true;
+        try{await rpc('reopen_support_ticket',{p_ticket_id:t.id});toast('問い合わせを再開しました');await renderTicketDetail(t.id);}
+        catch(err){notice('#ticketActionMsg',err.message||String(err));}
+        finally{reopenBtn.disabled=false;}
+      };
 
       const toggle=$('#ticketHandoffToggle');
       if(toggle) toggle.onclick=()=>$('#ticketHandoffBox').classList.toggle('hidden');
 
       const handoffBtn=$('#ticketHandoffBtn');
-      if(handoffBtn){
-        handoffBtn.onclick=async()=>{
-          handoffBtn.disabled=true;
-          try{
-            await rpc('handoff_ticket_to_internal',{
-              p_ticket_id:t.id,
-              p_reason:$('#handoffReason').value.trim(),
-              p_next_action:$('#handoffNextAction').value.trim()
-            });
-            toast('引き継ぎを登録しました');
-            await renderTicketDetail(t.id);
-          }catch(err){
-            notice('#ticketActionMsg',err.message||String(err));
-          }finally{ handoffBtn.disabled=false; }
-        };
-      }
+      if(handoffBtn) handoffBtn.onclick=async()=>{
+        handoffBtn.disabled=true;
+        try{
+          await rpc('handoff_ticket_to_internal',{
+            p_ticket_id:t.id,p_reason:$('#handoffReason').value.trim(),p_next_action:$('#handoffNextAction').value.trim()
+          });
+          toast('引き継ぎを登録しました');await renderTicketDetail(t.id);
+        }catch(err){notice('#ticketActionMsg',err.message||String(err));}
+        finally{handoffBtn.disabled=false;}
+      };
 
       if(internal){
-        document.querySelectorAll('.handoffAccept').forEach(btn=>{
-          btn.onclick=async()=>{
-            btn.disabled=true;
-            try{
-              await rpc('accept_ticket_handoff',{p_handoff_id:btn.dataset.id});
-              toast('引き継ぎを受理しました');
-              await renderTicketDetail(t.id);
-            }catch(err){
-              notice('#ticketActionMsg',err.message||String(err));
-            }finally{ btn.disabled=false; }
-          };
+        document.querySelectorAll('.handoffAccept').forEach(btn=>btn.onclick=async()=>{
+          btn.disabled=true;try{await rpc('accept_ticket_handoff',{p_handoff_id:btn.dataset.id});toast('引き継ぎを受理しました');await renderTicketDetail(t.id);}
+          catch(err){notice('#ticketActionMsg',err.message||String(err));}finally{btn.disabled=false;}
         });
-        document.querySelectorAll('.handoffComplete').forEach(btn=>{
-          btn.onclick=async()=>{
-            btn.disabled=true;
-            try{
-              await rpc('complete_ticket_handoff',{p_handoff_id:btn.dataset.id});
-              toast('引き継ぎを完了しました');
-              await renderTicketDetail(t.id);
-            }catch(err){
-              notice('#ticketActionMsg',err.message||String(err));
-            }finally{ btn.disabled=false; }
-          };
+        document.querySelectorAll('.handoffComplete').forEach(btn=>btn.onclick=async()=>{
+          btn.disabled=true;try{await rpc('complete_ticket_handoff',{p_handoff_id:btn.dataset.id});toast('引き継ぎを完了しました');await renderTicketDetail(t.id);}
+          catch(err){notice('#ticketActionMsg',err.message||String(err));}finally{btn.disabled=false;}
         });
       }
+    }
+
+    if(internal){
+      await appendEntityAuditHistory('#ticketDetailHost','support_ticket',t.id);
     }
   }
 
   async function renderSupport(){
     const role=bootData.context?.role;
     const customer=role==='customer_user';
-
-    let data=[];
-    let cmap={};
+    const internal=role==='internal_admin'||role==='internal_staff';
+    const support=role==='support_staff';
 
     if(customer){
       const res=await supabase.from('support_tickets')
         .select('id,ticket_number,subject,status,priority,created_at,updated_at')
         .order('created_at',{ascending:false});
       if(res.error) throw res.error;
-      data=res.data||[];
-    }else{
-      const [ticketRes,map]=await Promise.all([
-        supabase.from('support_tickets')
-          .select('id,customer_id,ticket_number,subject,status,priority,created_at,updated_at')
-          .order('created_at',{ascending:false}),
-        customerMap()
-      ]);
-      if(ticketRes.error) throw ticketRes.error;
-      data=ticketRes.data||[];
-      cmap=map;
-    }
+      const data=res.data||[];
 
-    const createBox=customer
-      ? '<section class="card section"><h2>新しく問い合わせる</h2><p class="sectionDesc">件名と内容を入力してください。</p><form id="ticketForm"><div class="field"><label>件名</label><input id="subject" required></div><div class="field"><label>内容</label><textarea id="description" rows="5"></textarea></div><button class="green" type="submit">問い合わせを送信</button></form><div id="ticketMsg" class="notice hidden"></div></section>'
-      : '';
+      $('#home').innerHTML=
+        pageIntro('問い合わせ','問い合わせの作成・返信・履歴確認ができます。')+
+        '<section class="card section"><h2>新しく問い合わせる</h2><p class="sectionDesc">件名と内容を入力してください。</p><form id="ticketForm"><div class="field"><label>件名</label><input id="subject" required></div><div class="field"><label>内容</label><textarea id="description" rows="5"></textarea></div><button class="green" type="submit">問い合わせを送信</button></form><div id="ticketMsg" class="notice hidden"></div></section>'+
+        listToolbar('ticketList',data,'status','番号・件名',[
+          ['priority_desc','優先度が高い順'],['created_desc','作成が新しい順'],['updated_desc','更新が新しい順']
+        ])+
+        '<div id="ticketDetailHost"></div><section class="section"><div id="ticketListHost"></div></section>';
 
-    $('#home').innerHTML=
-      pageIntro(customer?'問い合わせ':'サポート',customer?'問い合わせの作成・返信・履歴確認ができます。':'問い合わせを検索・状態別に絞り込み、優先度順で確認できます。')+
-      createBox+
-      listToolbar('ticketList',data,'status',customer?'番号・件名':'番号・顧客・件名・優先度',[
-        ['priority_desc','優先度が高い順'],
-        ['created_desc','作成が新しい順'],
-        ['updated_desc','更新が新しい順']
-      ])+
-      '<div id="ticketDetailHost"></div><section class="section"><div id="ticketListHost"></div></section>';
+      const priorityRank={urgent:0,high:1,normal:2,low:3};
+      const renderRows=()=>{
+        const state=listToolbarState('ticketList');
+        let filtered=data.filter(t=>(state.status==='all'||t.status===state.status)&&(!state.query||[t.ticket_number,t.subject,t.priority,t.status].some(v=>String(v||'').toLowerCase().includes(state.query))));
+        filtered=[...filtered].sort((a,b)=>{
+          if(state.sort==='updated_desc') return timeValue(b.updated_at)-timeValue(a.updated_at);
+          if(state.sort==='created_desc') return timeValue(b.created_at)-timeValue(a.created_at);
+          const p=(priorityRank[a.priority]??9)-(priorityRank[b.priority]??9);
+          return p!==0?p:timeValue(b.created_at)-timeValue(a.created_at);
+        });
+        updateListCount('ticketList',filtered.length,data.length);
+        $('#ticketListHost').innerHTML=dataTable(
+          ['番号','件名','状態','優先度','作成日','操作'],
+          filtered.map(t=>'<tr><td><strong>'+esc(t.ticket_number||'—')+'</strong></td><td>'+esc(t.subject||'')+'</td><td>'+esc(statusText(t.status))+'</td><td>'+esc(t.priority||'normal')+'</td><td>'+esc(dateText(t.created_at))+'</td><td><button class="linkBtn ticketDetail" type="button" data-id="'+esc(t.id)+'">詳細</button></td></tr>')
+        );
+        document.querySelectorAll('.ticketDetail').forEach(btn=>btn.onclick=async()=>{btn.disabled=true;try{await renderTicketDetail(btn.dataset.id);}catch(err){toast(err.message||String(err));}finally{btn.disabled=false;}});
+      };
+      bindListToolbar('ticketList',renderRows);
+      renderRows();
 
-    const priorityRank={urgent:0,high:1,normal:2,low:3};
-    const renderRows=()=>{
-      const state=listToolbarState('ticketList');
-      let filtered=data.filter(t=>{
-        if(state.status!=='all'&&t.status!==state.status) return false;
-        const customerInfo=customer?{}:(cmap[t.customer_id]||{});
-        return !state.query||[
-          t.ticket_number,t.subject,t.priority,t.status,
-          customerInfo.name,customerInfo.customer_code
-        ].some(v=>String(v||'').toLowerCase().includes(state.query));
-      });
-      filtered=[...filtered].sort((a,b)=>{
-        if(state.sort==='updated_desc') return timeValue(b.updated_at)-timeValue(a.updated_at);
-        if(state.sort==='created_desc') return timeValue(b.created_at)-timeValue(a.created_at);
-        const p=(priorityRank[a.priority]??9)-(priorityRank[b.priority]??9);
-        return p!==0?p:timeValue(b.created_at)-timeValue(a.created_at);
-      });
-      updateListCount('ticketList',filtered.length,data.length);
-
-      $('#ticketListHost').innerHTML=dataTable(
-        customer?['番号','件名','状態','優先度','作成日','操作']:['番号','顧客','件名','状態','優先度','更新日','操作'],
-        filtered.map(t=>{
-          const customerInfo=customer?{}:(cmap[t.customer_id]||{});
-          return '<tr>'+
-            '<td><strong>'+esc(t.ticket_number||'—')+'</strong></td>'+
-            (customer?'':'<td>'+esc(customerInfo.name||'—')+'</td>')+
-            '<td>'+esc(t.subject||'')+'</td>'+
-            '<td>'+esc(statusText(t.status))+'</td>'+
-            '<td>'+(t.priority==='urgent'?'<span class="hold">urgent</span>':esc(t.priority||'normal'))+'</td>'+
-            '<td>'+esc(dateText(customer?t.created_at:t.updated_at))+'</td>'+
-            '<td><button class="linkBtn ticketDetail" type="button" data-id="'+esc(t.id)+'">詳細</button></td>'+
-          '</tr>';
-        })
-      );
-
-      document.querySelectorAll('.ticketDetail').forEach(btn=>btn.onclick=async()=>{btn.disabled=true;try{await renderTicketDetail(btn.dataset.id);}catch(err){toast(err.message||String(err));}finally{btn.disabled=false;}});
-    };
-
-    bindListToolbar('ticketList',renderRows);
-    renderRows();
-
-    if(customer){
       $('#ticketForm').onsubmit=async e=>{
         e.preventDefault();
-        const btn=e.submitter;
-        if(btn) btn.disabled=true;
+        const btn=e.submitter;if(btn)btn.disabled=true;
         try{
           await rpc('create_customer_ticket',{
             p_asset_id:null,p_contract_id:null,
@@ -5347,11 +5275,107 @@
           notice('#ticketMsg','問い合わせを送信しました。',true);
           $('#ticketForm').reset();
           setTimeout(()=>go('support'),450);
-        }catch(err){
-          notice('#ticketMsg',err.message||String(err));
-        }finally{
-          if(btn) btn.disabled=false;
-        }
+        }catch(err){notice('#ticketMsg',err.message||String(err));}
+        finally{if(btn)btn.disabled=false;}
+      };
+      return;
+    }
+
+    const [workspace,customers,staff]=await Promise.all([
+      rpc('internal_support_cases_list'),
+      internal?rpc('internal_customers_list'):rpc('support_customer_directory'),
+      internal?rpc('internal_staff_options'):Promise.resolve([])
+    ]);
+    const data=workspace?.tickets||[];
+    const summary=workspace?.summary||{};
+    const cmap={};
+    (customers||[]).forEach(x=>cmap[x.id]=x);
+
+    $('#home').innerHTML=
+      pageIntro('サポート','顧客・契約・機器・担当者・優先度・対応履歴を案件単位で管理します。')+
+      kpis([
+        ['未対応',summary.open||0],
+        ['対応中',summary.in_progress||0],
+        ['緊急',summary.urgent_open||0],
+        ['高優先度',summary.high_open||0],
+        ['担当未設定',summary.unassigned||0],
+        ['完了',summary.closed||0]
+      ])+
+      (internal
+        ? '<section class="card section"><div class="row between"><div><h2>新規サポート案件</h2><p class="sectionDesc">顧客を選択し、必要に応じて契約・機器を紐づけます。</p></div><button id="supportCaseCreateToggle" class="primary" type="button">＋ 新規案件</button></div><div id="supportCaseCreateBox" class="hidden" style="margin-top:14px"><form id="supportCaseCreateForm"><div class="modalGrid2"><div class="field"><label>顧客</label><select id="supportCaseCustomer" required><option value="">選択してください</option>'+(customers||[]).map(x=>'<option value="'+esc(x.id)+'">'+esc(x.customer_code||'—')+' / '+esc(x.name||'')+'</option>').join('')+'</select></div><div class="field"><label>優先度</label><select id="supportCasePriority"><option value="normal">通常</option><option value="high">高</option><option value="urgent">緊急</option><option value="low">低</option></select></div></div><div id="supportCaseContextFields"></div><div class="field"><label>件名</label><input id="supportCaseSubject" required></div><div class="field"><label>内容</label><textarea id="supportCaseDescription" rows="4"></textarea></div><button class="primary" type="submit">案件を登録</button></form><div id="supportCaseCreateMsg" class="notice hidden"></div></div></section>'
+        : '')+
+      listToolbar('supportCaseList',data,'status','番号・顧客・件名・機器・契約・担当者',[
+        ['priority_desc','優先度が高い順'],['updated_desc','更新が新しい順'],['created_desc','作成が新しい順']
+      ])+
+      '<div id="ticketDetailHost"></div><section class="section"><div id="supportCaseListHost"></div></section>';
+
+    const priorityRank={urgent:0,high:1,normal:2,low:3};
+    const renderRows=()=>{
+      const state=listToolbarState('supportCaseList');
+      let filtered=data.filter(t=>{
+        if(state.status!=='all'&&t.status!==state.status) return false;
+        return !state.query||[
+          t.ticket_number,t.customer_name,t.customer_code,t.subject,t.priority,t.status,
+          t.asset_number,t.asset_model_name,t.contract_number,t.assigned_internal_user_name
+        ].some(v=>String(v||'').toLowerCase().includes(state.query));
+      });
+      filtered=[...filtered].sort((a,b)=>{
+        if(state.sort==='updated_desc') return timeValue(b.updated_at)-timeValue(a.updated_at);
+        if(state.sort==='created_desc') return timeValue(b.created_at)-timeValue(a.created_at);
+        const p=(priorityRank[a.priority]??9)-(priorityRank[b.priority]??9);
+        return p!==0?p:timeValue(b.updated_at)-timeValue(a.updated_at);
+      });
+      updateListCount('supportCaseList',filtered.length,data.length);
+      $('#supportCaseListHost').innerHTML=dataTable(
+        ['番号','顧客','件名','状態','優先度','機器/契約','担当','最終対応','操作'],
+        filtered.map(t=>
+          '<tr>'+
+            '<td><strong>'+esc(t.ticket_number||'—')+'</strong></td>'+
+            '<td>'+esc(t.customer_name||'—')+'</td>'+
+            '<td>'+esc(t.subject||'')+'</td>'+
+            '<td>'+esc(statusText(t.status))+'</td>'+
+            '<td>'+(t.priority==='urgent'?'<span class="hold">緊急</span>':t.priority==='high'?'<span class="pill">高</span>':esc(t.priority||'normal'))+'</td>'+
+            '<td>'+esc(t.asset_number||'機器未指定')+(t.contract_number?'<br><span class="muted">'+esc(t.contract_number)+'</span>':'')+'</td>'+
+            '<td>'+esc(t.assigned_internal_user_name||'未設定')+'</td>'+
+            '<td>'+esc(dateText(t.last_message_at||t.updated_at))+(t.active_handoff?'<br><span class="pill">引継ぎ中</span>':'')+'</td>'+
+            '<td><button class="linkBtn ticketDetail" type="button" data-id="'+esc(t.id)+'">案件カルテ</button></td>'+
+          '</tr>'
+        )
+      );
+      document.querySelectorAll('.ticketDetail').forEach(btn=>btn.onclick=async()=>{btn.disabled=true;try{await renderTicketDetail(btn.dataset.id);}catch(err){toast(err.message||String(err));}finally{btn.disabled=false;}});
+    };
+    bindListToolbar('supportCaseList',renderRows);
+    renderRows();
+
+    if(internal){
+      $('#supportCaseCreateToggle').onclick=()=>$('#supportCaseCreateBox').classList.toggle('hidden');
+      $('#supportCaseCustomer').onchange=async()=>{
+        const id=$('#supportCaseCustomer').value;
+        if(!id){$('#supportCaseContextFields').innerHTML='';return;}
+        const ctx=await rpc('internal_customer_unified_workspace',{p_customer_id:id});
+        $('#supportCaseContextFields').innerHTML=
+          '<div class="modalGrid2">'+
+            '<div class="field"><label>契約</label><select id="supportCaseContract"><option value="">未指定</option>'+(ctx.contracts||[]).map(x=>'<option value="'+esc(x.id)+'">'+esc(x.contract_number||'未採番')+' / '+esc(statusText(x.status))+'</option>').join('')+'</select></div>'+
+            '<div class="field"><label>機器</label><select id="supportCaseAsset"><option value="">未指定</option>'+(ctx.assets||[]).map(x=>'<option value="'+esc(x.id)+'">'+esc(x.asset_number||'未採番')+' / '+esc(x.model_name||'')+'</option>').join('')+'</select></div>'+
+          '</div>';
+      };
+      $('#supportCaseCreateForm').onsubmit=async e=>{
+        e.preventDefault();
+        const btn=e.submitter;if(btn)btn.disabled=true;
+        try{
+          const result=await rpc('internal_create_support_ticket',{
+            p_customer_id:$('#supportCaseCustomer').value,
+            p_asset_id:$('#supportCaseAsset')?.value||null,
+            p_contract_id:$('#supportCaseContract')?.value||null,
+            p_subject:$('#supportCaseSubject').value.trim(),
+            p_description:$('#supportCaseDescription').value.trim()||null,
+            p_priority:$('#supportCasePriority').value
+          });
+          notice('#supportCaseCreateMsg','サポート案件を登録しました。',true);
+          toast('サポート案件を登録しました');
+          if(result?.id) await renderTicketDetail(result.id);
+        }catch(err){notice('#supportCaseCreateMsg',err.message||String(err));}
+        finally{if(btn)btn.disabled=false;}
       };
     }
   }
@@ -5755,7 +5779,7 @@
         '<div class="field"><label>内容</label><textarea id="assetTicketDescription" rows="5"></textarea></div>',
       confirmLabel:'問い合わせを登録',
       onSubmit:async()=>{
-        const result=await rpc('create_support_ticket',{
+        const result=await rpc('internal_create_support_ticket',{
           p_customer_id:a.customer_id,
           p_asset_id:a.id,
           p_contract_id:a.contract_id||null,
@@ -6061,7 +6085,7 @@
         '<div class="field"><label>内容</label><textarea id="contractTicketDescription" rows="5"></textarea></div>',
       confirmLabel:'問い合わせを登録',
       onSubmit:async()=>{
-        const result=await rpc('create_support_ticket',{
+        const result=await rpc('internal_create_support_ticket',{
           p_customer_id:ct.customer_id,
           p_asset_id:$('#contractTicketAsset').value||null,
           p_contract_id:ct.id,
@@ -6221,7 +6245,7 @@
     $('#supportNewForm').onsubmit=async e=>{
       e.preventDefault(); const btn=e.submitter; if(btn) btn.disabled=true;
       try{
-        const result=await rpc('create_support_ticket',{
+        const result=await rpc('internal_create_support_ticket',{
           p_customer_id:$('#supportNewCustomer').value,
           p_asset_id:$('#supportNewAsset').value||null,
           p_contract_id:$('#supportNewContract').value||null,
