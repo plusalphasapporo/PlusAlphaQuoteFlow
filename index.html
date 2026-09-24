@@ -312,7 +312,7 @@
 
   const READ_ONLY_RPCS = new Set([
     'app_health','current_auth_onboarding_state','current_app_bootstrap',
-    'internal_command_center','internal_handoff_queue','internal_business_dashboard',
+    'internal_command_center','internal_handoff_queue','internal_business_dashboard','internal_unread_handoff_notifications',
     'support_home',
     
     'internal_quote_detail','internal_order_detail','internal_purchase_orders',
@@ -480,6 +480,7 @@
   let manualLogout=false;
   let healthTimer=null;
   let supportRealtimeChannel=null;
+  let internalHandoffRealtimeChannel=null;
 
   const pageSets = {
     internal_admin: [
@@ -932,6 +933,51 @@
       .subscribe();
   }
 
+  async function refreshInternalUnreadHandoffBadge(){
+    const role=bootData?.context?.role;
+    if(!(role==='internal_admin'||role==='internal_staff')) return {count:0,items:[]};
+    try{
+      const [biz,unread]=await Promise.all([
+        rpc('internal_business_dashboard'),
+        rpc('internal_unread_handoff_notifications')
+      ]);
+      const count=Number(biz?.kpis?.urgent_open_tickets||0)+Number(unread?.count||0);
+      if(count>0){
+        $('#notificationCount').textContent=count>99?'99+':String(count);
+        $('#notificationCount').classList.remove('hidden');
+      }else{
+        $('#notificationCount').classList.add('hidden');
+      }
+      return unread||{count:0,items:[]};
+    }catch(_){
+      return {count:0,items:[]};
+    }
+  }
+
+  async function startInternalHandoffRealtime(){
+    if(internalHandoffRealtimeChannel){
+      try{await supabase.removeChannel(internalHandoffRealtimeChannel);}catch(_){}
+      internalHandoffRealtimeChannel=null;
+    }
+    const role=bootData?.context?.role;
+    if(!(role==='internal_admin'||role==='internal_staff')) return;
+    internalHandoffRealtimeChannel=supabase
+      .channel('internal-handoff-live')
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'support_handoffs'},async payload=>{
+        const unread=await refreshInternalUnreadHandoffBadge();
+        const item=(unread.items||[]).find(x=>x.handoff_id===payload.new?.id);
+        if(item){
+          toast('サポート会社から引継ぎ：'+(item.customer_name||'')+' '+(item.subject||''));
+          if(currentPage==='home') await renderHome();
+        }
+      })
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'support_handoffs'},async()=>{
+        await refreshInternalUnreadHandoffBadge();
+        if(currentPage==='home') await renderHome();
+      })
+      .subscribe();
+  }
+
   async function setupGlobalHeader(){
     const role=bootData?.context?.role;
     const context=bootData?.context||{};
@@ -941,11 +987,11 @@
     let count=0;
     try{
       if(role==='internal_admin'||role==='internal_staff'){
-        const [biz,handoffs]=await Promise.all([
+        const [biz,unreadHandoffs]=await Promise.all([
           rpc('internal_business_dashboard'),
-          rpc('internal_handoff_queue')
+          rpc('internal_unread_handoff_notifications')
         ]);
-        count=Number(biz?.kpis?.urgent_open_tickets||0)+Number((handoffs||[]).length||0);
+        count=Number(biz?.kpis?.urgent_open_tickets||0)+Number(unreadHandoffs?.count||0);
       }else if(role==='support_staff'){
         const unread=await rpc('support_unread_notifications');
         count=Number(unread?.count||0);
@@ -960,7 +1006,7 @@
     }else{
       $('#notificationCount').classList.add('hidden');
     }
-    $('#notificationBtn').onclick=()=>go(role==='support_staff'?'home':role==='customer_user'?'customer_status':'support');
+    $('#notificationBtn').onclick=()=>go((role==='support_staff'||role==='internal_admin'||role==='internal_staff')?'home':role==='customer_user'?'customer_status':'support');
 
     const searchWrap=$('#globalSearchWrap');
     if(!(role==='internal_admin'||role==='internal_staff')){
@@ -1018,9 +1064,10 @@
     const home=$('#home');
 
     if(role==='internal_admin'||role==='internal_staff'){
-      const [ops,q]=await Promise.all([
+      const [ops,q,unreadHandoffs]=await Promise.all([
         rpc('internal_operations_dashboard'),
-        rpc('internal_handoff_queue')
+        rpc('internal_handoff_queue'),
+        rpc('internal_unread_handoff_notifications')
       ]);
 
       const actionRows=(ops.action_queue||[]).map(x=>
@@ -1080,8 +1127,26 @@
           ['本日入荷',ops.kpis?.receiving_due_today],
           ['本日納品',ops.kpis?.deliveries_today],
           ['納品超過',ops.kpis?.deliveries_overdue],
-          ['高優先度問い合わせ',ops.kpis?.urgent_open_tickets]
+          ['新着引継ぎ',unreadHandoffs?.count||0]
         ])+
+        ((unreadHandoffs?.items||[]).length
+          ? '<section class="card section"><div class="row between"><div><h2>サポート会社からの新着引継ぎ</h2><p class="sectionDesc">まだあなたが確認していない引継ぎです。内容確認後、そのまま受理できます。</p></div><span class="hold">'+esc(unreadHandoffs.count||0)+'件未読</span></div>'+
+            dataTable(
+              ['新着','案件','種別','顧客','引継ぎ理由','次に行うこと','操作'],
+              (unreadHandoffs.items||[]).slice(0,8).map(h=>
+                '<tr>'+
+                  '<td><span class="hold">NEW</span></td>'+
+                  '<td>'+esc(h.ticket_number||'—')+'<br><span class="muted">'+esc(h.subject||'')+'</span></td>'+
+                  '<td>'+supportRequestTypeBadge(h.request_type)+'</td>'+
+                  '<td>'+esc(h.customer_name||'—')+'</td>'+
+                  '<td>'+esc(h.reason||'—')+'</td>'+
+                  '<td>'+esc(h.next_action||'—')+'</td>'+
+                  '<td><div class="row"><button class="linkBtn internalUnreadHandoffOpen" type="button" data-id="'+esc(h.handoff_id)+'" data-ticket-id="'+esc(h.ticket_id)+'">確認</button><button class="primary internalUnreadHandoffAccept" type="button" data-id="'+esc(h.handoff_id)+'" data-ticket-id="'+esc(h.ticket_id)+'">受理</button></div></td>'+
+                '</tr>'
+              )
+            )+
+          '</section>'
+          : '')+
         '<section class="card section">'+
           '<div class="row between"><div><h2>今日の優先対応</h2><p class="sectionDesc">期限超過 → 本日予定 → 承認・受注・発注 → 問い合わせの順で並びます。</p></div><span class="pill">'+esc(ops.business_date||'')+'</span></div>'+
           dataTable(['優先','対応内容','顧客','詳細','期限・状態','操作'],actionRows)+
@@ -1155,8 +1220,31 @@
       $('.dashGoDelivery').onclick=()=>renderProcurementWorkspace('delivery');
       $('.dashGoSupport').onclick=()=>go('support');
 
+      document.querySelectorAll('.internalUnreadHandoffOpen').forEach(b=>b.onclick=async()=>{
+        b.disabled=true;
+        try{
+          await rpc('mark_internal_handoff_read',{p_handoff_id:b.dataset.id});
+          await refreshInternalUnreadHandoffBadge();
+          await go('support');
+          await renderTicketDetail(b.dataset.ticketId);
+        }catch(e){toast(e.message||String(e));}
+        finally{b.disabled=false;}
+      });
+      document.querySelectorAll('.internalUnreadHandoffAccept').forEach(b=>b.onclick=async()=>{
+        b.disabled=true;
+        try{
+          await rpc('mark_internal_handoff_read',{p_handoff_id:b.dataset.id});
+          await rpc('accept_ticket_handoff',{p_handoff_id:b.dataset.id});
+          toast('引継ぎを受理しました');
+          await refreshInternalUnreadHandoffBadge();
+          await go('support');
+          await renderTicketDetail(b.dataset.ticketId);
+        }catch(e){toast(e.message||String(e));}
+        finally{b.disabled=false;}
+      });
       document.querySelectorAll('.accept').forEach(b=>b.onclick=async()=>{
         try{
+          try{await rpc('mark_internal_handoff_read',{p_handoff_id:b.dataset.id});}catch(_){}
           await rpc('accept_ticket_handoff',{p_handoff_id:b.dataset.id});
           toast('引き継ぎを受理しました');
           await renderHome();
@@ -7797,6 +7885,7 @@
     renderNav();
     await setupGlobalHeader();
     await startSupportRealtime();
+    await startInternalHandoffRealtime();
     await go('home');
   }
 
@@ -7992,6 +8081,10 @@
         if(supportRealtimeChannel){
           try{await supabase.removeChannel(supportRealtimeChannel);}catch(_){}
           supportRealtimeChannel=null;
+        }
+        if(internalHandoffRealtimeChannel){
+          try{await supabase.removeChannel(internalHandoffRealtimeChannel);}catch(_){}
+          internalHandoffRealtimeChannel=null;
         }
         bootData=null;
         currentPage='home';
