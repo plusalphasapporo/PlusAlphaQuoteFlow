@@ -1167,8 +1167,11 @@
     if(ticketBtn){
       ticketBtn.onclick=async()=>{
         await close();
-        await go(role==='support_staff'?'support_cases':'support');
-        await renderTicketDetail(item.support_ticket_id);
+        if(role==='support_staff') await openTicketWorkspace(item.support_ticket_id);
+        else{
+          await go('support');
+          await openTicketWorkspace(item.support_ticket_id);
+        }
       };
     }
   }
@@ -1289,9 +1292,7 @@
             try{
               await rpc('claim_support_ticket',{p_ticket_id:item.id}).catch(()=>{});
               await rpc('set_support_workflow_stage',{p_ticket_id:item.id,p_stage:'in_progress'}).catch(()=>{});
-              await go('support_cases');
-              await renderTicketDetail(item.id);
-              setTimeout(()=>$('#supportAssistWorkspace')?.scrollIntoView({behavior:'smooth',block:'start'}),150);
+              await openTicketWorkspace(item.id);
             }catch(err){toast(err.message||String(err));}
           };
           if(currentPage==='home') await renderHome();
@@ -6257,6 +6258,28 @@
     renderRows();
   }
 
+  async function openTicketWorkspace(ticketId){
+    const role=bootData?.context?.role;
+    const backPage=role==='support_staff'?'support_cases':'support';
+    currentPage=backPage;
+    setActiveNav();
+    $('#home').innerHTML=
+      '<section class="card section">'+
+        '<div class="row between" style="gap:14px;align-items:flex-start;flex-wrap:wrap">'+
+          '<div><span class="pill good">案件カルテ</span><h2 style="margin:8px 0 4px">対応ワークスペース</h2><p class="sectionDesc">この画面だけで、顧客・機器確認、AI・ナレッジ検索、TeamViewer、対応記録、完了・引継ぎまで進めます。</p></div>'+
+          '<button id="ticketWorkspaceBack" class="ghost" type="button">← 案件一覧へ戻る</button>'+
+        '</div>'+
+      '</section>'+
+      '<div id="ticketDetailHost"></div>';
+
+    $('#ticketWorkspaceBack').onclick=()=>go(backPage);
+    await renderTicketDetail(ticketId);
+
+    const closeBtn=$('#ticketDetailClose');
+    if(closeBtn) closeBtn.onclick=()=>go(backPage);
+    window.scrollTo({top:0,behavior:'smooth'});
+  }
+
   async function renderTicketDetail(ticketId){
     const role=bootData.context?.role;
     const customer=role==='customer_user';
@@ -6864,7 +6887,7 @@
           ['番号','件名','状態','優先度','作成日','操作'],
           filtered.map(t=>'<tr><td><strong>'+esc(t.ticket_number||'—')+'</strong></td><td>'+esc(t.subject||'')+'</td><td>'+esc(statusText(t.status))+'</td><td>'+esc(t.priority||'normal')+'</td><td>'+esc(dateText(t.created_at))+'</td><td><button class="linkBtn ticketDetail" type="button" data-id="'+esc(t.id)+'">詳細</button></td></tr>')
         );
-        document.querySelectorAll('.ticketDetail').forEach(btn=>btn.onclick=async()=>{btn.disabled=true;try{await renderTicketDetail(btn.dataset.id);}catch(err){toast(err.message||String(err));}finally{btn.disabled=false;}});
+        document.querySelectorAll('.ticketDetail').forEach(btn=>btn.onclick=async()=>{btn.disabled=true;try{if(bootData?.context?.role==='customer_user') await renderTicketDetail(btn.dataset.id); else await openTicketWorkspace(btn.dataset.id);}catch(err){toast(err.message||String(err));}finally{btn.disabled=false;}});
       };
       bindListToolbar('ticketList',renderRows);
       renderRows();
@@ -7012,7 +7035,7 @@
           '</tr>'
         )
       );
-      document.querySelectorAll('.ticketDetail').forEach(btn=>btn.onclick=async()=>{btn.disabled=true;try{await renderTicketDetail(btn.dataset.id);}catch(err){toast(err.message||String(err));}finally{btn.disabled=false;}});
+      document.querySelectorAll('.ticketDetail').forEach(btn=>btn.onclick=async()=>{btn.disabled=true;try{if(bootData?.context?.role==='customer_user') await renderTicketDetail(btn.dataset.id); else await openTicketWorkspace(btn.dataset.id);}catch(err){toast(err.message||String(err));}finally{btn.disabled=false;}});
     };
     if(support){
       document.querySelectorAll('.supportAssigneeTab').forEach(btn=>btn.onclick=()=>{
@@ -7127,7 +7150,7 @@
           const typeText=supportRequestTypeLabel($('#supportCaseRequestType').value);
           notice('#supportCaseCreateMsg',typeText+'を登録しました。'+(files.length?' 写真 '+files.length+'件を添付しました。':''),true);
           toast(typeText+'を登録しました');
-          if(result?.id) await renderTicketDetail(result.id);
+          if(result?.id) await openTicketWorkspace(result.id);
         }catch(err){notice('#supportCaseCreateMsg',err.message||String(err));}
         finally{if(btn)btn.disabled=false;}
       };
@@ -8240,10 +8263,8 @@
           await rpc('claim_support_ticket',{p_ticket_id:result.id}).catch(()=>{});
           await rpc('set_support_workflow_stage',{p_ticket_id:result.id,p_stage:'in_progress'}).catch(()=>{});
           toast('受付を登録しました。作業画面を開きます'+(result?.ticket_number?' '+result.ticket_number:''));
-          await go('support_cases');
-          await renderTicketDetail(result.id);
+          await openTicketWorkspace(result.id);
           setTimeout(()=>{
-            $('#supportAssistWorkspace')?.scrollIntoView({behavior:'smooth',block:'start'});
             $('#ticketKnowledgeSearch')?.focus();
           },250);
         }else{
