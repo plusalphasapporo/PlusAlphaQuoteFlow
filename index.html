@@ -70,6 +70,14 @@
     .supportPhoneLookupResult{margin-top:12px}
     .supportPhoneLookupCard{border:1px solid var(--line);border-radius:14px;padding:14px;background:#f8fafc}
     .supportPhoneLookupCard h3{margin:0 0 4px;font-size:18px}
+    .supportIntakeFlow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:12px 0 16px}
+    .supportIntakeStep{border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:#f8fafc}
+    .supportIntakeStep.active{border-color:#93c5fd;background:#eff6ff}.supportIntakeStep.done{border-color:#86efac;background:#f0fdf4}
+    .supportIntakeStep strong{display:block}.supportIntakeStep small{display:block;color:var(--muted);margin-top:3px}
+    .supportIntakeContext{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}
+    .supportIntakeContext .item{padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:#fff}
+    .supportIntakeActions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}
+    @media(max-width:720px){.supportIntakeFlow,.supportIntakeContext{grid-template-columns:1fr}}
     .supportPhoneLookupMeta{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
     @media(max-width:640px){.supportPhoneLookupForm{grid-template-columns:1fr}.supportPhoneLookupForm button{width:100%}}
     .supportActionPanel{border:1px solid var(--line);background:#fff;border-radius:18px;padding:16px}
@@ -7983,7 +7991,12 @@
   async function renderSupportNew(){
     const customers=await rpc('support_customer_directory');
     $('#home').innerHTML=
-      pageIntro('問い合わせ受付','CallConnectの入電、顧客または自社からのチャットを案件として登録します。')+
+      pageIntro('新規受付','顧客を確認したら、内容を入力してそのまま対応開始できます。')+
+      '<div class="supportIntakeFlow">'+
+        '<div class="supportIntakeStep done"><strong>1. 顧客確認</strong><small>電話番号検索から顧客を選択</small></div>'+
+        '<div class="supportIntakeStep active"><strong>2. 受付内容</strong><small>機器・内容・優先度を確認</small></div>'+
+        '<div class="supportIntakeStep"><strong>3. 対応開始</strong><small>AI・ナレッジへ自動で移動</small></div>'+
+      '</div>'+
       '<section class="card section">'+
         '<form id="supportNewForm">'+
           '<div class="modalGrid2">'+
@@ -7991,15 +8004,21 @@
               (customers||[]).map(c=>'<option value="'+esc(c.id)+'">'+esc(c.customer_code||'—')+' / '+esc(c.name)+'</option>').join('')+
             '</select></div>'+
             '<div class="field"><label>受付経路</label><select id="supportNewSource"><option value="callconnect">CallConnect 入電</option><option value="customer_chat">顧客からチャット</option><option value="internal_chat">自社からチャット</option><option value="other">その他</option></select></div>'+
-            '<div class="field"><label>優先度</label><select id="supportNewPriority"><option value="normal">通常</option><option value="low">低</option><option value="high">高</option><option value="urgent">緊急</option></select></div>'+
             '<div class="field"><label>対象機器</label><select id="supportNewAsset"><option value="">指定なし</option></select></div>'+
+            '<div class="field"><label>優先度</label><select id="supportNewPriority"><option value="normal">通常</option><option value="high">高</option><option value="urgent">緊急</option><option value="low">低</option></select></div>'+
+          '</div>'+
+          '<div id="supportNewContext"></div>'+
+          '<div class="field"><label>受付内容</label><textarea id="supportNewDescription" rows="5" placeholder="症状・エラー・いつから・何をしたいか、分かる範囲で入力"></textarea></div>'+
+          '<div class="modalGrid2">'+
+            '<div class="field"><label>件名（未入力なら自動作成）</label><input id="supportNewSubject" placeholder="例：印刷できない / Outlook設定"></div>'+
             '<div class="field"><label>対象契約</label><select id="supportNewContract"><option value="">指定なし</option></select></div>'+
           '</div>'+
-          '<div class="field"><label>件名</label><input id="supportNewSubject" required></div>'+
-          '<div class="field"><label>内容</label><textarea id="supportNewDescription" rows="5"></textarea></div>'+
-          '<button class="primary" type="submit">問い合わせを登録</button>'+
+          '<div class="supportIntakeActions">'+
+            '<button id="supportNewStartBtn" class="primary" type="submit">登録して対応開始</button>'+
+            '<button id="supportNewSaveOnlyBtn" class="ghost" type="button">登録だけする</button>'+
+            '<span class="muted">対応開始すると、自分を担当にしてAI・ナレッジ画面へ進みます。</span>'+
+          '</div>'+
         '</form>'+
-        '<div id="supportNewContext" style="margin-top:14px"></div>'+
         '<div id="supportNewMsg" class="notice hidden"></div>'+
       '</section>';
 
@@ -8013,7 +8032,15 @@
         const ctx=await rpc('support_customer_context',{p_customer_id:id});
         $('#supportNewAsset').innerHTML='<option value="">指定なし</option>'+(ctx.assets||[]).map(a=>'<option value="'+esc(a.id)+'">'+esc(a.asset_number||'—')+' / '+esc(a.model_name||'')+'</option>').join('');
         $('#supportNewContract').innerHTML='<option value="">指定なし</option>'+(ctx.contracts||[]).map(c=>'<option value="'+esc(c.id)+'">'+esc(c.contract_number||'—')+' / '+esc(statusText(c.status))+'</option>').join('');
-        $('#supportNewContext').innerHTML='<div class="notice"><strong>'+esc(ctx.customer?.name||'')+'</strong> / 電話 '+esc(ctx.customer?.phone||'—')+' / 登録機器 '+esc((ctx.assets||[]).length)+'台 / 過去案件 '+esc((ctx.tickets||[]).length)+'件</div>';
+        if((ctx.assets||[]).length===1) $('#supportNewAsset').value=ctx.assets[0].id;
+        if((ctx.contracts||[]).length===1) $('#supportNewContract').value=ctx.contracts[0].id;
+        const activeTickets=(ctx.tickets||[]).filter(t=>t.status!=='closed').slice(0,3);
+        $('#supportNewContext').innerHTML=
+          '<div class="supportIntakeContext">'+
+            '<div class="item"><strong>'+esc(ctx.customer?.name||'')+'</strong><br><span class="muted">'+esc(ctx.customer?.phone||'—')+'</span></div>'+
+            '<div class="item"><strong>登録機器 '+esc((ctx.assets||[]).length)+'台</strong><br><span class="muted">'+esc((ctx.assets||[])[0]?.model_name||'機器未登録')+'</span></div>'+
+            '<div class="item"><strong>対応中 '+esc(activeTickets.length)+'件</strong><br><span class="muted">'+esc(activeTickets[0]?.subject||'対応中案件なし')+'</span></div>'+
+          '</div>';
       }catch(err){ notice('#supportNewMsg',err.message||String(err)); }
     };
 
@@ -8031,27 +8058,57 @@
       $('#supportNewDescription').focus();
     }
 
-    $('#supportNewForm').onsubmit=async e=>{
-      e.preventDefault(); const btn=e.submitter; if(btn) btn.disabled=true;
+    const createAndContinue=async(startNow)=>{
+      const startBtn=$('#supportNewStartBtn');
+      const saveBtn=$('#supportNewSaveOnlyBtn');
+      if(startBtn) startBtn.disabled=true;
+      if(saveBtn) saveBtn.disabled=true;
       try{
         const sourceLabel={callconnect:'CallConnect 入電',customer_chat:'顧客からチャット',internal_chat:'自社からチャット',other:'その他'}[$('#supportNewSource').value]||'その他';
         const body=$('#supportNewDescription').value.trim();
+        const customerText=$('#supportNewCustomer').selectedOptions?.[0]?.textContent||'問い合わせ';
+        let subject=$('#supportNewSubject').value.trim();
+        if(!subject){
+          const firstLine=body.split(/\r?\n/).map(x=>x.trim()).find(Boolean)||'';
+          subject=firstLine?firstLine.slice(0,70):sourceLabel+'：'+customerText.split(' / ').pop();
+        }
         const result=await rpc('create_support_ticket',{
           p_customer_id:$('#supportNewCustomer').value,
           p_asset_id:$('#supportNewAsset').value||null,
           p_contract_id:$('#supportNewContract').value||null,
-          p_subject:$('#supportNewSubject').value.trim(),
+          p_subject:subject,
           p_description:'【受付経路】'+sourceLabel+(body?'\n\n'+body:''),
           p_priority:$('#supportNewPriority').value
         });
-        notice('#supportNewMsg','問い合わせを登録しました。'+(result?.ticket_number?' '+result.ticket_number:''),true);
-        toast('問い合わせを登録しました');
-        $('#supportNewForm').reset(); $('#supportNewContext').innerHTML='';
-        await go('support_cases');
-        if(result?.id) await renderTicketDetail(result.id);
-      }catch(err){ notice('#supportNewMsg',err.message||String(err)); }
-      finally{ if(btn) btn.disabled=false; }
+        if(!result?.id) throw new Error('登録した案件IDを取得できませんでした。');
+
+        if(startNow){
+          await rpc('claim_support_ticket',{p_ticket_id:result.id}).catch(()=>{});
+          await rpc('set_support_workflow_stage',{p_ticket_id:result.id,p_stage:'in_progress'}).catch(()=>{});
+          toast('受付を登録し、対応を開始しました');
+          await go('support_cases');
+          await renderTicketDetail(result.id);
+          setTimeout(()=>{
+            $('#supportAssistWorkspace')?.scrollIntoView({behavior:'smooth',block:'start'});
+            $('#ticketKnowledgeSearch')?.focus();
+          },250);
+        }else{
+          toast('問い合わせを登録しました');
+          await go('support_cases');
+        }
+      }catch(err){
+        notice('#supportNewMsg',err.message||String(err));
+      }finally{
+        if(startBtn) startBtn.disabled=false;
+        if(saveBtn) saveBtn.disabled=false;
+      }
     };
+
+    $('#supportNewForm').onsubmit=async e=>{
+      e.preventDefault();
+      await createAndContinue(true);
+    };
+    $('#supportNewSaveOnlyBtn').onclick=()=>createAndContinue(false);
   }
 
   async function renderSupportCases(){
