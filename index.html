@@ -4941,11 +4941,24 @@
     if(aal.error) throw aal.error;
     if(factors.error) throw factors.error;
 
-    const verified=[...(factors.data?.totp||[]),...(factors.data?.phone||[])].filter(x=>x.status==='verified');
+    const allFactors=[...(factors.data?.totp||[]),...(factors.data?.phone||[])];
+    const verified=allFactors.filter(x=>x.status==='verified');
     const trusted=trustedDevice();
 
+    const factorRows=verified.map((factor,index)=>
+      '<tr>'+
+        '<td><strong>'+esc(factor.friendly_name||('Authenticator '+(index+1)))+'</strong></td>'+
+        '<td>'+esc(factor.factor_type||factor.type||'totp')+'</td>'+
+        '<td><span class="pill good">登録済み</span></td>'+
+        '<td>'+esc(dateText(factor.created_at))+'</td>'+
+        '<td>'+(verified.length>1
+          ? '<button class="linkBtn securityFactorRemove" type="button" data-id="'+esc(factor.id)+'">解除</button>'
+          : '<span class="muted">最後の1件は解除不可</span>')+'</td>'+
+      '</tr>'
+    );
+
     $('#home').innerHTML=
-      pageIntro('セキュリティ','MFAとログイン状態を確認・管理します。')+
+      pageIntro('セキュリティ','MFA・パスワード・信頼済み端末・セッションを管理します。')+
       kpis([
         ['認証レベル',aal.data?.currentLevel||'—'],
         ['MFA登録',verified.length],
@@ -4953,17 +4966,30 @@
         ['ログイン',session.user.email||'—']
       ])+
       '<section class="card section">'+
-        '<h2>MFA</h2>'+
+        '<div class="formSectionHead"><span class="sectionNo">01</span><h2>MFA / Authenticator</h2></div>'+
         '<div class="notice '+(aal.data?.currentLevel==='aal2'?'ok':'error')+'">'+
           (aal.data?.currentLevel==='aal2'
             ? 'MFA認証済みです。現在のセッションはAAL2です。'
             : 'MFA認証が必要です。')+
         '</div>'+
-        '<p class="sectionDesc">登録済みAuthenticator: '+esc(verified.length)+'件</p>'+
-        '<p class="muted">QuoteFlow CloudではMFAを無効化できません。Authenticatorを変更する場合は、新しい端末へ登録を移行してから旧端末を外す運用にします。</p>'+
+        '<p class="sectionDesc">MFAは必須です。バックアップ用Authenticatorを追加しておくと、端末変更時の復旧がしやすくなります。</p>'+
+        dataTable(['名前','方式','状態','登録日','操作'],factorRows)+
+        '<div class="row" style="margin-top:14px"><button id="securityAddFactorBtn" class="primary" type="button">＋ Authenticatorを追加</button></div>'+
+        '<div id="securityMfaMsg" class="notice hidden"></div>'+
+        '<div id="securityEnrollBox" class="hidden" style="margin-top:16px">'+
+          '<div class="modalGrid2">'+
+            '<div><img id="securityEnrollQr" alt="MFA QRコード" style="max-width:220px;width:100%;background:white;padding:8px;border-radius:12px"></div>'+
+            '<div>'+
+              '<div class="field"><label>登録名</label><input id="securityFactorName" value="Backup Authenticator"></div>'+
+              '<div id="securityEnrollSecret" class="notice"></div>'+
+              '<div class="field"><label>6桁コード</label><input id="securityEnrollCode" inputmode="numeric" autocomplete="one-time-code" maxlength="8"></div>'+
+              '<div class="row"><button id="securityEnrollVerifyBtn" class="green" type="button">追加を完了</button><button id="securityEnrollCancelBtn" class="ghost" type="button">キャンセル</button></div>'+
+            '</div>'+
+          '</div>'+
+        '</div>'+
       '</section>'+
       '<section class="card section">'+
-        '<h2>パスワード変更</h2>'+
+        '<div class="formSectionHead"><span class="sectionNo">02</span><h2>パスワード変更</h2></div>'+
         '<p class="sectionDesc">現在のパスワードを確認してから変更します。変更後は他の端末のセッションを終了します。</p>'+
         '<form id="passwordChangeForm">'+
           '<div class="field"><label>現在のパスワード</label><input id="currentPassword" type="password" autocomplete="current-password" required></div>'+
@@ -4975,18 +5001,100 @@
         '<div id="passwordChangeMsg" class="notice hidden"></div>'+
       '</section>'+
       '<section class="card section">'+
-        '<h2>信頼済み端末</h2>'+
-        '<p class="sectionDesc">信頼済みにすると、このブラウザにMFA済みセッションを保持します。共有PCでは無効にしてください。</p>'+
+        '<div class="formSectionHead"><span class="sectionNo">03</span><h2>信頼済み端末</h2></div>'+
+        '<p class="sectionDesc">信頼済みにすると、このブラウザへMFA済みセッションを保持します。共有PCでは無効にしてください。</p>'+
         '<label class="row" style="margin:12px 0"><input id="securityTrustDevice" type="checkbox" '+(trusted?'checked':'')+'> この端末を信頼する</label>'+
         '<button id="securityTrustSave" class="primary" type="button">設定を保存</button>'+
         '<div id="securityTrustMsg" class="notice hidden"></div>'+
       '</section>'+
       '<section class="card section">'+
-        '<h2>セッション管理</h2>'+
+        '<div class="formSectionHead"><span class="sectionNo">04</span><h2>セッション管理</h2></div>'+
         '<p class="sectionDesc">現在の端末は残したまま、他のブラウザ・端末のログインセッションを終了できます。</p>'+
         '<button id="signOutOthersBtn" class="orange" type="button">他の端末をログアウト</button>'+
         '<div id="sessionManageMsg" class="notice hidden"></div>'+
       '</section>';
+
+    let enrollState=null;
+
+    $('#securityAddFactorBtn').onclick=async()=>{
+      const btn=$('#securityAddFactorBtn');
+      btn.disabled=true;
+      try{
+        const friendlyName=($('#securityFactorName')?.value||'Backup Authenticator').trim()||'Backup Authenticator';
+        const r=await supabase.auth.mfa.enroll({factorType:'totp',friendlyName});
+        if(r.error) throw r.error;
+        const ch=await supabase.auth.mfa.challenge({factorId:r.data.id});
+        if(ch.error) throw ch.error;
+        enrollState={factorId:r.data.id,challengeId:ch.data.id};
+        $('#securityEnrollQr').src=r.data.totp.qr_code;
+        $('#securityEnrollSecret').textContent='Secret: '+r.data.totp.secret;
+        $('#securityEnrollBox').classList.remove('hidden');
+        notice('#securityMfaMsg','AuthenticatorアプリでQRコードを読み取り、表示されたコードを入力してください。',true);
+      }catch(err){
+        notice('#securityMfaMsg',err.message||String(err));
+      }finally{
+        btn.disabled=false;
+      }
+    };
+
+    $('#securityEnrollVerifyBtn').onclick=async()=>{
+      const btn=$('#securityEnrollVerifyBtn');
+      btn.disabled=true;
+      try{
+        if(!enrollState?.factorId) throw new Error('Authenticatorの追加を最初からやり直してください。');
+        let challengeId=enrollState.challengeId;
+        if(!challengeId){
+          const ch=await supabase.auth.mfa.challenge({factorId:enrollState.factorId});
+          if(ch.error) throw ch.error;
+          challengeId=ch.data.id;
+        }
+        const v=await supabase.auth.mfa.verify({
+          factorId:enrollState.factorId,
+          challengeId,
+          code:$('#securityEnrollCode').value.trim()
+        });
+        if(v.error) throw v.error;
+        notice('#securityMfaMsg','Authenticatorを追加しました。',true);
+        toast('Authenticatorを追加しました');
+        await renderSecurity();
+      }catch(err){
+        notice('#securityMfaMsg',err.message||String(err));
+      }finally{
+        btn.disabled=false;
+      }
+    };
+
+    $('#securityEnrollCancelBtn').onclick=async()=>{
+      const factorId=enrollState?.factorId;
+      enrollState=null;
+      $('#securityEnrollBox').classList.add('hidden');
+      if(factorId){
+        try{ await supabase.auth.mfa.unenroll({factorId}); }catch(_){}
+      }
+    };
+
+    document.querySelectorAll('.securityFactorRemove').forEach(btn=>{
+      btn.onclick=async()=>{
+        if(verified.length<=1){
+          notice('#securityMfaMsg','MFA必須のため、最後のAuthenticatorは解除できません。');
+          return;
+        }
+        const ok=confirm('このAuthenticatorを解除します。別のAuthenticatorが利用できることを確認してください。');
+        if(!ok) return;
+        btn.disabled=true;
+        try{
+          const r=await supabase.auth.mfa.unenroll({factorId:btn.dataset.id});
+          if(r.error) throw r.error;
+          notice('#securityMfaMsg','Authenticatorを解除しました。',true);
+          toast('Authenticatorを解除しました');
+          await renderSecurity();
+        }catch(err){
+          notice('#securityMfaMsg',err.message||String(err));
+        }finally{
+          btn.disabled=false;
+        }
+      };
+    });
 
     $('#passwordChangeForm').onsubmit=async e=>{
       e.preventDefault();
@@ -4995,9 +5103,9 @@
       try{
         const currentPassword=$('#currentPassword').value;
         const newPassword=$('#newPassword').value;
-        const confirm=$('#newPasswordConfirm').value;
+        const confirmPassword=$('#newPasswordConfirm').value;
 
-        if(newPassword!==confirm) throw new Error('新しいパスワードが一致しません。');
+        if(newPassword!==confirmPassword) throw new Error('新しいパスワードが一致しません。');
         if(newPassword.length<12) throw new Error('新しいパスワードは12文字以上にしてください。');
         if(!/[A-Z]/.test(newPassword)) throw new Error('英大文字を1文字以上含めてください。');
         if(!/[a-z]/.test(newPassword)) throw new Error('英小文字を1文字以上含めてください。');
