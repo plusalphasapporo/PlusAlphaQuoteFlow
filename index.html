@@ -5040,9 +5040,12 @@
     const internal=role==='internal_admin'||role==='internal_staff';
     const support=role==='support_staff';
 
-    const detail=customer
-      ? await rpc('customer_ticket_detail',{p_ticket_id:ticketId})
-      : await rpc('support_ticket_workspace',{p_ticket_id:ticketId});
+    const [detail,knowledgeArticles]=customer
+      ? [await rpc('customer_ticket_detail',{p_ticket_id:ticketId}),[]]
+      : await Promise.all([
+          rpc('support_ticket_workspace',{p_ticket_id:ticketId}),
+          rpc('role_knowledge_articles')
+        ]);
 
     const t=detail?.ticket;
     if(!t) throw new Error('問い合わせが見つかりません。');
@@ -5058,6 +5061,34 @@
       rpc('internal_staff_options'),
       rpc('internal_customer_unified_workspace',{p_customer_id:t.customer_id})
     ]):[[],null];
+
+    const rawDescription=String(t.description||'');
+    const sourcePrefix='【受付経路】';
+    let intakeSource=customer?'顧客チャット':'未記録';
+    let displayDescription=rawDescription||'内容なし';
+    if(rawDescription.startsWith(sourcePrefix)){
+      const firstBreak=rawDescription.indexOf('\n');
+      intakeSource=(firstBreak>=0?rawDescription.slice(sourcePrefix.length,firstBreak):rawDescription.slice(sourcePrefix.length)).trim()||'未記録';
+      displayDescription=(firstBreak>=0?rawDescription.slice(firstBreak).trim():'')||'内容なし';
+    }
+    const aiState=bootData?.integrations?.ai?.state||'disabled';
+    const aiStateText={connected:'接続済み',degraded:'一部障害',manual:'手動運用',disabled:'未接続'}[aiState]||aiState;
+    const assistSectionNo=internal?'02':'01';
+    const firstLineAssist=!customer
+      ? '<section class="formSection"><div class="formSectionHead"><span class="sectionNo">'+assistSectionNo+'</span><h3>一次対応フロー</h3></div>'+
+          '<div class="notice"><strong>受付内容を確認 → ナレッジ/マニュアルで切り分け → 顧客へ案内 → 解決または自社へ引継ぎ</strong><br><span class="muted">候補は自動送信しません。内容を確認してから返信してください。</span></div>'+
+          '<div class="modalGrid2">'+
+            '<div class="item"><strong>受付経路</strong><p>'+esc(intakeSource)+'</p></div>'+
+            '<div class="item"><strong>AI連携状態</strong><p>'+esc(aiStateText)+'</p></div>'+
+          '</div>'+
+          '<div class="field"><label>ナレッジ・マニュアル検索</label><input id="ticketKnowledgeSearch" value="'+esc(t.subject||'')+'" placeholder="症状・機種名・エラー内容など"></div>'+
+          '<div id="ticketKnowledgeCandidates"></div>'+
+          '<div class="row" style="margin-top:12px">'+
+            (t.status!=='closed'?'<button id="ticketAssistSolved" class="green" type="button">解決して完了</button>':'')+
+            (support&&t.status!=='closed'?'<button id="ticketAssistEscalate" class="orange" type="button">解決できない → 自社へ引継ぎ</button>':'')+
+          '</div>'+
+        '</section>'
+      : '';
 
     const visibilityLabel=v=>({customer:'顧客向け',support:'サポート内',internal:'社内のみ'}[v]||v||'顧客向け');
     const messagesHtml=messages.length
@@ -5121,14 +5152,16 @@
           ['優先度',t.priority||'normal'],
           ['作成日',dateText(t.created_at)],
           ['更新日',dateText(t.updated_at)],
+          ['受付経路',intakeSource],
           ['契約',contract?.contract_number||'未指定'],
           ['機器',asset?.asset_number||'未指定']
         ])+
         '<div class="modalGrid2">'+
-          '<section class="card section" style="box-shadow:none;margin:0"><h3>案件概要</h3><div class="item"><strong>件名</strong><p>'+esc(t.subject||'')+'</p></div><div class="item"><strong>内容</strong><p style="white-space:pre-wrap">'+esc(t.description||'内容なし')+'</p></div><div class="item"><strong>顧客</strong><p>'+esc(cust?.customer_code||'—')+' / '+esc(cust?.name||'—')+'</p></div></section>'+
+          '<section class="card section" style="box-shadow:none;margin:0"><h3>案件概要</h3><div class="item"><strong>件名</strong><p>'+esc(t.subject||'')+'</p></div><div class="item"><strong>内容</strong><p style="white-space:pre-wrap">'+esc(displayDescription)+'</p></div><div class="item"><strong>顧客</strong><p>'+esc(cust?.customer_code||'—')+' / '+esc(cust?.name||'—')+'</p></div></section>'+
           '<section class="card section" style="box-shadow:none;margin:0"><h3>連絡・対象情報</h3><div class="item"><strong>主担当者</strong><p>'+esc(primary?.name||'未登録')+'<br><span class="muted">'+esc(primary?.phone||primary?.email||'連絡先未登録')+'</span></p></div><div class="item"><strong>契約</strong><p>'+(contract?esc(contract.contract_number||'—'):'未指定')+'</p></div><div class="item"><strong>機器</strong><p>'+(asset?esc(asset.asset_number||'—')+' / '+esc(asset.model_name||''):'未指定')+'</p></div></section>'+
         '</div>'+
         internalEdit+
+        firstLineAssist+
         actionButtons+
         '<section class="section"><h3>対応履歴・メッセージ</h3>'+messagesHtml+
           '<form id="ticketMessageForm" class="card section" style="box-shadow:none">'+visibilitySelect+'<div class="field"><label>返信</label><textarea id="ticketMessageBody" rows="4" required></textarea></div><button class="primary" type="submit">メッセージを送信</button></form><div id="ticketMessageMsg" class="notice hidden"></div></section>'+
@@ -5138,6 +5171,59 @@
 
     $('#ticketDetailClose').onclick=()=>{$('#ticketDetailHost').innerHTML='';};
     $('#ticketDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
+
+    if(!customer){
+      const knowledgeSource=(knowledgeArticles||[]).filter(x=>x.is_active!==false);
+      const renderKnowledgeCandidates=()=>{
+        const q=($('#ticketKnowledgeSearch')?.value||'').trim().toLowerCase();
+        const terms=q.split(/[\s　、。・,\/\\\-]+/).map(x=>x.trim()).filter(x=>x.length>=2);
+        const scored=knowledgeSource.map(x=>{
+          const title=String(x.title||'').toLowerCase();
+          const category=String(x.category||'').toLowerCase();
+          const tags=(x.tags||[]).join(' ').toLowerCase();
+          const body=String(x.body||'').toLowerCase();
+          let score=0;
+          terms.forEach(term=>{
+            if(title.includes(term)) score+=8;
+            if(category.includes(term)) score+=4;
+            if(tags.includes(term)) score+=4;
+            if(body.includes(term)) score+=1;
+          });
+          return {x,score};
+        }).filter(v=>!q||v.score>0).sort((a,b)=>b.score-a.score).slice(0,5);
+        const host=$('#ticketKnowledgeCandidates');
+        if(!host) return;
+        host.innerHTML=scored.length
+          ? '<div class="row between" style="margin:10px 0"><strong>候補ナレッジ</strong><span class="muted">'+scored.length+'件表示</span></div>'+
+            scored.map(v=>{
+              const x=v.x;
+              const body=String(x.body||'');
+              const preview=body.length>240?body.slice(0,240)+'…':body;
+              return '<article class="item"><div class="row between"><div><strong>'+esc(x.title||'')+'</strong><br><span class="muted">'+esc(x.category||'')+'</span></div><button class="linkBtn ticketKnowledgeUse" type="button" data-id="'+esc(x.id)+'">返信欄に下書き</button></div><p style="white-space:pre-wrap">'+esc(preview)+'</p></article>';
+            }).join('')
+          : '<div class="empty">一致するナレッジはありません。検索語を変えるか、自社へ引き継いでください。</div>';
+        document.querySelectorAll('.ticketKnowledgeUse').forEach(btn=>btn.onclick=()=>{
+          const article=knowledgeSource.find(x=>String(x.id)===String(btn.dataset.id));
+          if(!article) return;
+          const body=$('#ticketMessageBody');
+          if(!body) return;
+          body.value='【'+String(article.title||'ナレッジ')+'】\n'+String(article.body||'');
+          body.focus();
+          body.scrollIntoView({behavior:'smooth',block:'center'});
+          toast('返信欄にナレッジを下書きしました');
+        });
+      };
+      const knowledgeSearch=$('#ticketKnowledgeSearch');
+      if(knowledgeSearch){knowledgeSearch.oninput=renderKnowledgeCandidates;renderKnowledgeCandidates();}
+      const solved=$('#ticketAssistSolved');
+      if(solved) solved.onclick=()=>$('#ticketCloseBtn')?.click();
+      const escalate=$('#ticketAssistEscalate');
+      if(escalate) escalate.onclick=()=>{
+        $('#ticketHandoffBox')?.classList.remove('hidden');
+        $('#handoffReason')?.focus();
+        $('#ticketHandoffBox')?.scrollIntoView({behavior:'smooth',block:'center'});
+      };
+    }
 
     if(internal){
       $('#ticketProfileForm').onsubmit=async e=>{
@@ -6216,6 +6302,7 @@
             '<div class="field"><label>顧客</label><select id="supportNewCustomer" required><option value="">選択してください</option>'+
               (customers||[]).map(c=>'<option value="'+esc(c.id)+'">'+esc(c.customer_code||'—')+' / '+esc(c.name)+'</option>').join('')+
             '</select></div>'+
+            '<div class="field"><label>受付経路</label><select id="supportNewSource"><option value="callconnect">CallConnect</option><option value="customer_chat">顧客チャット</option><option value="other">その他</option></select></div>'+
             '<div class="field"><label>優先度</label><select id="supportNewPriority"><option value="normal">通常</option><option value="low">低</option><option value="high">高</option><option value="urgent">緊急</option></select></div>'+
             '<div class="field"><label>対象機器</label><select id="supportNewAsset"><option value="">指定なし</option></select></div>'+
             '<div class="field"><label>対象契約</label><select id="supportNewContract"><option value="">指定なし</option></select></div>'+
@@ -6245,17 +6332,21 @@
     $('#supportNewForm').onsubmit=async e=>{
       e.preventDefault(); const btn=e.submitter; if(btn) btn.disabled=true;
       try{
+        const sourceLabel={callconnect:'CallConnect',customer_chat:'顧客チャット',other:'その他'}[$('#supportNewSource').value]||'その他';
+        const body=$('#supportNewDescription').value.trim();
         const result=await rpc('create_support_ticket',{
           p_customer_id:$('#supportNewCustomer').value,
           p_asset_id:$('#supportNewAsset').value||null,
           p_contract_id:$('#supportNewContract').value||null,
           p_subject:$('#supportNewSubject').value.trim(),
-          p_description:$('#supportNewDescription').value.trim()||null,
+          p_description:'【受付経路】'+sourceLabel+(body?'\n\n'+body:''),
           p_priority:$('#supportNewPriority').value
         });
         notice('#supportNewMsg','問い合わせを登録しました。'+(result?.ticket_number?' '+result.ticket_number:''),true);
         toast('問い合わせを登録しました');
         $('#supportNewForm').reset(); $('#supportNewContext').innerHTML='';
+        await go('support_cases');
+        if(result?.id) await renderTicketDetail(result.id);
       }catch(err){ notice('#supportNewMsg',err.message||String(err)); }
       finally{ if(btn) btn.disabled=false; }
     };
