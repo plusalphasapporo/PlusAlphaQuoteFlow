@@ -322,7 +322,7 @@
     'customer_ticket_detail','internal_numbering_settings','internal_accounts_list',
     'internal_account_companies','internal_audit_workspace','internal_document_profile','internal_demo_seed_status','internal_company_settings','internal_entity_audit_history',
     'internal_products_list','internal_lease_rates_list','internal_order_profitability','internal_customer_unified_workspace','internal_receiving_workspace','internal_order_operation','role_knowledge_articles',
-    'support_customer_directory','support_asset_directory','support_handoff_history','support_customer_context','support_workflow_states','support_ticket_workflow_state','support_unread_notifications','support_unread_handoff_updates','support_deadline_states','support_ticket_deadline_state',
+    'support_customer_directory','support_asset_directory','support_handoff_history','support_customer_context','support_workflow_states','support_ticket_workflow_state','support_unread_notifications','support_unread_handoff_updates','support_deadline_states','support_ticket_deadline_state','support_assignment_states','support_ticket_assignment_state',
     'internal_case_directory','internal_handoff_history','internal_knowledge_articles'
   ]);
 
@@ -869,6 +869,18 @@
     return '<span class="pill good">'+esc(label)+'</span>';
   }
 
+  function supportAssigneeLabel(a){
+    if(!a?.support_assigned_user_id) return '未担当';
+    if(a.is_mine) return '自分が担当';
+    return a.support_assigned_user_name||'他担当者';
+  }
+
+  function supportAssigneeBadge(a){
+    if(!a?.support_assigned_user_id) return '<span class="hold">未担当</span>';
+    if(a.is_mine) return '<span class="pill good">自分が担当</span>';
+    return '<span class="pill">'+esc(a.support_assigned_user_name||'他担当者')+'</span>';
+  }
+
   function supportDeadlineLabel(state){
     return ({overdue:'期限超過',due_today:'本日期限',scheduled:'期限設定済み',unset:'期限未設定',completed:'完了'}[state]||'期限未設定');
   }
@@ -1402,24 +1414,28 @@
     }
 
     if(role==='support_staff'){
-      const [h,workspace,workflowStates,unread,handoffUpdates,deadlineStates]=await Promise.all([
+      const [h,workspace,workflowStates,unread,handoffUpdates,deadlineStates,assignmentStates]=await Promise.all([
         rpc('support_home'),
         rpc('internal_support_cases_list'),
         rpc('support_workflow_states'),
         rpc('support_unread_notifications'),
         rpc('support_unread_handoff_updates'),
-        rpc('support_deadline_states')
+        rpc('support_deadline_states'),
+        rpc('support_assignment_states')
       ]);
       const stageMap={};
       (workflowStates||[]).forEach(x=>stageMap[x.ticket_id]=x.support_stage);
       const deadlineMap={};
       (deadlineStates||[]).forEach(x=>deadlineMap[x.ticket_id]=x);
+      const assignmentMap={};
+      (assignmentStates||[]).forEach(x=>assignmentMap[x.ticket_id]=x);
       const tickets=(workspace?.tickets||[]).map(x=>({
         ...x,
         support_stage:stageMap[x.id]||((x.status==='closed')?'completed':'unhandled'),
         deadline_state:deadlineMap[x.id]?.deadline_state||'unset',
         first_response_due_at:deadlineMap[x.id]?.first_response_due_at||null,
-        resolution_due_at:deadlineMap[x.id]?.resolution_due_at||null
+        resolution_due_at:deadlineMap[x.id]?.resolution_due_at||null,
+        support_assignment:assignmentMap[x.id]||{support_assigned_user_id:null,support_assigned_user_name:null,is_mine:false}
       }));
       const priorityRank={urgent:0,high:1,normal:2,low:3};
       const queueSort=(a,b)=>{
@@ -1468,7 +1484,7 @@
         ? items.slice(0,5).map(t=>
             '<div class="supportQueueItem">'+
               '<div><strong>'+esc(t.ticket_number||'—')+' '+esc(t.subject||'')+'</strong>'+
-                '<small>'+esc(t.customer_name||'—')+' / '+supportRequestTypeLabel(t.request_type)+' / '+(t.priority==='urgent'?'緊急':t.priority==='high'?'高':'通常')+
+                '<small>'+esc(t.customer_name||'—')+' / '+supportRequestTypeLabel(t.request_type)+' / '+supportAssigneeLabel(t.support_assignment)+' / '+(t.priority==='urgent'?'緊急':t.priority==='high'?'高':'通常')+
                 (t.attachment_count? ' / 写真 '+esc(t.attachment_count)+'件':'')+'</small></div>'+
               '<button class="linkBtn supportPriorityOpen" type="button" data-id="'+esc(t.id)+'">開く</button>'+
             '</div>'
@@ -1508,6 +1524,8 @@
           ? '<section class="card section"><div class="row between"><div><h2>新着の障害・設定依頼</h2><p class="sectionDesc">まだあなたが開いていない案件です。確認すると既読になります。</p></div><span class="hold">'+esc(unreadItems.length)+'件未読</span></div>'+dataTable(['新着','種別','顧客','件名','登録日','操作'],unreadRows)+'</section>'
           : '')+
         kpis([
+          ['未担当',tickets.filter(t=>t.status!=='closed'&&!t.support_assignment?.support_assigned_user_id).length],
+          ['自分の担当',tickets.filter(t=>t.status!=='closed'&&t.support_assignment?.is_mine).length],
           ['未対応の障害',unhandledIncidents.length],
           ['本日の設定依頼',todaySettings.length],
           ['TeamViewer待ち',remoteWaiting.length],
@@ -1543,9 +1561,9 @@
         '</section>'+
         '<section class="card section"><div class="row between"><div><h2>最近の担当案件</h2><p class="sectionDesc">直近の案件を確認できます。</p></div></div>'+
           dataTable(
-            ['番号','種別','工程','期限','顧客','件名','優先度','操作'],
+            ['番号','種別','担当','工程','期限','顧客','件名','優先度','操作'],
             tickets.slice().sort((a,b)=>timeValue(b.updated_at)-timeValue(a.updated_at)).slice(0,10).map(t=>
-              '<tr><td>'+esc(t.ticket_number||'—')+'</td><td>'+supportRequestTypeBadge(t.request_type)+'</td><td>'+supportStageBadge(t.support_stage)+'</td><td>'+supportDeadlineBadge(t.deadline_state)+'</td><td>'+esc(t.customer_name||'')+'</td><td>'+esc(t.subject||'')+'</td><td>'+esc(t.priority||'normal')+'</td><td><button class="linkBtn supportPriorityOpen" type="button" data-id="'+esc(t.id)+'">開く</button></td></tr>'
+              '<tr><td>'+esc(t.ticket_number||'—')+'</td><td>'+supportRequestTypeBadge(t.request_type)+'</td><td>'+supportAssigneeBadge(t.support_assignment)+'</td><td>'+supportStageBadge(t.support_stage)+'</td><td>'+supportDeadlineBadge(t.deadline_state)+'</td><td>'+esc(t.customer_name||'')+'</td><td>'+esc(t.subject||'')+'</td><td>'+esc(t.priority||'normal')+'</td><td><button class="linkBtn supportPriorityOpen" type="button" data-id="'+esc(t.id)+'">開く</button></td></tr>'
             )
           )+
         '</section>';
@@ -5590,13 +5608,14 @@
     const internal=role==='internal_admin'||role==='internal_staff';
     const support=role==='support_staff';
 
-    const [detail,knowledgeArticles,supportStage,deadlineState]=customer
-      ? [await rpc('customer_ticket_detail',{p_ticket_id:ticketId}),[],null,null]
+    const [detail,knowledgeArticles,supportStage,deadlineState,assignmentState]=customer
+      ? [await rpc('customer_ticket_detail',{p_ticket_id:ticketId}),[],null,null,null]
       : await Promise.all([
           rpc('support_ticket_workspace',{p_ticket_id:ticketId}),
           rpc('role_knowledge_articles'),
           rpc('support_ticket_workflow_state',{p_ticket_id:ticketId}),
-          rpc('support_ticket_deadline_state',{p_ticket_id:ticketId})
+          rpc('support_ticket_deadline_state',{p_ticket_id:ticketId}),
+          rpc('support_ticket_assignment_state',{p_ticket_id:ticketId})
         ]);
 
     const t=detail?.ticket;
@@ -5641,7 +5660,9 @@
     const teamviewerStateText={connected:'接続済み',degraded:'一部障害',manual:'手動運用',disabled:'未接続'}[teamviewerState]||teamviewerState;
     const assistSectionNo=internal?'02':'01';
     const supportStageControl=support && t.status!=='closed'
-      ? '<div class="notice"><div class="row between"><div><strong>現在の対応工程</strong><div style="margin-top:6px">'+supportStageBadge(supportStage)+'</div></div><div class="supportQuickActions">'+
+      ? '<div class="notice"><div class="row between"><div><strong>現在の対応工程</strong><div style="margin-top:6px">'+supportStageBadge(supportStage)+'</div><div style="margin-top:8px"><strong>サポート担当：</strong> '+supportAssigneeBadge(assignmentState)+'</div></div><div class="supportQuickActions">'+
+          (!assignmentState?.support_assigned_user_id?'<button id="ticketClaimSupport" class="primary" type="button">自分が担当する</button>':'')+
+          (assignmentState?.is_mine?'<button id="ticketReleaseSupport" class="ghost" type="button">担当を解除</button>':'')+
           (supportStage==='unhandled'?'<button id="ticketStageStart" class="primary" type="button">対応開始</button>':'')+
           (supportStage==='in_progress'?'<button id="ticketStageRemoteWait" class="orange" type="button">TeamViewer待ちにする</button>':'')+
           (supportStage==='teamviewer_waiting'?'<button id="ticketStageResume" class="primary" type="button">対応中に戻す</button>':'')+
@@ -5749,6 +5770,7 @@
         '<div class="quoteDetailHead"><div><h2>サポート案件カルテ</h2><p class="sectionDesc">'+esc(t.ticket_number||'—')+' / '+supportRequestTypeLabel(t.request_type)+' / '+esc(t.subject||'')+'</p></div><button id="ticketDetailClose" class="ghost" type="button">閉じる</button></div>'+
         kpis([
           ['種別',supportRequestTypeLabel(t.request_type)],
+          ['サポート担当',supportAssigneeLabel(assignmentState)],
           ['対応工程',supportStageLabel(supportStage||((t.status==='closed')?'completed':'unhandled'))],
           ['期限',supportDeadlineLabel(deadlineState?.deadline_state)],
           ['状態',statusText(t.status)],
@@ -5822,6 +5844,27 @@
     };
 
     if(!customer){
+      const claimBtn=$('#ticketClaimSupport');
+      if(claimBtn) claimBtn.onclick=async()=>{
+        claimBtn.disabled=true;
+        try{
+          await rpc('claim_support_ticket',{p_ticket_id:t.id});
+          toast('この案件を担当しました');
+          await renderTicketDetail(t.id);
+        }catch(err){notice('#ticketActionMsg',err.message||String(err));}
+        finally{claimBtn.disabled=false;}
+      };
+      const releaseBtn=$('#ticketReleaseSupport');
+      if(releaseBtn) releaseBtn.onclick=async()=>{
+        releaseBtn.disabled=true;
+        try{
+          await rpc('release_support_ticket',{p_ticket_id:t.id});
+          toast('担当を解除しました');
+          await renderTicketDetail(t.id);
+        }catch(err){notice('#ticketActionMsg',err.message||String(err));}
+        finally{releaseBtn.disabled=false;}
+      };
+
       const setStage=async(stage)=>{
         try{
           await rpc('set_support_workflow_stage',{p_ticket_id:t.id,p_stage:stage});
@@ -6085,23 +6128,27 @@
       return;
     }
 
-    const [workspace,customers,staff,workflowStates,deadlineStates]=await Promise.all([
+    const [workspace,customers,staff,workflowStates,deadlineStates,assignmentStates]=await Promise.all([
       rpc('internal_support_cases_list'),
       internal?rpc('internal_customers_list'):rpc('support_customer_directory'),
       internal?rpc('internal_staff_options'):Promise.resolve([]),
       rpc('support_workflow_states'),
-      rpc('support_deadline_states')
+      rpc('support_deadline_states'),
+      rpc('support_assignment_states')
     ]);
     const workflowMap={};
     (workflowStates||[]).forEach(x=>workflowMap[x.ticket_id]=x.support_stage);
     const deadlineMap={};
     (deadlineStates||[]).forEach(x=>deadlineMap[x.ticket_id]=x);
+    const assignmentMap={};
+    (assignmentStates||[]).forEach(x=>assignmentMap[x.ticket_id]=x);
     const data=(workspace?.tickets||[]).map(x=>({
       ...x,
       support_stage:workflowMap[x.id]||((x.status==='closed')?'completed':'unhandled'),
       deadline_state:deadlineMap[x.id]?.deadline_state||'unset',
       first_response_due_at:deadlineMap[x.id]?.first_response_due_at||null,
-      resolution_due_at:deadlineMap[x.id]?.resolution_due_at||null
+      resolution_due_at:deadlineMap[x.id]?.resolution_due_at||null,
+      support_assignment:assignmentMap[x.id]||{support_assigned_user_id:null,support_assigned_user_name:null,is_mine:false}
     }));
     const summary=workspace?.summary||{};
     const cmap={};
@@ -6124,6 +6171,12 @@
               '<button class="workspaceTab supportTypeTab" type="button" data-type="inquiry">顧客問い合わせ</button>'+
               '<button class="workspaceTab supportTypeTab" type="button" data-type="incident">障害</button>'+
               '<button class="workspaceTab supportTypeTab" type="button" data-type="setting_request">設定依頼</button>'+
+            '</div>'+
+            '<div id="supportAssigneeTabs" class="workspaceTabs" data-active="all">'+
+              '<button class="workspaceTab active supportAssigneeTab" type="button" data-assignee="all">全担当</button>'+
+              '<button class="workspaceTab supportAssigneeTab" type="button" data-assignee="unassigned">未担当</button>'+
+              '<button class="workspaceTab supportAssigneeTab" type="button" data-assignee="mine">自分の担当</button>'+
+              '<button class="workspaceTab supportAssigneeTab" type="button" data-assignee="others">他担当者</button>'+
             '</div>'+
             '<div id="supportStageTabs" class="workspaceTabs" data-active="all">'+
               '<button class="workspaceTab active supportStageTab" type="button" data-stage="all">全工程</button>'+
@@ -6153,12 +6206,16 @@
         if(support){
           const typeFilter=$('#supportTypeTabs')?.dataset.active||'all';
           const stageFilter=$('#supportStageTabs')?.dataset.active||'all';
+          const assigneeFilter=$('#supportAssigneeTabs')?.dataset.active||'all';
           if(typeFilter!=='all'&&t.request_type!==typeFilter) return false;
           if(stageFilter!=='all'&&t.support_stage!==stageFilter) return false;
+          if(assigneeFilter==='unassigned'&&t.support_assignment?.support_assigned_user_id) return false;
+          if(assigneeFilter==='mine'&&!t.support_assignment?.is_mine) return false;
+          if(assigneeFilter==='others'&&(!t.support_assignment?.support_assigned_user_id||t.support_assignment?.is_mine)) return false;
         }
         return !state.query||[
           t.ticket_number,t.customer_name,t.customer_code,t.subject,t.priority,t.status,supportRequestTypeLabel(t.request_type),
-          t.asset_number,t.asset_model_name,t.contract_number,t.assigned_internal_user_name
+          t.asset_number,t.asset_model_name,t.contract_number,t.assigned_internal_user_name,t.support_assignment?.support_assigned_user_name
         ].some(v=>String(v||'').toLowerCase().includes(state.query));
       });
       filtered=[...filtered].sort((a,b)=>{
@@ -6174,11 +6231,12 @@
       });
       updateListCount('supportCaseList',filtered.length,data.length);
       $('#supportCaseListHost').innerHTML=dataTable(
-        ['番号','種別','対応工程','期限','顧客','件名','状態','優先度','機器/契約','担当','最終対応','操作'],
+        ['番号','種別','サポート担当','対応工程','期限','顧客','件名','状態','優先度','機器/契約','自社担当','最終対応','操作'],
         filtered.map(t=>
           '<tr>'+
             '<td><strong>'+esc(t.ticket_number||'—')+'</strong></td>'+
             '<td>'+supportRequestTypeBadge(t.request_type)+'</td>'+
+            '<td>'+supportAssigneeBadge(t.support_assignment)+'</td>'+
             '<td>'+supportStageBadge(t.support_stage)+'</td>'+
             '<td>'+supportDeadlineBadge(t.deadline_state)+(t.first_response_due_at?'<br><span class="muted">初動 '+esc(dateTimeText(t.first_response_due_at))+'</span>':'')+'</td>'+
             '<td>'+esc(t.customer_name||'—')+'</td>'+
@@ -6195,6 +6253,12 @@
       document.querySelectorAll('.ticketDetail').forEach(btn=>btn.onclick=async()=>{btn.disabled=true;try{await renderTicketDetail(btn.dataset.id);}catch(err){toast(err.message||String(err));}finally{btn.disabled=false;}});
     };
     if(support){
+      document.querySelectorAll('.supportAssigneeTab').forEach(btn=>btn.onclick=()=>{
+        const bar=$('#supportAssigneeTabs');
+        bar.dataset.active=btn.dataset.assignee||'all';
+        bar.querySelectorAll('.supportAssigneeTab').forEach(x=>x.classList.toggle('active',x===btn));
+        renderRows();
+      });
       document.querySelectorAll('.supportTypeTab').forEach(btn=>btn.onclick=()=>{
         const bar=$('#supportTypeTabs');
         bar.dataset.active=btn.dataset.type||'all';
