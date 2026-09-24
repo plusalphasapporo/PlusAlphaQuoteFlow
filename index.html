@@ -4390,26 +4390,17 @@
       customer_user:'顧客会社'
     }[r]||r||'—');
 
-    const rows=(accounts||[]).map(a=>
-      '<tr>'+
-        '<td><strong>'+esc(a.display_name||'—')+'</strong>'+(a.is_current_user?' <span class="pill good">自分</span>':'')+'</td>'+
-        '<td>'+esc(a.email||'—')+'</td>'+
-        '<td>'+esc(a.company_name||'—')+'</td>'+
-        '<td>'+esc(roleText(a.role))+'</td>'+
-        '<td>'+(a.is_active?'<span class="pill good">有効</span>':'<span class="pill bad">停止中</span>')+'</td>'+
-        '<td>'+(Number(a.mfa_count||0)>0?'<span class="pill good">登録済み</span>':'<span class="pill bad">未登録</span>')+'</td>'+
-        '<td>'+esc(a.session_count||0)+'</td>'+
-        '<td>'+esc(dateText(a.last_sign_in_at))+'</td>'+
-        '<td><button class="linkBtn accountEdit" type="button" data-id="'+esc(a.user_id)+'">編集</button></td>'+
-      '</tr>'
-    );
+    const items=(accounts||[]).map(a=>({
+      ...a,
+      ui_status:a.is_active?'active':'inactive'
+    }));
 
     const companyOptions=(companies||[]).map(c=>
       '<option value="'+esc(c.id)+'" data-type="'+esc(c.company_type)+'">'+esc(c.name)+' ('+esc(c.company_type)+')</option>'
     ).join('');
 
     $('#home').innerHTML=
-      pageIntro('アカウント管理','新規招待、権限、利用状態、MFA登録状況、セッション数を管理します。')+
+      pageIntro('アカウント管理','新規招待、権限、利用状態、MFA、セッションを検索・絞り込みできます。')+
       '<section class="card section">'+
         '<h2>新規アカウント招待</h2>'+
         '<p class="sectionDesc">初期パスワードは管理者側で設定しません。招待メールから本人が設定し、その後MFAを登録します。</p>'+
@@ -4428,8 +4419,177 @@
       '</section>'+
       '<div id="accountEditHost"></div>'+
       '<section class="card section">'+
-        dataTable(['表示名','メール','会社','権限','状態','MFA','セッション','最終ログイン','操作'],rows)+
+        '<h2>アカウント一覧</h2>'+
+        listToolbar('accountList',items,'ui_status','表示名・メール・会社・権限',[
+          ['name_asc','表示名順'],
+          ['last_desc','最終ログインが新しい順'],
+          ['created_desc','作成が新しい順'],
+          ['company_asc','会社名順'],
+          ['sessions_desc','セッション数が多い順']
+        ])+
+        '<div class="row" style="margin:12px 0;gap:8px;flex-wrap:wrap">'+
+          '<button id="accountRoleAll" class="primary accountRoleFilter" type="button" data-role="all">全権限</button>'+
+          '<button class="ghost accountRoleFilter" type="button" data-role="internal_admin">自社管理者</button>'+
+          '<button class="ghost accountRoleFilter" type="button" data-role="internal_staff">自社スタッフ</button>'+
+          '<button class="ghost accountRoleFilter" type="button" data-role="support_staff">サポート会社</button>'+
+          '<button class="ghost accountRoleFilter" type="button" data-role="customer_user">顧客会社</button>'+
+          '<select id="accountMfaFilter" style="max-width:180px"><option value="all">MFAすべて</option><option value="registered">MFA登録済み</option><option value="missing">MFA未登録</option></select>'+
+        '</div>'+
+        '<div id="accountListHost"></div>'+
       '</section>';
+
+    let activeRole='all';
+    const renderRows=()=>{
+      const state=listToolbarState('accountList');
+      const mfa=$('#accountMfaFilter')?.value||'all';
+      let filtered=items.filter(a=>{
+        if(state.status!=='all'&&a.ui_status!==state.status) return false;
+        if(activeRole!=='all'&&a.role!==activeRole) return false;
+        if(mfa==='registered'&&Number(a.mfa_count||0)<=0) return false;
+        if(mfa==='missing'&&Number(a.mfa_count||0)>0) return false;
+        if(!state.query) return true;
+        return [
+          a.display_name,a.email,a.company_name,a.company_type,roleText(a.role)
+        ].some(v=>String(v||'').toLowerCase().includes(state.query));
+      });
+
+      filtered=[...filtered].sort((a,b)=>{
+        if(state.sort==='last_desc') return timeValue(b.last_sign_in_at)-timeValue(a.last_sign_in_at);
+        if(state.sort==='created_desc') return timeValue(b.created_at)-timeValue(a.created_at);
+        if(state.sort==='company_asc') return compareText(a.company_name,b.company_name);
+        if(state.sort==='sessions_desc') return Number(b.session_count||0)-Number(a.session_count||0);
+        return compareText(a.display_name,b.display_name);
+      });
+
+      updateListCount('accountList',filtered.length,items.length);
+      $('#accountListHost').innerHTML=dataTable(
+        ['表示名','メール','会社','権限','状態','MFA','セッション','最終ログイン','操作'],
+        filtered.map(a=>
+          '<tr>'+
+            '<td><strong>'+esc(a.display_name||'—')+'</strong>'+(a.is_current_user?' <span class="pill good">自分</span>':'')+'</td>'+
+            '<td>'+esc(a.email||'—')+'</td>'+
+            '<td>'+esc(a.company_name||'—')+'</td>'+
+            '<td>'+esc(roleText(a.role))+'</td>'+
+            '<td>'+(a.is_active?'<span class="pill good">有効</span>':'<span class="pill bad">停止中</span>')+'</td>'+
+            '<td>'+(Number(a.mfa_count||0)>0?'<span class="pill good">登録済み</span>':'<span class="pill bad">未登録</span>')+'</td>'+
+            '<td>'+esc(a.session_count||0)+'</td>'+
+            '<td>'+esc(dateText(a.last_sign_in_at))+'</td>'+
+            '<td><button class="linkBtn accountEdit" type="button" data-id="'+esc(a.user_id)+'">編集</button></td>'+
+          '</tr>'
+        )
+      );
+
+      document.querySelectorAll('.accountEdit').forEach(btn=>{
+        btn.onclick=()=>openAccountEditor(btn.dataset.id);
+      });
+    };
+
+    const openAccountEditor=(userId)=>{
+      const a=items.find(x=>x.user_id===userId);
+      if(!a) return;
+
+      const companyType=a.company_type;
+      let roleOptions='';
+      if(companyType==='internal'){
+        roleOptions=
+          '<option value="internal_admin" '+(a.role==='internal_admin'?'selected':'')+'>自社管理者</option>'+
+          '<option value="internal_staff" '+(a.role==='internal_staff'?'selected':'')+'>自社スタッフ</option>';
+      }else if(companyType==='support'){
+        roleOptions='<option value="support_staff" selected>サポート会社</option>';
+      }else{
+        roleOptions='<option value="customer_user" selected>顧客会社</option>';
+      }
+
+      $('#accountEditHost').innerHTML=
+        '<section class="card section">'+
+          '<div class="quoteDetailHead">'+
+            '<div><h2>アカウント編集</h2><p class="sectionDesc">'+esc(a.email||'')+' / '+esc(a.company_name||'')+'</p></div>'+
+            '<button id="accountEditClose" class="ghost" type="button">閉じる</button>'+
+          '</div>'+
+          '<form id="accountEditForm">'+
+            '<div class="field"><label>表示名</label><input id="accountDisplayName" value="'+esc(a.display_name||'')+'" required></div>'+
+            '<div class="field"><label>権限</label><select id="accountRole" '+(a.is_current_user?'disabled':'')+'>'+roleOptions+'</select></div>'+
+            '<label class="row" style="margin:12px 0"><input id="accountActive" type="checkbox" '+(a.is_active?'checked':'')+' '+(a.is_current_user?'disabled':'')+'> アカウントを有効にする</label>'+
+            '<div class="notice">'+
+              'MFA: '+(Number(a.mfa_count||0)>0?'登録済み':'未登録')+
+              ' / セッション: '+esc(a.session_count||0)+
+              ' / 最終ログイン: '+esc(dateText(a.last_sign_in_at))+
+            '</div>'+
+            (a.is_current_user?'<p class="muted">自分自身の権限変更・利用停止・MFAリセットはできません。</p>':'')+
+            '<div class="row">'+
+              '<button class="primary" type="submit">変更を保存</button>'+
+              (!a.is_current_user && Number(a.mfa_count||0)>0?'<button id="accountMfaResetBtn" class="orange" type="button">MFAをリセット</button>':'')+
+            '</div>'+
+          '</form>'+
+          '<div id="accountEditMsg" class="notice hidden"></div>'+
+        '</section>';
+
+      $('#accountEditClose').onclick=()=>{$('#accountEditHost').innerHTML='';};
+      $('#accountEditHost').scrollIntoView({behavior:'smooth',block:'start'});
+
+      $('#accountEditForm').onsubmit=async e=>{
+        e.preventDefault();
+        const save=e.submitter;if(save)save.disabled=true;
+        try{
+          await rpc('update_account_profile',{
+            p_user_id:a.user_id,
+            p_display_name:$('#accountDisplayName').value.trim(),
+            p_role:a.is_current_user?a.role:$('#accountRole').value,
+            p_is_active:a.is_current_user?true:$('#accountActive').checked
+          });
+          notice('#accountEditMsg','アカウント情報を更新しました。',true);
+          toast('アカウントを更新しました');
+          setTimeout(()=>go('accounts'),350);
+        }catch(err){
+          const msg=String(err.message||err);
+          const ja=msg.includes('at least one active internal admin')
+            ? '有効な自社管理者を最低1名残す必要があります。'
+            : msg.includes('cannot change your own role')
+              ? '自分自身の権限は変更できません。'
+              : msg.includes('cannot deactivate your own account')
+                ? '自分自身のアカウントは停止できません。'
+                : msg;
+          notice('#accountEditMsg',ja);
+        }finally{
+          if(save) save.disabled=false;
+        }
+      };
+
+      const resetBtn=$('#accountMfaResetBtn');
+      if(resetBtn){
+        resetBtn.onclick=async()=>{
+          resetBtn.disabled=true;
+          try{
+            const {data,error}=await supabase.functions.invoke('admin-user',{
+              body:{action:'reset_mfa',userId:a.user_id}
+            });
+            if(error) throw error;
+            if(data?.error) throw new Error(data.message||data.error);
+            notice('#accountEditMsg','MFAをリセットしました。対象ユーザーは次回ログイン時にAuthenticatorの再登録が必要です。',true);
+            toast('MFAをリセットしました');
+            setTimeout(()=>go('accounts'),700);
+          }catch(err){
+            notice('#accountEditMsg',err.message||String(err));
+          }finally{
+            resetBtn.disabled=false;
+          }
+        };
+      }
+    };
+
+    document.querySelectorAll('.accountRoleFilter').forEach(btn=>{
+      btn.onclick=()=>{
+        activeRole=btn.dataset.role||'all';
+        document.querySelectorAll('.accountRoleFilter').forEach(x=>{
+          x.classList.toggle('primary',x===btn);
+          x.classList.toggle('ghost',x!==btn);
+        });
+        renderRows();
+      };
+    });
+    $('#accountMfaFilter').onchange=renderRows;
+    bindListToolbar('accountList',renderRows);
+    renderRows();
 
     function updateInviteRoles(){
       const select=$('#inviteCompany');
