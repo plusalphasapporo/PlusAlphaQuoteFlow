@@ -91,13 +91,15 @@
     <form id="loginForm">
       <div class="field"><label>メールアドレス</label><input id="email" type="email" required autocomplete="username"></div>
       <div class="field"><label>パスワード</label><input id="password" type="password" required autocomplete="current-password"></div>
+      <label class="row" style="margin:10px 0 14px"><input id="trustDevice" type="checkbox"> この端末を信頼する</label>
+      <p class="muted" style="margin-top:-6px">信頼済み端末ではログイン状態を保持します。共有端末ではチェックを外してください。</p>
       <button class="primary" style="width:100%" type="submit">ログイン</button>
     </form>
   </section>
 
   <section id="mfaView" class="card login hidden">
-    <h1>管理者MFA</h1>
-    <p class="muted">自社管理者は追加認証が必要です。</p>
+    <h1>MFA認証</h1>
+    <p class="muted">QuoteFlow Cloud は全アカウントで多要素認証が必須です。</p>
     <div id="mfaMsg" class="notice hidden"></div>
     <div id="mfaEnrollBox">
       <button id="enrollBtn" class="primary" type="button">Authenticatorを登録</button>
@@ -137,10 +139,44 @@
 <script type="module">
   import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+  const TRUST_DEVICE_KEY = 'quoteflow_trusted_device';
+  const AUTH_STORAGE_KEY = 'sb-dqtqoghnctdqoljxbjjz-auth-token';
+  const trustedDevice = () => localStorage.getItem(TRUST_DEVICE_KEY) === '1';
+  const authStorage = {
+    getItem(key){
+      if(trustedDevice()) return localStorage.getItem(key);
+      return sessionStorage.getItem(key);
+    },
+    setItem(key,value){
+      if(trustedDevice()){
+        localStorage.setItem(key,value);
+        sessionStorage.removeItem(key);
+      }else{
+        sessionStorage.setItem(key,value);
+        localStorage.removeItem(key);
+      }
+    },
+    removeItem(key){
+      localStorage.removeItem(key);
+      sessionStorage.removeItem(key);
+    }
+  };
+
+  if(!trustedDevice()){
+    localStorage.removeItem(AUTH_STORAGE_KEY);
+  }
+
   const supabase = createClient(
     "https://dqtqoghnctdqoljxbjjz.supabase.co",
     "sb_publishable_J8rfoe8B1YGnEA_xua5Ppw_Nu4T4wc5",
-    { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } }
+    {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        storage: authStorage
+      }
+    }
   );
 
   const $ = (s) => document.querySelector(s);
@@ -2063,15 +2099,30 @@
 
   async function prepareMfa(){
     show('mfaView');
+    $('#mfaEnrollBox').classList.remove('hidden');
+    $('#qrWrap').classList.add('hidden');
+    $('#mfaMsg').classList.add('hidden');
+    mfaState={};
+
+    const aal=await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if(aal.error) return notice('#mfaMsg',aal.error.message);
+    if(aal.data?.currentLevel==='aal2'){
+      return boot();
+    }
+
     const f=await supabase.auth.mfa.listFactors();
     if(f.error) return notice('#mfaMsg',f.error.message);
+
     const verified=[...(f.data?.totp||[]),...(f.data?.phone||[])].find(x=>x.status==='verified');
     if(verified){
       $('#mfaEnrollBox').classList.add('hidden');
       const ch=await supabase.auth.mfa.challenge({factorId:verified.id});
       if(ch.error) return notice('#mfaMsg',ch.error.message);
       mfaState={factorId:verified.id,challengeId:ch.data.id};
+      return;
     }
+
+    notice('#mfaMsg','初回ログインのためAuthenticatorの登録が必要です。QRコードを登録後、6桁コードを入力してください。',true);
   }
 
   async function boot(){
@@ -2080,12 +2131,23 @@
       show('loginView');
       $('#logoutBtn').classList.add('hidden');
       $('#userBadge').classList.add('hidden');
+      $('#trustDevice').checked=trustedDevice();
       return;
     }
 
     $('#logoutBtn').classList.remove('hidden');
     $('#userBadge').textContent=session.user.email||'ログイン中';
     $('#userBadge').classList.remove('hidden');
+
+    const aal=await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if(aal.error){
+      show('loginView');
+      notice('#loginMsg',aal.error.message);
+      return;
+    }
+    if(aal.data?.currentLevel!=='aal2'){
+      return prepareMfa();
+    }
 
     try{
       bootData=await rpc('current_app_bootstrap');
@@ -2108,6 +2170,12 @@
   $('#loginForm').onsubmit=async e=>{
     e.preventDefault();
     $('#loginMsg').classList.add('hidden');
+    if($('#trustDevice').checked){
+      localStorage.setItem(TRUST_DEVICE_KEY,'1');
+    }else{
+      localStorage.removeItem(TRUST_DEVICE_KEY);
+      localStorage.removeItem(AUTH_STORAGE_KEY);
+    }
     const {error}=await supabase.auth.signInWithPassword({
       email:$('#email').value.trim(),
       password:$('#password').value
@@ -2120,7 +2188,9 @@
   $('#enrollBtn').onclick=async()=>{
     const r=await supabase.auth.mfa.enroll({factorType:'totp',friendlyName:'QuoteFlow Cloud'});
     if(r.error) return notice('#mfaMsg',r.error.message);
-    mfaState={factorId:r.data.id};
+    const ch=await supabase.auth.mfa.challenge({factorId:r.data.id});
+    if(ch.error) return notice('#mfaMsg',ch.error.message);
+    mfaState={factorId:r.data.id,challengeId:ch.data.id};
     $('#qr').src=r.data.totp.qr_code;
     $('#qrWrap').classList.remove('hidden');
     $('#secret').textContent='Secret: '+r.data.totp.secret;
@@ -2141,11 +2211,17 @@
     });
     if(v.error) return notice('#mfaMsg',v.error.message);
     $('#mfaCode').value='';
+    const aal=await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if(aal.error) return notice('#mfaMsg',aal.error.message);
+    if(aal.data?.currentLevel!=='aal2') return notice('#mfaMsg','MFA認証を完了できませんでした。もう一度お試しください。');
     await boot();
   };
 
   $('#logoutBtn').onclick=async()=>{
     await supabase.auth.signOut();
+    localStorage.removeItem(TRUST_DEVICE_KEY);
+    localStorage.removeItem(AUTH_STORAGE_KEY);
+    sessionStorage.removeItem(AUTH_STORAGE_KEY);
     bootData=null;
     currentPage='home';
     await boot();
