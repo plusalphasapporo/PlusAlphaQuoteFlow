@@ -3811,80 +3811,160 @@
       const [assets,contractRes,customers]=await Promise.all([
         rpc('internal_assets_list'),
         supabase.from('contracts')
-          .select('id,customer_id,contract_number,status,start_date,end_date,created_at')
+          .select('id,customer_id,contract_number,status,start_date,end_date,created_at,updated_at')
           .order('created_at',{ascending:false}),
         rpc('internal_customers_list')
       ]);
       if(contractRes.error) throw contractRes.error;
 
+      const contracts=contractRes.data||[];
       const cmap={};
       (customers||[]).forEach(c=>cmap[c.id]=c);
       const customerOptions=(customers||[]).map(c=>
         '<option value="'+esc(c.id)+'">'+esc(c.name||c.customer_code||c.id)+'</option>'
       ).join('');
 
-      const assetRows=(assets||[]).map(a=>
-        '<tr>'+
-          '<td><strong>'+esc(a.asset_number||'未採番')+'</strong></td>'+
-          '<td>'+esc(a.customer?.name||'—')+'</td>'+
-          '<td>'+esc(a.model_name||'—')+'</td>'+
-          '<td>'+esc(a.serial_number||'—')+'</td>'+
-          '<td>'+esc(statusText(a.status))+'</td>'+
-          '<td>'+esc(a.open_ticket_count||0)+'</td>'+
-          '<td><button class="linkBtn internalAssetDetail" type="button" data-id="'+esc(a.id)+'">詳細・編集</button></td>'+
-        '</tr>'
-      );
-      const contractRows=(contractRes.data||[]).map(ct=>{
-        const c=cmap[ct.customer_id]||{};
-        return '<tr>'+
-          '<td><strong>'+esc(ct.contract_number||'未採番')+'</strong></td>'+
-          '<td>'+esc(c.name||'—')+'</td>'+
-          '<td>'+esc(statusText(ct.status))+'</td>'+
-          '<td>'+esc(dateText(ct.start_date))+'</td>'+
-          '<td>'+esc(dateText(ct.end_date))+'</td>'+
-          '<td><button class="linkBtn internalContractDetail" type="button" data-id="'+esc(ct.id)+'">詳細・編集</button></td>'+
-        '</tr>';
-      });
-
       $('#home').innerHTML=
-        pageIntro('契約・機器','契約と機器を顧客へ紐付けて登録・編集します。状態は既存ルールに従い、新規時の既定値から開始します。')+
+        pageIntro('契約・機器','契約と機器を検索・状態別に絞り込み、一覧から直接編集できます。')+
         '<section class="card section">'+
-          '<h2>新規契約</h2>'+
-          '<form id="contractCreateForm">'+
-            '<div class="field"><label>顧客</label><select id="contractCustomer" required><option value="">選択してください</option>'+customerOptions+'</select></div>'+
-            '<div class="field"><label>契約番号（任意）</label><input id="contractNumber"></div>'+
-            '<div class="row">'+
-              '<div class="field" style="flex:1;min-width:180px"><label>開始日</label><input id="contractStart" type="date"></div>'+
-              '<div class="field" style="flex:1;min-width:180px"><label>終了日</label><input id="contractEnd" type="date"></div>'+
-            '</div>'+
-            '<div class="field"><label>社内メモ</label><textarea id="contractNote" rows="3"></textarea></div>'+
-            '<button class="primary" type="submit">契約を登録</button>'+
-          '</form>'+
-          '<div id="contractCreateMsg" class="notice hidden"></div>'+
-        '</section>'+
-        '<section class="card section">'+
-          '<h2>新規機器</h2>'+
-          '<form id="assetCreateForm">'+
-            '<div class="field"><label>顧客</label><select id="assetCustomer" required><option value="">選択してください</option>'+customerOptions+'</select></div>'+
-            '<div class="row">'+
-              '<div class="field" style="flex:1;min-width:180px"><label>機器番号（任意）</label><input id="assetNumber"></div>'+
-              '<div class="field" style="flex:1;min-width:180px"><label>機種</label><input id="assetModel"></div>'+
-            '</div>'+
-            '<div class="field"><label>シリアル番号</label><input id="assetSerial"></div>'+
-            '<div class="field"><label>社内メモ</label><textarea id="assetNote" rows="3"></textarea></div>'+
-            '<button class="primary" type="submit">機器を登録</button>'+
-          '</form>'+
-          '<div id="assetCreateMsg" class="notice hidden"></div>'+
+          '<div class="row between"><div><h2>新規登録</h2><p class="sectionDesc">契約または機器を追加します。</p></div></div>'+
+          '<div class="modalGrid2">'+
+            '<form id="contractCreateForm" class="card section" style="box-shadow:none;margin:0">'+
+              '<h3>新規契約</h3>'+
+              '<div class="field"><label>顧客</label><select id="contractCustomer" required><option value="">選択してください</option>'+customerOptions+'</select></div>'+
+              '<div class="field"><label>契約番号（任意）</label><input id="contractNumber"></div>'+
+              '<div class="row">'+
+                '<div class="field" style="flex:1;min-width:180px"><label>開始日</label><input id="contractStart" type="date"></div>'+
+                '<div class="field" style="flex:1;min-width:180px"><label>終了日</label><input id="contractEnd" type="date"></div>'+
+              '</div>'+
+              '<div class="field"><label>社内メモ</label><textarea id="contractNote" rows="3"></textarea></div>'+
+              '<button class="primary" type="submit">契約を登録</button>'+
+              '<div id="contractCreateMsg" class="notice hidden"></div>'+
+            '</form>'+
+            '<form id="assetCreateForm" class="card section" style="box-shadow:none;margin:0">'+
+              '<h3>新規機器</h3>'+
+              '<div class="field"><label>顧客</label><select id="assetCustomer" required><option value="">選択してください</option>'+customerOptions+'</select></div>'+
+              '<div class="row">'+
+                '<div class="field" style="flex:1;min-width:180px"><label>機器番号（任意）</label><input id="assetNumber"></div>'+
+                '<div class="field" style="flex:1;min-width:180px"><label>機種</label><input id="assetModel"></div>'+
+              '</div>'+
+              '<div class="field"><label>シリアル番号</label><input id="assetSerial"></div>'+
+              '<div class="field"><label>社内メモ</label><textarea id="assetNote" rows="3"></textarea></div>'+
+              '<button class="primary" type="submit">機器を登録</button>'+
+              '<div id="assetCreateMsg" class="notice hidden"></div>'+
+            '</form>'+
+          '</div>'+
         '</section>'+
         '<div id="contractDetailHost"></div>'+
         '<div id="assetDetailHost"></div>'+
-        '<section class="card section"><h2>契約</h2>'+dataTable(['契約番号','顧客','状態','開始日','終了日','操作'],contractRows)+'</section>'+
-        '<section class="card section"><h2>機器</h2>'+dataTable(['機器番号','顧客','機種','シリアル','状態','対応中','操作'],assetRows)+'</section>';
+        '<section class="card section"><h2>契約一覧</h2>'+
+          listToolbar('contractList',contracts,'status','契約番号・顧客名',[
+            ['created_desc','作成が新しい順'],
+            ['updated_desc','更新が新しい順'],
+            ['start_desc','開始日が新しい順'],
+            ['end_asc','終了日が近い順'],
+            ['customer_asc','顧客名順']
+          ])+
+          '<div id="contractListHost"></div>'+
+        '</section>'+
+        '<section class="card section"><h2>機器一覧</h2>'+
+          listToolbar('assetList',assets||[],'status','機器番号・顧客名・機種・シリアル・設置場所',[
+            ['updated_desc','更新が新しい順'],
+            ['installed_desc','設置日が新しい順'],
+            ['customer_asc','顧客名順'],
+            ['asset_asc','機器番号順']
+          ])+
+          '<div id="assetListHost"></div>'+
+        '</section>';
+
+      const renderContractRows=()=>{
+        const state=listToolbarState('contractList');
+        let filtered=contracts.filter(ct=>{
+          if(state.status!=='all'&&ct.status!==state.status) return false;
+          const customer=cmap[ct.customer_id]||{};
+          return !state.query||[
+            ct.contract_number,ct.status,customer.name,customer.customer_code
+          ].some(v=>String(v||'').toLowerCase().includes(state.query));
+        });
+        filtered=[...filtered].sort((a,b)=>{
+          if(state.sort==='updated_desc') return timeValue(b.updated_at)-timeValue(a.updated_at);
+          if(state.sort==='start_desc') return timeValue(b.start_date)-timeValue(a.start_date);
+          if(state.sort==='end_asc') return (timeValue(a.end_date)||Number.MAX_SAFE_INTEGER)-(timeValue(b.end_date)||Number.MAX_SAFE_INTEGER);
+          if(state.sort==='customer_asc') return compareText(cmap[a.customer_id]?.name,cmap[b.customer_id]?.name);
+          return timeValue(b.created_at)-timeValue(a.created_at);
+        });
+        updateListCount('contractList',filtered.length,contracts.length);
+        $('#contractListHost').innerHTML=dataTable(
+          ['契約番号','顧客','状態','開始日','終了日','更新日','操作'],
+          filtered.map(ct=>{
+            const customer=cmap[ct.customer_id]||{};
+            return '<tr>'+
+              '<td><strong>'+esc(ct.contract_number||'未採番')+'</strong></td>'+
+              '<td>'+esc(customer.name||'—')+'</td>'+
+              '<td>'+esc(statusText(ct.status))+'</td>'+
+              '<td>'+esc(dateText(ct.start_date))+'</td>'+
+              '<td>'+esc(dateText(ct.end_date))+'</td>'+
+              '<td>'+esc(dateText(ct.updated_at))+'</td>'+
+              '<td><button class="linkBtn internalContractDetail" type="button" data-id="'+esc(ct.id)+'">詳細・編集</button></td>'+
+            '</tr>';
+          })
+        );
+        document.querySelectorAll('.internalContractDetail').forEach(btn=>{
+          btn.onclick=async()=>{
+            btn.disabled=true;
+            try{ await renderInternalContractDetail(btn.dataset.id); }
+            catch(err){ toast(err.message||String(err)); }
+            finally{ btn.disabled=false; }
+          };
+        });
+      };
+
+      const renderAssetRows=()=>{
+        const state=listToolbarState('assetList');
+        let filtered=(assets||[]).filter(a=>{
+          if(state.status!=='all'&&a.status!==state.status) return false;
+          return !state.query||[
+            a.asset_number,a.customer?.name,a.customer?.customer_code,
+            a.model_name,a.serial_number,a.installation_location,
+            a.product_code,a.source_delivery_number
+          ].some(v=>String(v||'').toLowerCase().includes(state.query));
+        });
+        filtered=[...filtered].sort((a,b)=>{
+          if(state.sort==='installed_desc') return timeValue(b.installed_at)-timeValue(a.installed_at);
+          if(state.sort==='customer_asc') return compareText(a.customer?.name,b.customer?.name);
+          if(state.sort==='asset_asc') return compareText(a.asset_number,b.asset_number);
+          return timeValue(b.updated_at)-timeValue(a.updated_at);
+        });
+        updateListCount('assetList',filtered.length,(assets||[]).length);
+        $('#assetListHost').innerHTML=dataTable(
+          ['機器番号','顧客','機種','シリアル','保証期限','設置場所','状態','対応中','操作'],
+          filtered.map(a=>
+            '<tr>'+
+              '<td><strong>'+esc(a.asset_number||'未採番')+'</strong></td>'+
+              '<td>'+esc(a.customer?.name||'—')+'</td>'+
+              '<td>'+esc(a.model_name||'—')+'</td>'+
+              '<td>'+esc(a.serial_number||'—')+'</td>'+
+              '<td>'+esc(dateText(a.warranty_until))+'</td>'+
+              '<td>'+esc(a.installation_location||'—')+'</td>'+
+              '<td>'+esc(statusText(a.status))+'</td>'+
+              '<td>'+esc(a.open_ticket_count||0)+'</td>'+
+              '<td><button class="linkBtn internalAssetDetail" type="button" data-id="'+esc(a.id)+'">詳細・編集</button></td>'+
+            '</tr>'
+          )
+        );
+        document.querySelectorAll('.internalAssetDetail').forEach(btn=>{
+          btn.onclick=async()=>{
+            btn.disabled=true;
+            try{ await renderInternalAssetDetail(btn.dataset.id); }
+            catch(err){ toast(err.message||String(err)); }
+            finally{ btn.disabled=false; }
+          };
+        });
+      };
 
       $('#contractCreateForm').onsubmit=async e=>{
         e.preventDefault();
-        const btn=e.submitter;
-        if(btn) btn.disabled=true;
+        const btn=e.submitter;if(btn)btn.disabled=true;
         try{
           await rpc('create_contract',{
             p_customer_id:$('#contractCustomer').value,
@@ -3893,20 +3973,15 @@
             p_end_date:$('#contractEnd').value||null,
             p_internal_note:$('#contractNote').value.trim()||null
           });
-          notice('#contractCreateMsg','契約を登録しました。',true);
-          toast('契約を登録しました');
+          notice('#contractCreateMsg','契約を登録しました。',true);toast('契約を登録しました');
           setTimeout(()=>go('assets'),400);
-        }catch(err){
-          notice('#contractCreateMsg',err.message||String(err));
-        }finally{
-          if(btn) btn.disabled=false;
-        }
+        }catch(err){notice('#contractCreateMsg',err.message||String(err));}
+        finally{if(btn)btn.disabled=false;}
       };
 
       $('#assetCreateForm').onsubmit=async e=>{
         e.preventDefault();
-        const btn=e.submitter;
-        if(btn) btn.disabled=true;
+        const btn=e.submitter;if(btn)btn.disabled=true;
         try{
           await rpc('create_asset',{
             p_customer_id:$('#assetCustomer').value,
@@ -3915,55 +3990,62 @@
             p_model_name:$('#assetModel').value.trim()||null,
             p_internal_note:$('#assetNote').value.trim()||null
           });
-          notice('#assetCreateMsg','機器を登録しました。',true);
-          toast('機器を登録しました');
+          notice('#assetCreateMsg','機器を登録しました。',true);toast('機器を登録しました');
           setTimeout(()=>go('assets'),400);
-        }catch(err){
-          notice('#assetCreateMsg',err.message||String(err));
-        }finally{
-          if(btn) btn.disabled=false;
-        }
+        }catch(err){notice('#assetCreateMsg',err.message||String(err));}
+        finally{if(btn)btn.disabled=false;}
       };
 
-      document.querySelectorAll('.internalAssetDetail').forEach(btn=>{
-        btn.onclick=async()=>{
-          btn.disabled=true;
-          try{ await renderInternalAssetDetail(btn.dataset.id); }
-          catch(err){ toast(err.message||String(err)); }
-          finally{ btn.disabled=false; }
-        };
-      });
-      document.querySelectorAll('.internalContractDetail').forEach(btn=>{
-        btn.onclick=async()=>{
-          btn.disabled=true;
-          try{ await renderInternalContractDetail(btn.dataset.id); }
-          catch(err){ toast(err.message||String(err)); }
-          finally{ btn.disabled=false; }
-        };
-      });
+      bindListToolbar('contractList',renderContractRows);
+      bindListToolbar('assetList',renderAssetRows);
+      renderContractRows();
+      renderAssetRows();
       return;
     }
 
     const [assetRes,contractRes]=await Promise.all([
-      supabase.from('assets').select('id,asset_number,serial_number,model_name,status,created_at').order('created_at',{ascending:false}),
-      supabase.from('contracts').select('id,contract_number,status,start_date,end_date,created_at').order('created_at',{ascending:false})
+      supabase.from('assets').select('id,asset_number,serial_number,model_name,status,created_at,updated_at').order('created_at',{ascending:false}),
+      supabase.from('contracts').select('id,contract_number,status,start_date,end_date,created_at,updated_at').order('created_at',{ascending:false})
     ]);
     if(assetRes.error) throw assetRes.error;
     if(contractRes.error) throw contractRes.error;
 
-    const assetRows=(assetRes.data||[]).map(a=>
-      '<tr><td><strong>'+esc(a.asset_number||'—')+'</strong></td><td>'+esc(a.model_name||'—')+'</td><td>'+esc(a.serial_number||'—')+'</td><td>'+esc(statusText(a.status))+'</td></tr>'
-    );
-    const contractRows=(contractRes.data||[]).map(c=>
-      '<tr><td><strong>'+esc(c.contract_number||'—')+'</strong></td><td>'+esc(statusText(c.status))+'</td><td>'+esc(dateText(c.start_date))+'</td><td>'+esc(dateText(c.end_date))+'</td></tr>'
-    );
-
+    const customerAssets=assetRes.data||[];
+    const customerContracts=contractRes.data||[];
     $('#home').innerHTML=
-      pageIntro('契約・機器','登録されている契約と機器を確認できます。')+
-      '<section class="card section"><h2>契約</h2>'+dataTable(['契約番号','状態','開始日','終了日'],contractRows)+'</section>'+
-      '<section class="card section"><h2>機器</h2>'+dataTable(['機器番号','機種','シリアル','状態'],assetRows)+'</section>';
-  }
+      pageIntro('契約・機器','登録されている契約と機器を検索・状態別に確認できます。')+
+      '<section class="card section"><h2>契約</h2>'+
+        listToolbar('custContractList',customerContracts,'status','契約番号',[
+          ['created_desc','新しい順'],['end_asc','終了日が近い順']
+        ])+
+        '<div id="custContractListHost"></div>'+
+      '</section>'+
+      '<section class="card section"><h2>機器</h2>'+
+        listToolbar('custAssetList',customerAssets,'status','機器番号・機種・シリアル',[
+          ['created_desc','新しい順'],['asset_asc','機器番号順']
+        ])+
+        '<div id="custAssetListHost"></div>'+
+      '</section>';
 
+    const renderCustContracts=()=>{
+      const state=listToolbarState('custContractList');
+      let filtered=customerContracts.filter(x=>(state.status==='all'||x.status===state.status)&&(!state.query||[x.contract_number,x.status].some(v=>String(v||'').toLowerCase().includes(state.query))));
+      filtered=[...filtered].sort((a,b)=>state.sort==='end_asc'?(timeValue(a.end_date)||Number.MAX_SAFE_INTEGER)-(timeValue(b.end_date)||Number.MAX_SAFE_INTEGER):timeValue(b.created_at)-timeValue(a.created_at));
+      updateListCount('custContractList',filtered.length,customerContracts.length);
+      $('#custContractListHost').innerHTML=dataTable(['契約番号','状態','開始日','終了日'],filtered.map(x=>'<tr><td><strong>'+esc(x.contract_number||'—')+'</strong></td><td>'+esc(statusText(x.status))+'</td><td>'+esc(dateText(x.start_date))+'</td><td>'+esc(dateText(x.end_date))+'</td></tr>'));
+    };
+    const renderCustAssets=()=>{
+      const state=listToolbarState('custAssetList');
+      let filtered=customerAssets.filter(x=>(state.status==='all'||x.status===state.status)&&(!state.query||[x.asset_number,x.model_name,x.serial_number,x.status].some(v=>String(v||'').toLowerCase().includes(state.query))));
+      filtered=[...filtered].sort((a,b)=>state.sort==='asset_asc'?compareText(a.asset_number,b.asset_number):timeValue(b.created_at)-timeValue(a.created_at));
+      updateListCount('custAssetList',filtered.length,customerAssets.length);
+      $('#custAssetListHost').innerHTML=dataTable(['機器番号','機種','シリアル','状態'],filtered.map(x=>'<tr><td><strong>'+esc(x.asset_number||'—')+'</strong></td><td>'+esc(x.model_name||'—')+'</td><td>'+esc(x.serial_number||'—')+'</td><td>'+esc(statusText(x.status))+'</td></tr>'));
+    };
+    bindListToolbar('custContractList',renderCustContracts);
+    bindListToolbar('custAssetList',renderCustAssets);
+    renderCustContracts();
+    renderCustAssets();
+  }
 
 
   async function renderAssetDetail(assetId){
