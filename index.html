@@ -148,7 +148,7 @@
   const roleLabel = (r) => ({internal_admin:'自社管理者',internal_staff:'自社スタッフ',support_staff:'サポート会社',customer_user:'顧客会社'}[r] || r || '不明');
   const money = (v) => new Intl.NumberFormat('ja-JP',{style:'currency',currency:'JPY',maximumFractionDigits:0}).format(Number(v || 0));
   const dateText = (v) => v ? new Intl.DateTimeFormat('ja-JP',{year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(v)) : '—';
-  const statusText = (v) => ({draft:'下書き',sent:'送付済み',accepted:'承認済み',rejected:'却下',open:'未対応',in_progress:'対応中',resolved:'解決',closed:'完了',active:'有効',inactive:'無効'}[v] || v || '—');
+  const statusText = (v) => ({draft:'下書き',finalized:'確定済み',sent:'送付済み',accepted:'承認済み',rejected:'却下',open:'未対応',in_progress:'対応中',resolved:'解決',closed:'完了',active:'有効',inactive:'無効'}[v] || v || '—');
   const toast = (m) => { const e=$('#toast'); e.textContent=m; e.style.display='block'; clearTimeout(window.__toastTimer); window.__toastTimer=setTimeout(()=>e.style.display='none',2500); };
   const show = (id) => ['loginView','mfaView','appView'].forEach(x => $('#'+x).classList.toggle('hidden',x!==id));
   const notice = (id,msg,ok=false) => { const e=$(id); e.textContent=msg; e.className='notice '+(ok?'ok':'error'); e.classList.remove('hidden'); };
@@ -164,7 +164,8 @@
       ['customers','顧客'],
       ['quotes','見積'],
       ['orders','受注'],
-      ['support','サポート']
+      ['support','サポート'],
+      ['settings','設定']
     ],
     internal_staff: [
       ['home','ダッシュボード'],
@@ -385,11 +386,14 @@
               '<div id="quoteEditItems" class="quoteItems">'+(items.length?items:[{}]).map(quoteItemRow).join('')+'</div>'+
               '<div class="field"><label>社内メモ</label><textarea id="quoteEditNote" rows="3">'+esc(q.internal_note||'')+'</textarea></div>'+
               '<div class="quoteTotals"><span>小計 <strong>'+esc(money(q.subtotal))+'</strong></span><span>税 <strong>'+esc(money(q.tax_amount))+'</strong></span><span>合計 <strong>'+esc(money(q.total_amount))+'</strong></span></div>'+
-              '<div class="row"><button class="primary" type="submit">変更を保存</button><span class="muted">確定・採番は正式ルール確定後に接続します。</span></div>'+
+              '<div class="row"><button class="primary" type="submit">変更を保存</button><button id="quoteFinalizeBtn" class="green" type="button">見積を確定</button><span class="muted">確定すると自動採番され、顧客画面に表示されます。</span></div>'+
             '</form>'+
             '<div id="quoteEditMsg" class="notice hidden"></div>'
           : '<div class="quoteTotals"><span>小計 <strong>'+esc(money(q.subtotal))+'</strong></span><span>税 <strong>'+esc(money(q.tax_amount))+'</strong></span><span>合計 <strong>'+esc(money(q.total_amount))+'</strong></span></div>'+
-            dataTable(['明細','数量','単価','金額'],readOnlyRows)
+            dataTable(['明細','数量','単価','金額'],readOnlyRows)+
+            (internal && q.status==='finalized'
+              ? '<div class="row" style="margin-top:14px"><button id="quoteToOrderBtn" class="orange" type="button">この見積から受注を作成</button><span class="muted">同じ見積から重複受注は作成されません。</span></div><div id="quoteActionMsg" class="notice hidden"></div>'
+              : '')
         )+
       '</section>';
 
@@ -418,6 +422,37 @@
           notice('#quoteEditMsg',err.message||String(err));
         }finally{
           if(submit) submit.disabled=false;
+        }
+      };
+
+      $('#quoteFinalizeBtn').onclick=async()=>{
+        const btn=$('#quoteFinalizeBtn');
+        btn.disabled=true;
+        try{
+          const finalized=await rpc('finalize_quote',{p_quote_id:q.id});
+          notice('#quoteEditMsg','確定しました。見積番号 '+String(finalized?.quote_number||''),true);
+          toast('見積を確定しました');
+          setTimeout(()=>go('quotes'),500);
+        }catch(err){
+          const msg=String(err.message||err);
+          notice('#quoteEditMsg',msg.includes('numbering configuration required')?'採番設定が未設定です。管理者の「設定」から見積番号の形式を登録してください。':msg);
+        }finally{
+          btn.disabled=false;
+        }
+      };
+    }else if(internal && q.status==='finalized' && $('#quoteToOrderBtn')){
+      $('#quoteToOrderBtn').onclick=async()=>{
+        const btn=$('#quoteToOrderBtn');
+        btn.disabled=true;
+        try{
+          const order=await rpc('convert_quote_to_order',{p_quote_id:q.id});
+          notice('#quoteActionMsg','受注を作成しました。受注番号 '+String(order?.order_number||''),true);
+          toast(order?.already_exists?'既存の受注を表示しました':'受注を作成しました');
+        }catch(err){
+          const msg=String(err.message||err);
+          notice('#quoteActionMsg',msg.includes('numbering configuration required')?'採番設定が未設定です。管理者の「設定」から受注番号の形式を登録してください。':msg);
+        }finally{
+          btn.disabled=false;
         }
       };
     }
@@ -516,6 +551,54 @@
         };
       });
     }
+  }
+
+  async function renderSettings(){
+    const role=bootData.context?.role;
+    if(role!=='internal_admin') throw new Error('管理者のみ利用できます。');
+
+    const cfg=await rpc('internal_numbering_settings');
+    const quote=cfg?.quote||{};
+    const order=cfg?.order||{};
+
+    $('#home').innerHTML=
+      pageIntro('設定','見積番号・受注番号の採番形式を設定します。')+
+      '<section class="card section">'+
+        '<h2>自動採番</h2>'+
+        '<p class="sectionDesc">形式は運用ルールに合わせて入力してください。未設定の間は見積確定・受注化を実行できません。</p>'+
+        '<form id="numberingForm">'+
+          '<div class="field"><label>見積番号の形式</label><input id="quotePattern" value="'+esc(quote.pattern||'')+'" placeholder="例: Q-{YYYY}-{SEQ4}"></div>'+
+          '<div class="field"><label>見積番号の次回連番</label><input id="quoteStart" type="number" min="1" step="1" value="'+esc(quote.next_sequence||1)+'"></div>'+
+          '<div class="field"><label>受注番号の形式</label><input id="orderPattern" value="'+esc(order.pattern||'')+'" placeholder="例: O-{YYYY}-{SEQ4}"></div>'+
+          '<div class="field"><label>受注番号の次回連番</label><input id="orderStart" type="number" min="1" step="1" value="'+esc(order.next_sequence||1)+'"></div>'+
+          '<div class="notice">使用可能: {YYYY} {YY} {MM} {DD} {SEQ} {SEQ1}〜{SEQ12}<br>入力例は説明用です。正式な番号形式として自動採用はしません。</div>'+
+          '<button class="primary" type="submit">採番設定を保存</button>'+
+        '</form>'+
+        '<div id="numberingMsg" class="notice hidden"></div>'+
+      '</section>';
+
+    $('#numberingForm').onsubmit=async e=>{
+      e.preventDefault();
+      const btn=e.submitter;
+      if(btn) btn.disabled=true;
+      try{
+        const saved=await rpc('save_numbering_settings',{
+          p_quote_pattern:$('#quotePattern').value.trim()||null,
+          p_quote_start:Number($('#quoteStart').value||1),
+          p_order_pattern:$('#orderPattern').value.trim()||null,
+          p_order_start:Number($('#orderStart').value||1)
+        });
+        notice('#numberingMsg','採番設定を保存しました。',true);
+        $('#quotePattern').value=saved?.quote?.pattern||'';
+        $('#quoteStart').value=saved?.quote?.next_sequence||1;
+        $('#orderPattern').value=saved?.order?.pattern||'';
+        $('#orderStart').value=saved?.order?.next_sequence||1;
+      }catch(err){
+        notice('#numberingMsg',err.message||String(err));
+      }finally{
+        if(btn) btn.disabled=false;
+      }
+    };
   }
 
   async function renderOrders(){
@@ -631,6 +714,7 @@
       if(page==='quotes') return await renderQuotes();
       if(page==='orders') return await renderOrders();
       if(page==='support') return await renderSupport();
+      if(page==='settings') return await renderSettings();
       if(page==='assets') return await renderAssets();
       return await renderHome();
     }catch(e){
