@@ -3132,7 +3132,10 @@
     const role=bootData.context?.role;
     const internal=role==='internal_admin'||role==='internal_staff';
     const admin=role==='internal_admin';
-    const detail=await rpc('internal_quote_detail',{p_quote_id:quoteId});
+    const [detail,products]=await Promise.all([
+      rpc('internal_quote_detail',{p_quote_id:quoteId}),
+      rpc('internal_products_list')
+    ]);
     if(!detail?.quote) throw new Error('見積が見つかりません。');
     const q=detail.quote;
     const items=detail.items||[];
@@ -3140,6 +3143,7 @@
     const customer=cmap[q.customer_id]||{};
     const host=$('#quoteDetailHost');
     const editable=q.status==='draft';
+    const contacts=editable ? await rpc('internal_customer_contacts',{p_customer_id:q.customer_id}) : [];
 
     const residualRow=(item={})=>(
       '<div class="residualRow" data-residual-row>'+
@@ -3178,6 +3182,9 @@
           ? (q.approval_return_reason
               ? '<div class="notice error"><strong>管理者から差し戻し</strong><br>'+esc(q.approval_return_reason)+(q.approval_returned_at?'<br><span class="muted">'+esc(dateText(q.approval_returned_at))+'</span>':'')+'</div>'
               : '')+
+            '<div id="quoteEditRequiredGuide" class="notice">必須：見積日・明細1件以上。<span id="quoteEditRequiredStatus" style="margin-left:8px"></span></div>'+
+            '<div id="quoteEditDraftNotice" class="notice hidden"></div>'+
+            '<div class="notice ok"><strong>'+esc(customer.customer_code||'—')+' / '+esc(customer.name||'')+'</strong><br><span class="muted">営業担当: '+esc(customer.sales_owner_name||'未設定')+' / 連絡先: '+esc(customer.phone||customer.mobile||'未登録')+'</span></div>'+
             '<form id="quoteEditForm">'+
               '<section class="formSection">'+
                 '<div class="formSectionHead"><span class="sectionNo">01</span><h3>基本情報</h3></div>'+
@@ -3186,14 +3193,21 @@
                   '<div class="field"><label>有効期限</label><input id="quoteEditValidUntil" type="date" value="'+esc(q.valid_until||'')+'"></div>'+
                   '<div class="field"><label>敬称</label><select id="quoteEditHonorific"><option value="御中" '+(q.honorific==='御中'?'selected':'')+'>御中</option><option value="様" '+(q.honorific==='様'?'selected':'')+'>様</option></select></div>'+
                   '<div class="field" style="grid-column:span 2"><label>案件名</label><input id="quoteEditProject" value="'+esc(q.project_name||'')+'"></div>'+
-                  '<div class="field"><label>担当者名</label><input id="quoteEditContact" value="'+esc(q.contact_name||'')+'"></div>'+
-                  '<div class="field"><label>リース期間（月）</label><input id="quoteEditLeaseMonths" type="number" min="0" step="1" value="'+esc(q.lease_months??'')+'"></div>'+
-                  '<div class="field"><label>消費税率（%）</label><input id="quoteEditTaxRate" type="number" min="0" step="0.1" value="'+esc(q.tax_rate??10)+'"></div>'+
+                  '<div class="field"><label>担当者名</label><select id="quoteEditContact"><option value="">指定なし</option>'+
+                    (contacts||[]).map(x=>'<option value="'+esc(x.name||'')+'" '+((x.name||'')===(q.contact_name||'')?'selected':'')+'>'+esc(x.name||'')+(x.is_primary?'（主担当）':'')+'</option>').join('')+
+                  '</select></div>'+
+                  '<div class="field"><label>リース期間（月）</label><input id="quoteEditLeaseMonths" type="number" min="1" step="1" value="'+esc(q.lease_months??'')+'"></div>'+
+                  '<div class="field"><label>消費税率（%）</label><input id="quoteEditTaxRate" type="number" min="0" max="100" step="0.1" value="'+esc(q.tax_rate??10)+'"></div>'+
                 '</div>'+
               '</section>'+
               '<section class="formSection">'+
                 '<div class="formSectionHead"><span class="sectionNo">02</span><h3>見積明細</h3></div>'+
-                '<div class="row between"><span class="muted">メーカー・仕入先・単位・納期予定・仕入対象まで編集できます。</span><button id="quoteEditAddItem" class="ghost" type="button">＋ 明細追加</button></div>'+
+                '<div class="row" style="margin-bottom:10px;gap:10px;align-items:flex-end;flex-wrap:wrap">'+
+                  '<div class="field" style="flex:1;min-width:220px;margin:0"><label>商品検索</label><input id="quoteEditProductSearch" placeholder="商品コード・商品名・メーカー・仕入先"></div>'+
+                  '<div class="field" style="flex:2;min-width:300px;margin:0"><label>商品マスタから追加 <span id="quoteEditProductCount" class="muted"></span></label><select id="quoteEditProductPicker"><option value="">商品を選択してください</option></select></div>'+
+                  '<div><button id="quoteEditAddProduct" class="primary" type="button">商品を明細へ追加</button></div>'+
+                '</div>'+
+                '<div class="row between"><span class="muted">メーカー・仕入先・単位・納期予定・仕入対象まで編集できます。</span><button id="quoteEditAddItem" class="ghost" type="button">＋ 自由明細</button></div>'+
                 '<div id="quoteEditItems" class="quoteItems">'+(items.length?items:[{}]).map(quoteItemRow).join('')+'</div>'+
               '</section>'+
               '<section class="formSection">'+
@@ -3204,8 +3218,17 @@
               '<section class="formSection">'+
                 '<div class="formSectionHead"><span class="sectionNo">04</span><h3>備考・保存</h3></div>'+
                 '<div class="field"><label>社内メモ</label><textarea id="quoteEditNote" rows="3">'+esc(q.internal_note||'')+'</textarea></div>'+
-                '<div class="quoteTotals"><span>小計 <strong>'+esc(money(q.subtotal))+'</strong></span><span>税 <strong>'+esc(money(q.tax_amount))+'</strong></span><span>合計 <strong>'+esc(money(q.total_amount))+'</strong></span></div>'+
-                '<div class="row"><button class="primary" type="submit">変更を保存</button><button id="quoteFinalizeBtn" class="green" type="button">承認申請</button><span class="muted">申請すると自動採番され、管理者承認待ちになります。</span></div>'+
+                '<div class="amountSummary">'+
+                  '<div class="summaryBox"><span>新規物件合計</span><strong id="quoteEditSumSubtotal">¥0</strong></div>'+
+                  '<div class="summaryBox"><span>旧物件精算反映額</span><strong id="quoteEditSumResidual">¥0</strong></div>'+
+                  '<div class="summaryBox"><span>リース対象額</span><strong id="quoteEditSumLeaseTarget">¥0</strong></div>'+
+                  '<div class="summaryBox"><span>消費税</span><strong id="quoteEditSumTax">¥0</strong></div>'+
+                  '<div class="summaryBox"><span>見積合計</span><strong id="quoteEditSumTotal">¥0</strong></div>'+
+                  '<div class="summaryBox"><span>仕入原価合計</span><strong id="quoteEditSumCost">¥0</strong></div>'+
+                  '<div class="summaryBox"><span>粗利</span><strong id="quoteEditSumProfit">¥0</strong></div>'+
+                  '<div class="summaryBox"><span>粗利率</span><strong id="quoteEditSumMargin">—</strong></div>'+
+                '</div>'+
+                '<div class="row" style="margin-top:14px"><button class="primary" type="submit">変更を保存</button><button id="quoteFinalizeBtn" class="green" type="button">最新内容を保存して承認申請</button><span class="muted">承認申請前に現在の入力内容を自動保存します。</span></div>'+
               '</section>'+
             '</form>'+
             '<div id="quoteEditMsg" class="notice hidden"></div>'
@@ -3247,12 +3270,51 @@
         totals:{subtotal:q.subtotal,tax:q.tax_amount,total:q.total_amount}
       });
     }
+    await appendEntityAuditHistory('#quoteDetailHost','quote',q.id);
     host.scrollIntoView({behavior:'smooth',block:'start'});
 
     if(editable){
       const itemsBox=$('#quoteEditItems');
       const residualBox=$('#quoteEditResiduals');
+      const activeProducts=(products||[]).filter(p=>p.is_active!==false);
+      const editDraftKey='quoteflow.quoteEditDraft.'+(bootData?.context?.user_id||'current')+'.'+q.id;
+      let restoringEditDraft=false;
+      let editDraftTimer=null;
+
+      const renderProductOptions=()=>{
+        const query=($('#quoteEditProductSearch').value||'').trim().toLowerCase();
+        const filtered=activeProducts.filter(p=>!query||[
+          p.product_code,p.name,p.manufacturer,p.supplier_name,(p.tags||[]).join(' ')
+        ].some(v=>String(v||'').toLowerCase().includes(query)));
+        const selected=$('#quoteEditProductPicker').value;
+        $('#quoteEditProductPicker').innerHTML='<option value="">商品を選択してください</option>'+
+          filtered.map(p=>'<option value="'+esc(p.id)+'">'+esc(p.product_code||'—')+' / '+esc(p.name)+' / '+esc(money(p.sale_price))+'</option>').join('');
+        if(filtered.some(p=>p.id===selected)) $('#quoteEditProductPicker').value=selected;
+        $('#quoteEditProductCount').textContent='('+filtered.length+'件)';
+      };
+
       bindQuoteItems(itemsBox,$('#quoteEditAddItem'));
+      $('#quoteEditProductSearch').oninput=renderProductOptions;
+      renderProductOptions();
+
+      $('#quoteEditAddProduct').onclick=()=>{
+        const p=activeProducts.find(x=>x.id===$('#quoteEditProductPicker').value);
+        if(!p){ toast('商品を選択してください'); return; }
+        let expected=null;
+        if(Number(p.lead_time_days||0)>0){
+          const d=new Date(); d.setDate(d.getDate()+Number(p.lead_time_days));
+          expected=d.toISOString().slice(0,10);
+        }
+        itemsBox.insertAdjacentHTML('beforeend',quoteItemRow({
+          product_id:p.id,description:p.name,manufacturer:p.manufacturer,supplier_name:p.supplier_name,
+          unit:p.unit||'台',quantity:1,unit_price:p.sale_price||0,cost_price:p.cost_price||0,
+          procurement_target:p.procurement_target!==false,expected_delivery_date:expected
+        }));
+        bindQuoteItems(itemsBox,$('#quoteEditAddItem'));
+        recalcEdit();
+        updateEditRequired();
+        scheduleEditDraft();
+      };
 
       const bindResidualRemove=()=>{
         residualBox.querySelectorAll('.removeResidual').forEach(btn=>{
@@ -3263,12 +3325,16 @@
             }else{
               btn.closest('[data-residual-row]').remove();
             }
+            recalcEdit();
+            updateEditRequired();
+            scheduleEditDraft();
           };
         });
       };
       $('#quoteEditAddResidual').onclick=()=>{
         residualBox.insertAdjacentHTML('beforeend',residualRow());
         bindResidualRemove();
+        scheduleEditDraft();
       };
       bindResidualRemove();
 
@@ -3292,27 +3358,191 @@
         x.first_payment_amount||x.recurring_payment_amount
       );
 
+      const recalcEdit=()=>{
+        let subtotal=0;
+        let cost=0;
+        itemsBox.querySelectorAll('[data-quote-item-row]').forEach(row=>{
+          const qty=Number(row.querySelector('.qi-qty').value||0);
+          subtotal+=qty*Number(row.querySelector('.qi-unit').value||0);
+          cost+=qty*Number(row.querySelector('.qi-cost').value||0);
+        });
+        const residual=readResidualItems().reduce((sum,x)=>sum+Number(x.reflection_amount||0),0);
+        const taxRate=Number($('#quoteEditTaxRate').value||0);
+        const tax=Math.round(subtotal*taxRate/100);
+        const profit=subtotal-cost;
+        const margin=subtotal>0?(profit/subtotal*100):null;
+        $('#quoteEditSumSubtotal').textContent=money(subtotal);
+        $('#quoteEditSumResidual').textContent=money(residual);
+        $('#quoteEditSumLeaseTarget').textContent=money(subtotal+residual);
+        $('#quoteEditSumTax').textContent=money(tax);
+        $('#quoteEditSumTotal').textContent=money(subtotal+tax);
+        $('#quoteEditSumCost').textContent=money(cost);
+        $('#quoteEditSumProfit').textContent=money(profit);
+        $('#quoteEditSumMargin').textContent=margin===null?'—':margin.toFixed(1)+'%';
+      };
+
+      const updateEditRequired=()=>{
+        const missing=[];
+        if(!$('#quoteEditDate').value) missing.push('見積日');
+        const rows=[...itemsBox.querySelectorAll('[data-quote-item-row]')];
+        if(!rows.length||rows.every(r=>!r.querySelector('.qi-desc')?.value.trim())) missing.push('明細');
+        const st=$('#quoteEditRequiredStatus');
+        if(st) st.textContent=missing.length?'未入力：'+missing.join('・'):'必須項目は入力済みです。';
+      };
+
+      const serializeEditItems=()=>[...itemsBox.querySelectorAll('[data-quote-item-row]')].map(row=>({
+        product_id:row.querySelector('.qi-product-id')?.value||null,
+        description:row.querySelector('.qi-desc')?.value||'',
+        quantity:row.querySelector('.qi-qty')?.value||'',
+        unit:row.querySelector('.qi-unit-name')?.value||'台',
+        unit_price:row.querySelector('.qi-unit')?.value||'',
+        cost_price:row.querySelector('.qi-cost')?.value||'',
+        manufacturer:row.querySelector('.qi-manufacturer')?.value||'',
+        supplier_name:row.querySelector('.qi-supplier')?.value||'',
+        expected_delivery_date:row.querySelector('.qi-expected')?.value||'',
+        procurement_target:row.querySelector('.qi-procure')?.checked!==false
+      }));
+
+      const serializeEditResiduals=()=>[...residualBox.querySelectorAll('[data-residual-row]')].map(row=>({
+        old_property_name:row.querySelector('.qri-name')?.value||'',
+        lessor_name:row.querySelector('.qri-lessor')?.value||'',
+        contract_number:row.querySelector('.qri-contract')?.value||'',
+        remaining_count:row.querySelector('.qri-remain')?.value||'',
+        monthly_amount_tax_included:row.querySelector('.qri-monthly')?.value||'',
+        residual_amount_tax_included:row.querySelector('.qri-residual')?.value||'',
+        settlement_amount_tax_included:row.querySelector('.qri-settlement')?.value||'',
+        reflection_amount:row.querySelector('.qri-reflection')?.value||'',
+        payment_count:row.querySelector('.qri-paycount')?.value||'',
+        first_payment_amount:row.querySelector('.qri-first')?.value||'',
+        recurring_payment_amount:row.querySelector('.qri-recurring')?.value||'',
+        note:row.querySelector('.qri-note')?.value||''
+      }));
+
+      const saveEditDraftLocal=()=>{
+        if(restoringEditDraft) return;
+        const data={
+          saved_at:new Date().toISOString(),
+          quote_date:$('#quoteEditDate').value,
+          valid_until:$('#quoteEditValidUntil').value,
+          honorific:$('#quoteEditHonorific').value,
+          project_name:$('#quoteEditProject').value,
+          contact_name:$('#quoteEditContact').value,
+          lease_months:$('#quoteEditLeaseMonths').value,
+          tax_rate:$('#quoteEditTaxRate').value,
+          internal_note:$('#quoteEditNote').value,
+          items:serializeEditItems(),
+          residuals:serializeEditResiduals()
+        };
+        localStorage.setItem(editDraftKey,JSON.stringify(data));
+        const n=$('#quoteEditDraftNotice');
+        if(n){
+          n.classList.remove('hidden');
+          n.classList.add('ok');
+          n.textContent='未保存の入力内容をこの端末に一時保存しました。';
+        }
+      };
+
+      const scheduleEditDraft=()=>{
+        clearTimeout(editDraftTimer);
+        editDraftTimer=setTimeout(saveEditDraftLocal,300);
+      };
+
+      const restoreEditDraft=()=>{
+        let data=null;
+        try{ data=JSON.parse(localStorage.getItem(editDraftKey)||'null'); }catch(_){}
+        if(!data) return;
+        if(timeValue(data.saved_at)<=timeValue(q.updated_at)){
+          localStorage.removeItem(editDraftKey);
+          return;
+        }
+        restoringEditDraft=true;
+        try{
+          if(data.quote_date) $('#quoteEditDate').value=data.quote_date;
+          $('#quoteEditValidUntil').value=data.valid_until||'';
+          if(data.honorific) $('#quoteEditHonorific').value=data.honorific;
+          $('#quoteEditProject').value=data.project_name||'';
+          $('#quoteEditContact').value=data.contact_name||'';
+          $('#quoteEditLeaseMonths').value=data.lease_months||'';
+          $('#quoteEditTaxRate').value=data.tax_rate||'10';
+          $('#quoteEditNote').value=data.internal_note||'';
+
+          if(Array.isArray(data.items)&&data.items.length){
+            itemsBox.innerHTML=data.items.map(x=>quoteItemRow(x)).join('');
+            bindQuoteItems(itemsBox,$('#quoteEditAddItem'));
+          }
+          if(Array.isArray(data.residuals)&&data.residuals.length){
+            residualBox.innerHTML=data.residuals.map(x=>residualRow(x)).join('');
+            bindResidualRemove();
+          }
+          const n=$('#quoteEditDraftNotice');
+          if(n){
+            n.classList.remove('hidden');
+            n.classList.add('ok');
+            n.textContent='前回の未保存入力を復元しました。';
+          }
+        }finally{
+          restoringEditDraft=false;
+        }
+      };
+
+      const collectAndValidateEdit=()=>{
+        const quoteDate=$('#quoteEditDate').value;
+        const validUntil=$('#quoteEditValidUntil').value;
+        const leaseMonths=$('#quoteEditLeaseMonths').value?Number($('#quoteEditLeaseMonths').value):null;
+        const taxRate=Number($('#quoteEditTaxRate').value||10);
+        if(!quoteDate) throw new Error('見積日を入力してください。');
+        if(validUntil&&validUntil<quoteDate) throw new Error('有効期限は見積日以降の日付を入力してください。');
+        if(leaseMonths!==null&&leaseMonths<=0) throw new Error('リース期間は1か月以上で入力してください。');
+        if(taxRate<0||taxRate>100) throw new Error('消費税率は0〜100%で入力してください。');
+        return {
+          quoteDate,validUntil,leaseMonths,taxRate,
+          items:readQuoteItems(itemsBox),
+          residualItems:readResidualItems()
+        };
+      };
+
+      const saveCurrentDraft=async()=>{
+        const v=collectAndValidateEdit();
+        return await rpc('update_draft_quote_full',{
+          p_quote_id:q.id,
+          p_quote_date:v.quoteDate,
+          p_valid_until:v.validUntil||null,
+          p_project_name:$('#quoteEditProject').value.trim()||null,
+          p_honorific:$('#quoteEditHonorific').value,
+          p_contact_name:$('#quoteEditContact').value||null,
+          p_lease_months:v.leaseMonths,
+          p_tax_rate:v.taxRate,
+          p_internal_note:$('#quoteEditNote').value.trim()||null,
+          p_items:v.items,
+          p_residual_items:v.residualItems
+        });
+      };
+
+      $('#quoteEditForm').addEventListener('input',e=>{
+        if(e.target.matches('.qi-qty,.qi-unit,.qi-cost,.qri-reflection,#quoteEditTaxRate')) recalcEdit();
+        updateEditRequired();
+        scheduleEditDraft();
+      });
+      $('#quoteEditForm').addEventListener('change',()=>{
+        updateEditRequired();
+        scheduleEditDraft();
+      });
+
+      restoreEditDraft();
+      recalcEdit();
+      updateEditRequired();
+
+
       $('#quoteEditForm').onsubmit=async e=>{
         e.preventDefault();
         const submit=e.submitter;
         if(submit) submit.disabled=true;
         try{
-          const updated=await rpc('update_draft_quote_full',{
-            p_quote_id:q.id,
-            p_quote_date:$('#quoteEditDate').value||null,
-            p_valid_until:$('#quoteEditValidUntil').value||null,
-            p_project_name:$('#quoteEditProject').value.trim()||null,
-            p_honorific:$('#quoteEditHonorific').value,
-            p_contact_name:$('#quoteEditContact').value.trim()||null,
-            p_lease_months:$('#quoteEditLeaseMonths').value?Number($('#quoteEditLeaseMonths').value):null,
-            p_tax_rate:Number($('#quoteEditTaxRate').value||10),
-            p_internal_note:$('#quoteEditNote').value.trim()||null,
-            p_items:readQuoteItems(itemsBox),
-            p_residual_items:readResidualItems()
-          });
+          const updated=await saveCurrentDraft();
+          localStorage.removeItem(editDraftKey);
           notice('#quoteEditMsg','保存しました。合計 '+money(updated?.total_amount||0),true);
           toast('見積を更新しました');
-          setTimeout(()=>go('sales'),450);
+          await renderQuoteEditor(q.id,cmap);
         }catch(err){
           notice('#quoteEditMsg',err.message||String(err));
         }finally{
@@ -3324,8 +3554,10 @@
         const btn=$('#quoteFinalizeBtn');
         btn.disabled=true;
         try{
+          await saveCurrentDraft();
+          localStorage.removeItem(editDraftKey);
           const finalized=await rpc('finalize_quote',{p_quote_id:q.id});
-          notice('#quoteEditMsg','承認申請しました。見積番号 '+String(finalized?.quote_number||''),true);
+          notice('#quoteEditMsg','最新内容を保存して承認申請しました。見積番号 '+String(finalized?.quote_number||''),true);
           toast('管理者承認待ちにしました');
           setTimeout(()=>go('sales'),500);
         }catch(err){
