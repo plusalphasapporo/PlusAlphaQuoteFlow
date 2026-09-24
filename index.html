@@ -4354,6 +4354,15 @@
             '<div class="kpi"><div class="label">最終API確認</div><div class="value">'+esc(callconnectApi?.last_api_check_status||'未実施')+'</div></div>'+
             '<div class="kpi"><div class="label">最終確認日時</div><div class="value">'+esc(callconnectApi?.last_api_check_at?dateTimeText(callconnectApi.last_api_check_at):'—')+'</div></div>'+
           '</div>'+
+          '<form id="callconnectEndpointForm">'+
+            '<div class="modalGrid2">'+
+              '<div class="field"><label>Contacts List API URL</label><input id="callconnectContactsApiUrl" type="url" value="'+esc(callconnectApi?.contacts_api_url||'')+'" placeholder="CallConnect API仕様の Try it out! で表示されたURL"></div>'+
+              '<div class="field"><label>Records List API URL</label><input id="callconnectRecordsApiUrl" type="url" value="'+esc(callconnectApi?.records_api_url||'')+'" placeholder="CallConnect API仕様の Try it out! で表示されたURL"></div>'+
+            '</div>'+
+            '<div class="notice">接続先URLは固定値を推測せず、CallConnect公式API仕様画面で表示されたURLを登録します。</div>'+
+            '<button class="ghost" type="submit">API URLを保存</button>'+
+          '</form>'+
+          '<div id="callconnectEndpointMsg" class="notice hidden"></div>'+
           '<form id="callconnectApiKeyForm">'+
             '<div class="field"><label>CallConnect API Key</label><input id="callconnectApiKey" type="password" autocomplete="new-password" placeholder="'+(callconnectApi?.api_key_configured?'新しいキーに変更する場合のみ入力':'CallConnectで発行したAPI Keyを入力')+'"></div>'+
             '<div class="notice">保存後にAPI Keyそのものを表示することはできません。必要な場合はCallConnect側で再発行して上書きしてください。</div>'+
@@ -4369,7 +4378,7 @@
           '<div class="supportFlow">'+
             '<div class="supportStep done"><span class="supportStepNum">1</span><strong>Webhook</strong><small>通話終了後の履歴・顧客照合・案件化</small></div>'+
             '<div class="supportStep '+(callconnectApi?.api_key_configured?'done':'active')+'"><span class="supportStepNum">2</span><strong>REST API Key</strong><small>'+(callconnectApi?.api_key_configured?'登録済み':'未登録')+'</small></div>'+
-            '<div class="supportStep"><span class="supportStepNum">3</span><strong>API接続確認</strong><small>次段階で実APIへ接続確認</small></div>'+
+            '<div class="supportStep '+((callconnectApi?.api_key_configured&&callconnectApi?.contacts_api_url_configured)?'active':'')+'"><span class="supportStepNum">3</span><strong>API接続確認</strong><small>'+(callconnectApi?.api_key_configured&&callconnectApi?.contacts_api_url_configured?'接続テスト可能':'API KeyとURL設定が必要')+'</small></div>'+
             '<div class="supportStep"><span class="supportStepNum">4</span><strong>手動・自動同期</strong><small>顧客・通話履歴の再同期</small></div>'+
           '</div>'+
         '</section>';
@@ -4471,6 +4480,24 @@
           notice('#documentProfileMsg','帳票設定を保存しました。',true);
           toast('帳票設定を更新しました');
         }catch(err){notice('#documentProfileMsg',err.message||String(err));}
+        finally{if(btn)btn.disabled=false;}
+      };
+    }
+
+    const callconnectEndpointForm=$('#callconnectEndpointForm');
+    if(callconnectEndpointForm){
+      callconnectEndpointForm.onsubmit=async e=>{
+        e.preventDefault();
+        const btn=e.submitter;if(btn)btn.disabled=true;
+        try{
+          await rpc('save_callconnect_api_endpoints',{
+            p_contacts_api_url:$('#callconnectContactsApiUrl').value.trim()||null,
+            p_records_api_url:$('#callconnectRecordsApiUrl').value.trim()||null
+          });
+          notice('#callconnectEndpointMsg','CallConnect API URLを保存しました。',true);
+          toast('CallConnect API URLを保存しました');
+          setTimeout(()=>renderSettings('integrations'),400);
+        }catch(err){notice('#callconnectEndpointMsg',err.message||String(err));}
         finally{if(btn)btn.disabled=false;}
       };
     }
@@ -7299,6 +7326,8 @@
         '<div class="modalGrid2">'+
           '<div class="item"><strong>API Key登録日時</strong><p>'+esc(dash?.api_key_configured_at?dateTimeText(dash.api_key_configured_at):'未設定')+'</p></div>'+
           '<div class="item"><strong>最終API確認</strong><p>'+esc(dash?.last_api_check_status||'未実施')+(dash?.last_api_check_at?'<br><span class="muted">'+esc(dateTimeText(dash.last_api_check_at))+'</span>':'')+'</p></div>'+
+          '<div class="item"><strong>Contacts API URL</strong><p>'+esc(dash?.contacts_api_url_configured?'設定済み':'未設定')+'</p></div>'+
+          '<div class="item"><strong>Records API URL</strong><p>'+esc(dash?.records_api_url_configured?'設定済み':'未設定')+'</p></div>'+
         '</div>'+
         (dash?.last_api_error?'<div class="notice error">APIエラー: '+esc(dash.last_api_error)+'</div>':'')+
       '</section>'+
