@@ -1237,7 +1237,10 @@
     const role=bootData.context?.role;
     if(role!=='internal_admin') throw new Error('管理者のみ利用できます。');
 
-    const cfg=await rpc('internal_numbering_settings');
+    const [cfg,docProfile]=await Promise.all([
+      rpc('internal_numbering_settings'),
+      rpc('internal_document_profile')
+    ]);
     const quote=cfg?.quote||{};
     const order=cfg?.order||{};
 
@@ -1255,6 +1258,28 @@
           '<button class="primary" type="submit">採番設定を保存</button>'+
         '</form>'+
         '<div id="numberingMsg" class="notice hidden"></div>'+
+      '</section>'+
+      '<section class="card section">'+
+        '<h2>帳票の発行元情報</h2>'+
+        '<p class="sectionDesc">見積書・発注書・納品書に表示する情報です。空欄の項目は帳票に表示しません。</p>'+
+        '<form id="documentProfileForm">'+
+          '<div class="field"><label>会社名 / 屋号</label><input id="docIssuerName" value="'+esc(docProfile?.issuer_name||'')+'"></div>'+
+          '<div class="row">'+
+            '<div class="field" style="flex:1;min-width:180px"><label>郵便番号</label><input id="docPostalCode" value="'+esc(docProfile?.postal_code||'')+'"></div>'+
+            '<div class="field" style="flex:3;min-width:260px"><label>住所</label><input id="docAddress" value="'+esc(docProfile?.address||'')+'"></div>'+
+          '</div>'+
+          '<div class="row">'+
+            '<div class="field" style="flex:1;min-width:180px"><label>電話</label><input id="docPhone" value="'+esc(docProfile?.phone||'')+'"></div>'+
+            '<div class="field" style="flex:1;min-width:220px"><label>メール</label><input id="docEmail" type="email" value="'+esc(docProfile?.email||'')+'"></div>'+
+          '</div>'+
+          '<div class="row">'+
+            '<div class="field" style="flex:1;min-width:180px"><label>担当者</label><input id="docContactName" value="'+esc(docProfile?.contact_name||'')+'"></div>'+
+            '<div class="field" style="flex:1;min-width:220px"><label>登録番号</label><input id="docRegistrationNumber" value="'+esc(docProfile?.registration_number||'')+'"></div>'+
+          '</div>'+
+          '<div class="field"><label>帳票フッター備考</label><textarea id="docFooterNote" rows="3">'+esc(docProfile?.footer_note||'')+'</textarea></div>'+
+          '<button class="primary" type="submit">発行元情報を保存</button>'+
+        '</form>'+
+        '<div id="documentProfileMsg" class="notice hidden"></div>'+
       '</section>';
 
     $('#numberingForm').onsubmit=async e=>{
@@ -1279,6 +1304,30 @@
         if(btn) btn.disabled=false;
       }
     };
+
+    $('#documentProfileForm').onsubmit=async e=>{
+      e.preventDefault();
+      const btn=e.submitter;
+      if(btn) btn.disabled=true;
+      try{
+        await rpc('save_document_profile',{
+          p_issuer_name:$('#docIssuerName').value.trim()||null,
+          p_postal_code:$('#docPostalCode').value.trim()||null,
+          p_address:$('#docAddress').value.trim()||null,
+          p_phone:$('#docPhone').value.trim()||null,
+          p_email:$('#docEmail').value.trim()||null,
+          p_contact_name:$('#docContactName').value.trim()||null,
+          p_registration_number:$('#docRegistrationNumber').value.trim()||null,
+          p_footer_note:$('#docFooterNote').value.trim()||null
+        });
+        notice('#documentProfileMsg','帳票の発行元情報を保存しました。',true);
+      }catch(err){
+        notice('#documentProfileMsg',err.message||String(err));
+      }finally{
+        if(btn) btn.disabled=false;
+      }
+    };
+
   }
 
   async function renderOrderDetail(orderId){
