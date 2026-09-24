@@ -4601,6 +4601,27 @@
       };
     }
 
+    const syncCallConnectRecords=$('#syncCallConnectRecords');
+    if(syncCallConnectRecords){
+      syncCallConnectRecords.onclick=async()=>{
+        syncCallConnectRecords.disabled=true;
+        try{
+          notice('#callconnectApiTestMsg','CallConnectの通話履歴を同期しています...',true);
+          const {data,error}=await supabase.functions.invoke('callconnect-records-sync',{body:{}});
+          if(error) throw error;
+          if(!data) throw new Error('同期結果を取得できませんでした。');
+          const msg='取得 '+Number(data.fetched_count||0)+'件 / 新規 '+Number(data.created_count||0)+'件 / 更新 '+Number(data.updated_count||0)+'件 / 顧客一致 '+Number(data.matched_count||0)+'件 / 未一致 '+Number(data.unmatched_count||0)+'件'+(Number(data.ambiguous_count||0)?' / 候補複数 '+Number(data.ambiguous_count||0)+'件':'')+(Number(data.failed_count||0)?' / 失敗 '+Number(data.failed_count||0)+'件':'');
+          notice('#callconnectApiTestMsg',msg,Number(data.failed_count||0)===0);
+          toast('CallConnect通話履歴を同期しました');
+          setTimeout(()=>renderSettings('integrations'),900);
+        }catch(err){
+          notice('#callconnectApiTestMsg',err.message||String(err));
+        }finally{
+          syncCallConnectRecords.disabled=false;
+        }
+      };
+    }
+
     const securityBtn=$('#openSecuritySettings');
     if(securityBtn) securityBtn.onclick=()=>go('security');
 
