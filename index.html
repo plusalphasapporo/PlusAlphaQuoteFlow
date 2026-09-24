@@ -1005,7 +1005,10 @@
       '<section class="card section">'+
         '<div class="quoteDetailHead">'+
           '<div><h2>見積詳細</h2><p class="sectionDesc">'+esc(customer.name||customer.customer_code||'')+' / '+esc(q.quote_number||'下書き')+' / '+esc(statusText(q.status))+'</p></div>'+
-          '<button id="quoteDetailClose" class="ghost" type="button">閉じる</button>'+
+          '<div class="row">'+
+            (q.quote_number?'<button id="quotePrintBtn" class="ghost" type="button">見積書 印刷/PDF</button>':'')+
+            '<button id="quoteDetailClose" class="ghost" type="button">閉じる</button>'+
+          '</div>'+
         '</div>'+
         (editable
           ? (q.approval_return_reason
@@ -1042,6 +1045,25 @@
       '</section>';
 
     $('#quoteDetailClose').onclick=()=>{ host.innerHTML=''; };
+    const quotePrintBtn=$('#quotePrintBtn');
+    if(quotePrintBtn){
+      quotePrintBtn.onclick=()=>openBusinessDocument('quote',{
+        number:q.quote_number,
+        customer,
+        meta:{
+          '見積番号':q.quote_number,
+          '発行日':dateText(q.finalized_at||q.created_at),
+          '有効期限':dateText(q.valid_until)
+        },
+        items:items.map(i=>({
+          description:i.description,
+          quantity:i.quantity,
+          unitLabel:money(i.unit_price),
+          amountLabel:money(Number(i.quantity||0)*Number(i.unit_price||0))
+        })),
+        totals:{subtotal:q.subtotal,tax:q.tax_amount,total:q.total_amount}
+      });
+    }
     host.scrollIntoView({behavior:'smooth',block:'start'});
 
     if(editable){
@@ -1589,6 +1611,8 @@
     const detail=await rpc('internal_purchase_order_detail',{p_purchase_order_id:id});
     const po=detail?.purchase_order;
     if(!po) throw new Error('発注が見つかりません。');
+    const customer=detail.customer||{};
+    const order=detail.order||null;
     const items=detail.items||[];
     const rows=items.map(i=>
       '<tr><td>'+esc(i.description||'')+'</td><td>'+esc(i.quantity)+'</td><td class="amount">'+esc(money(i.unit_cost))+'</td><td class="amount">'+esc(money(Number(i.quantity||0)*Number(i.unit_cost||0)))+'</td></tr>'
@@ -1598,7 +1622,7 @@
       '<section class="card section">'+
         '<div class="quoteDetailHead">'+
           '<div><h2>発注詳細</h2><p class="sectionDesc">'+esc(po.purchase_order_number||'未採番')+' / '+esc(po.supplier_name||'仕入先未設定')+'</p></div>'+
-          '<button id="purchaseOrderDetailClose" class="ghost" type="button">閉じる</button>'+
+          '<div class="row"><button id="purchaseOrderPrintBtn" class="ghost" type="button">発注書 印刷/PDF</button><button id="purchaseOrderDetailClose" class="ghost" type="button">閉じる</button></div>'+
         '</div>'+
         kpis([
           ['原価合計',money(po.total_cost)],
@@ -1628,6 +1652,23 @@
       '</section>';
 
     $('#purchaseOrderDetailClose').onclick=()=>{$('#purchaseOrderDetailHost').innerHTML='';};
+    $('#purchaseOrderPrintBtn').onclick=()=>openBusinessDocument('purchase_order',{
+      number:po.purchase_order_number,
+      customer:{name:po.supplier_name||'仕入先未設定'},
+      meta:{
+        '発注番号':po.purchase_order_number||'未採番',
+        '発行日':dateText(po.created_at),
+        '受注番号':order?.order_number||'—',
+        '対象顧客':customer.name||'—'
+      },
+      items:items.map(i=>({
+        description:i.description,
+        quantity:i.quantity,
+        unitLabel:money(i.unit_cost),
+        amountLabel:money(Number(i.quantity||0)*Number(i.unit_cost||0))
+      })),
+      totals:{total:po.total_cost}
+    });
     $('#purchaseOrderDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
 
     function poEditRow(item={}){
@@ -1724,7 +1765,7 @@
       '<section class="card section">'+
         '<div class="quoteDetailHead">'+
           '<div><h2>納品詳細</h2><p class="sectionDesc">'+esc(d.delivery_number||'未採番')+' / '+esc(c.name||'')+'</p></div>'+
-          '<button id="deliveryDetailClose" class="ghost" type="button">閉じる</button>'+
+          '<div class="row"><button id="deliveryPrintBtn" class="ghost" type="button">納品書 印刷/PDF</button><button id="deliveryDetailClose" class="ghost" type="button">閉じる</button></div>'+
         '</div>'+
         kpis([
           ['状態',statusText(d.status)],
@@ -1745,6 +1786,18 @@
       '</section>';
 
     $('#deliveryDetailClose').onclick=()=>{$('#deliveryDetailHost').innerHTML='';};
+    $('#deliveryPrintBtn').onclick=()=>openBusinessDocument('delivery',{
+      number:d.delivery_number,
+      customer:c,
+      meta:{
+        '納品番号':d.delivery_number||'未採番',
+        '受注番号':o?.order_number||'—',
+        '納品予定日':dateText(d.scheduled_at),
+        '納品日':dateText(d.delivered_at)
+      },
+      items:[{description:d.notes||'納品',quantity:1,unitLabel:'',amountLabel:''}],
+      note:d.notes||''
+    });
     $('#deliveryDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
 
     if(d.scheduled_at){
