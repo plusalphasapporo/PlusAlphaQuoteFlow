@@ -498,6 +498,67 @@
   }
 
 
+  function listToolbar(prefix,items,statusKey,placeholder,sortOptions){
+    const statuses=[...new Set((items||[]).map(x=>x?.[statusKey]).filter(Boolean))];
+    const counts={};
+    statuses.forEach(s=>counts[s]=(items||[]).filter(x=>x?.[statusKey]===s).length);
+    return '<section class="card section">'+
+      '<div class="row between" style="gap:12px;align-items:flex-end;flex-wrap:wrap">'+
+        '<div class="field" style="flex:1;min-width:240px;margin:0"><label>検索</label><input id="'+prefix+'Search" placeholder="'+esc(placeholder||'番号・顧客名などで検索')+'"></div>'+
+        '<div class="field" style="min-width:200px;margin:0"><label>並び順</label><select id="'+prefix+'Sort">'+
+          (sortOptions||[]).map(([v,l])=>'<option value="'+esc(v)+'">'+esc(l)+'</option>').join('')+
+        '</select></div>'+
+        '<span id="'+prefix+'Count" class="pill">'+esc((items||[]).length)+'件</span>'+
+      '</div>'+
+      '<div id="'+prefix+'StatusBar" class="row" data-active="all" style="margin-top:12px;gap:8px;flex-wrap:wrap">'+
+        '<button class="primary listStatusBtn" type="button" data-status="all">すべて '+esc((items||[]).length)+'</button>'+
+        statuses.map(s=>'<button class="ghost listStatusBtn" type="button" data-status="'+esc(s)+'">'+esc(statusText(s))+' '+esc(counts[s])+'</button>').join('')+
+      '</div>'+
+    '</section>';
+  }
+
+  function bindListToolbar(prefix,renderRows){
+    const search=$('#'+prefix+'Search');
+    const sort=$('#'+prefix+'Sort');
+    if(search) search.oninput=renderRows;
+    if(sort) sort.onchange=renderRows;
+    document.querySelectorAll('#'+prefix+'StatusBar .listStatusBtn').forEach(btn=>{
+      btn.onclick=()=>{
+        const bar=$('#'+prefix+'StatusBar');
+        bar.dataset.active=btn.dataset.status||'all';
+        bar.querySelectorAll('.listStatusBtn').forEach(x=>{
+          x.classList.toggle('primary',x===btn);
+          x.classList.toggle('ghost',x!==btn);
+        });
+        renderRows();
+      };
+    });
+  }
+
+  function listToolbarState(prefix){
+    return {
+      query:($('#'+prefix+'Search')?.value||'').trim().toLowerCase(),
+      status:$('#'+prefix+'StatusBar')?.dataset.active||'all',
+      sort:$('#'+prefix+'Sort')?.value||''
+    };
+  }
+
+  function updateListCount(prefix,shown,total){
+    const el=$('#'+prefix+'Count');
+    if(el) el.textContent=shown===total ? total+'件' : shown+' / '+total+'件';
+  }
+
+  function compareText(a,b){
+    return String(a||'').localeCompare(String(b||''),'ja');
+  }
+
+  function timeValue(v){
+    if(!v) return 0;
+    const t=new Date(v).getTime();
+    return Number.isFinite(t)?t:0;
+  }
+
+
   function printEsc(v){ return esc(v); }
 
   async function openBusinessDocument(kind,payload){
@@ -1954,27 +2015,40 @@
     const data=await rpc('internal_customers_list');
 
     $('#home').innerHTML=
-      pageIntro('顧客','顧客の検索・新規登録・詳細確認を行います。新規登録は一覧を離れずモーダルで行います。')+
-      '<section class="card section">'+
-        '<div class="row between">'+
-          '<div class="field" style="flex:1;max-width:520px;margin:0"><label>顧客検索</label><input id="customerSearch" placeholder="顧客名・顧客コード・電話番号"></div>'+
-          '<button id="customerCreateOpen" class="primary" type="button">＋ 新規顧客登録</button>'+
-        '</div>'+
-      '</section>'+
+      pageIntro('顧客','顧客を検索・絞り込み・並び替えし、一覧から顧客カルテを開けます。')+
+      '<section class="card section"><div class="row between"><div><h3>顧客一覧</h3><p class="sectionDesc">名前・コード・電話・メール・住所で検索できます。</p></div><button id="customerCreateOpen" class="primary" type="button">＋ 新規顧客登録</button></div></section>'+
+      listToolbar('customerList',data||[],'status','顧客名・顧客コード・電話・メール・住所',[
+        ['updated_desc','更新が新しい順'],
+        ['name_asc','顧客名順'],
+        ['code_asc','顧客コード順']
+      ])+
       '<div id="customerDetailHost"></div>'+
       '<section class="section"><div id="customerListHost"></div></section>';
 
     const renderRows=()=>{
-      const q=$('#customerSearch').value.trim().toLowerCase();
-      const filtered=(data||[]).filter(c=>!q || [
-        c.customer_code,c.name,c.phone,c.status
-      ].some(v=>String(v||'').toLowerCase().includes(q)));
+      const state=listToolbarState('customerList');
+      let filtered=(data||[]).filter(c=>{
+        if(state.status!=='all' && c.status!==state.status) return false;
+        if(!state.query) return true;
+        return [
+          c.customer_code,c.name,c.trade_name,c.phone,c.mobile,c.email,
+          c.postal_code,c.address1,c.address2,c.status,c.internal_note
+        ].some(v=>String(v||'').toLowerCase().includes(state.query));
+      });
 
+      filtered=[...filtered].sort((a,b)=>{
+        if(state.sort==='name_asc') return compareText(a.name,b.name);
+        if(state.sort==='code_asc') return compareText(a.customer_code,b.customer_code);
+        return timeValue(b.updated_at)-timeValue(a.updated_at);
+      });
+
+      updateListCount('customerList',filtered.length,(data||[]).length);
       const rows=filtered.map(c=>
         '<tr>'+
           '<td>'+esc(c.customer_code||'—')+'</td>'+
-          '<td><strong>'+esc(c.name)+'</strong></td>'+
-          '<td>'+esc(c.phone||'—')+'</td>'+
+          '<td><strong>'+esc(c.name)+'</strong>'+(c.trade_name?'<br><span class="muted">'+esc(c.trade_name)+'</span>':'')+'</td>'+
+          '<td>'+esc(c.phone||c.mobile||'—')+'</td>'+
+          '<td>'+esc(c.email||'—')+'</td>'+
           '<td>'+esc(statusText(c.status))+'</td>'+
           '<td>'+(c.manual_hold?'<span class="hold">手動ホールド中</span>':'<span class="normal">通常</span>')+'</td>'+
           '<td>'+esc(dateText(c.updated_at))+'</td>'+
@@ -1983,8 +2057,7 @@
       );
 
       $('#customerListHost').innerHTML=dataTable(
-        ['顧客コード','顧客名','電話','状態','取引状態','更新日','操作'],
-        rows
+        ['顧客コード','顧客名','連絡先','メール','状態','取引状態','更新日','操作'],rows
       );
 
       document.querySelectorAll('.customerDetail').forEach(btn=>{
@@ -1998,7 +2071,7 @@
     };
 
     $('#customerCreateOpen').onclick=renderCustomerCreate;
-    $('#customerSearch').oninput=renderRows;
+    bindListToolbar('customerList',renderRows);
     renderRows();
   }
 
@@ -2338,50 +2411,78 @@
     const role=bootData.context?.role;
     const internal=role==='internal_admin'||role==='internal_staff';
     const [{data,error},cmap]=await Promise.all([
-      supabase.from('quotes').select('id,customer_id,quote_number,status,subtotal,tax_amount,total_amount,valid_until,created_at').order('created_at',{ascending:false}),
+      supabase.from('quotes').select('id,customer_id,quote_number,status,project_name,subtotal,tax_amount,total_amount,valid_until,created_at,updated_at').order('created_at',{ascending:false}),
       customerMap()
     ]);
     if(error) throw error;
-
-    const rows=(data||[]).map(q=>{
-      const c=cmap[q.customer_id]||{};
-      return '<tr>'+
-        '<td><strong>'+esc(q.quote_number||'下書き')+'</strong></td>'+
-        '<td>'+esc(c.name||'—')+'</td>'+
-        '<td>'+esc(statusText(q.status))+'</td>'+
-        '<td class="amount">'+esc(money(q.total_amount))+'</td>'+
-        '<td>'+esc(dateText(q.valid_until))+'</td>'+
-        '<td>'+esc(dateText(q.created_at))+'</td>'+
-        (internal?'<td><button class="linkBtn quoteEdit" type="button" data-id="'+esc(q.id)+'">詳細・編集</button></td>':'')+
-      '</tr>';
-    });
+    const quotes=data||[];
 
     $('#home').innerHTML=
-      pageIntro('見積','見積の確認・編集・新規登録を行います。')+
+      pageIntro('見積','見積を状態別に絞り込み、顧客名・番号・案件名からすぐ探せます。')+
       (internal
         ? '<section class="card section"><div class="row between"><div><h3>見積</h3><p class="sectionDesc">一覧を離れず新規見積を登録できます。</p></div><button id="quoteChooseCustomer" class="primary" type="button">＋ 新規見積登録</button></div></section>'
         : '')+
+      listToolbar('quoteList',quotes,'status','見積番号・顧客名・案件名',[
+        ['created_desc','作成が新しい順'],
+        ['updated_desc','更新が新しい順'],
+        ['amount_desc','金額が高い順'],
+        ['valid_asc','有効期限が近い順']
+      ])+
       '<div id="quoteDetailHost"></div>'+
-      '<section class="section">'+dataTable(
-        internal?['見積番号','顧客','状態','合計','有効期限','作成日','操作']:['見積番号','顧客','状態','合計','有効期限','作成日'],
-        rows
-      )+'</section>';
+      '<section class="section"><div id="quoteListHost"></div></section>';
 
-    if(internal){
-      $('#quoteChooseCustomer').onclick=()=>renderCustomerQuoteCreate(null);
-      document.querySelectorAll('.quoteEdit').forEach(btn=>{
-        btn.onclick=async()=>{
-          btn.disabled=true;
-          try{
-            await renderQuoteEditor(btn.dataset.id,cmap);
-          }catch(err){
-            toast(err.message||String(err));
-          }finally{
-            btn.disabled=false;
-          }
-        };
+    const renderRows=()=>{
+      const state=listToolbarState('quoteList');
+      let filtered=quotes.filter(q=>{
+        if(state.status!=='all' && q.status!==state.status) return false;
+        const customer=cmap[q.customer_id]||{};
+        if(!state.query) return true;
+        return [q.quote_number,q.project_name,customer.name,customer.customer_code,q.status]
+          .some(v=>String(v||'').toLowerCase().includes(state.query));
       });
-    }
+
+      filtered=[...filtered].sort((a,b)=>{
+        if(state.sort==='updated_desc') return timeValue(b.updated_at)-timeValue(a.updated_at);
+        if(state.sort==='amount_desc') return Number(b.total_amount||0)-Number(a.total_amount||0);
+        if(state.sort==='valid_asc') return (timeValue(a.valid_until)||Number.MAX_SAFE_INTEGER)-(timeValue(b.valid_until)||Number.MAX_SAFE_INTEGER);
+        return timeValue(b.created_at)-timeValue(a.created_at);
+      });
+
+      updateListCount('quoteList',filtered.length,quotes.length);
+      const rows=filtered.map(q=>{
+        const customer=cmap[q.customer_id]||{};
+        return '<tr>'+
+          '<td><strong>'+esc(q.quote_number||'下書き')+'</strong></td>'+
+          '<td>'+esc(customer.name||'—')+'</td>'+
+          '<td>'+esc(q.project_name||'—')+'</td>'+
+          '<td>'+esc(statusText(q.status))+'</td>'+
+          '<td class="amount">'+esc(money(q.total_amount))+'</td>'+
+          '<td>'+esc(dateText(q.valid_until))+'</td>'+
+          '<td>'+esc(dateText(q.created_at))+'</td>'+
+          (internal?'<td><button class="linkBtn quoteEdit" type="button" data-id="'+esc(q.id)+'">詳細・編集</button></td>':'')+
+        '</tr>';
+      });
+
+      $('#quoteListHost').innerHTML=dataTable(
+        internal?['見積番号','顧客','案件名','状態','合計','有効期限','作成日','操作']:['見積番号','顧客','案件名','状態','合計','有効期限','作成日'],
+        rows
+      );
+
+      if(internal){
+        document.querySelectorAll('.quoteEdit').forEach(btn=>{
+          btn.onclick=async()=>{
+            btn.disabled=true;
+            try{ await renderQuoteEditor(btn.dataset.id,cmap); }
+            catch(err){ toast(err.message||String(err)); }
+            finally{ btn.disabled=false; }
+          };
+        });
+      }
+    };
+
+    if(internal) $('#quoteChooseCustomer').onclick=()=>renderCustomerQuoteCreate(null);
+    bindListToolbar('quoteList',renderRows);
+    renderRows();
   }
 
   async function renderSettings(){
@@ -2801,62 +2902,70 @@
 
     if(role==='customer_user'){
       const data=await rpc('customer_operations_home');
-      const rows=(data.orders||[]).map(o=>
-        '<tr>'+
-          '<td><strong>'+esc(o.order_number||'未採番')+'</strong></td>'+
-          '<td>'+esc(statusText(o.status))+'</td>'+
-          '<td class="amount">'+esc(money(o.total_amount))+'</td>'+
-          '<td>'+esc(dateText(o.ordered_at))+'</td>'+
-          '<td><button class="linkBtn customerOrderDetail" type="button" data-id="'+esc(o.id)+'">詳細</button></td>'+
-        '</tr>'
-      );
-
+      const orders=data.orders||[];
       $('#home').innerHTML=
         pageIntro('受注','承諾済み見積から作成された受注状況を確認できます。')+
-        '<div id="orderDetailHost"></div>'+
-        dataTable(['受注番号','状態','合計','受注日','操作'],rows);
+        listToolbar('customerOrderList',orders,'status','受注番号・状態',[
+          ['ordered_desc','受注日が新しい順'],
+          ['amount_desc','金額が高い順']
+        ])+
+        '<div id="orderDetailHost"></div><div id="customerOrderListHost"></div>';
 
-      document.querySelectorAll('.customerOrderDetail').forEach(btn=>{
-        btn.onclick=async()=>{
-          btn.disabled=true;
-          try{ await renderCustomerOrderDetail(btn.dataset.id); }
-          catch(err){ toast(err.message||String(err)); }
-          finally{ btn.disabled=false; }
-        };
-      });
+      const renderRows=()=>{
+        const state=listToolbarState('customerOrderList');
+        let filtered=orders.filter(o=>(state.status==='all'||o.status===state.status) && (!state.query||[o.order_number,o.status].some(v=>String(v||'').toLowerCase().includes(state.query))));
+        filtered=[...filtered].sort((a,b)=>state.sort==='amount_desc'?Number(b.total_amount||0)-Number(a.total_amount||0):timeValue(b.ordered_at)-timeValue(a.ordered_at));
+        updateListCount('customerOrderList',filtered.length,orders.length);
+        $('#customerOrderListHost').innerHTML=dataTable(['受注番号','状態','合計','受注日','操作'],filtered.map(o=>
+          '<tr><td><strong>'+esc(o.order_number||'未採番')+'</strong></td><td>'+esc(statusText(o.status))+'</td><td class="amount">'+esc(money(o.total_amount))+'</td><td>'+esc(dateText(o.ordered_at))+'</td><td><button class="linkBtn customerOrderDetail" type="button" data-id="'+esc(o.id)+'">詳細</button></td></tr>'
+        ));
+        document.querySelectorAll('.customerOrderDetail').forEach(btn=>btn.onclick=async()=>{btn.disabled=true;try{await renderCustomerOrderDetail(btn.dataset.id);}catch(err){toast(err.message||String(err));}finally{btn.disabled=false;}});
+      };
+      bindListToolbar('customerOrderList',renderRows);
+      renderRows();
       return;
     }
 
     const [{data,error},cmap]=await Promise.all([
-      supabase.from('orders').select('id,customer_id,quote_id,order_number,status,total_amount,ordered_at,created_at').order('created_at',{ascending:false}),
+      supabase.from('orders').select('id,customer_id,quote_id,order_number,status,total_amount,ordered_at,created_at,updated_at').order('created_at',{ascending:false}),
       customerMap()
     ]);
     if(error) throw error;
-    const rows=(data||[]).map(o=>{
-      const c=cmap[o.customer_id]||{};
-      return '<tr>'+
-        '<td><strong>'+esc(o.order_number||'未採番')+'</strong></td>'+
-        '<td>'+esc(c.name||'—')+'</td>'+
-        '<td>'+esc(statusText(o.status))+'</td>'+
-        '<td class="amount">'+esc(money(o.total_amount))+'</td>'+
-        '<td>'+esc(dateText(o.ordered_at))+'</td>'+
-        '<td>'+esc(dateText(o.created_at))+'</td>'+
-        '<td><button class="linkBtn orderDetail" type="button" data-id="'+esc(o.id)+'">詳細</button></td>'+
-      '</tr>';
-    });
-    $('#home').innerHTML=
-      pageIntro('受注','管理者承認済みの見積から作成された受注を確認します。')+
-      '<div id="orderDetailHost"></div>'+
-      dataTable(['受注番号','顧客','状態','合計','受注日','作成日','操作'],rows);
+    const orders=data||[];
 
-    document.querySelectorAll('.orderDetail').forEach(btn=>{
-      btn.onclick=async()=>{
-        btn.disabled=true;
-        try{ await renderOrderDetail(btn.dataset.id); }
-        catch(err){ toast(err.message||String(err)); }
-        finally{ btn.disabled=false; }
-      };
-    });
+    $('#home').innerHTML=
+      pageIntro('受注','受注を状態・顧客・番号で絞り込み、発注・納品へ進む案件を探せます。')+
+      listToolbar('orderList',orders,'status','受注番号・顧客名',[
+        ['created_desc','作成が新しい順'],
+        ['ordered_desc','受注日が新しい順'],
+        ['amount_desc','金額が高い順'],
+        ['customer_asc','顧客名順']
+      ])+
+      '<div id="orderDetailHost"></div><section class="section"><div id="orderListHost"></div></section>';
+
+    const renderRows=()=>{
+      const state=listToolbarState('orderList');
+      let filtered=orders.filter(o=>{
+        if(state.status!=='all'&&o.status!==state.status) return false;
+        const customer=cmap[o.customer_id]||{};
+        return !state.query||[o.order_number,customer.name,customer.customer_code,o.status].some(v=>String(v||'').toLowerCase().includes(state.query));
+      });
+      filtered=[...filtered].sort((a,b)=>{
+        if(state.sort==='ordered_desc') return timeValue(b.ordered_at)-timeValue(a.ordered_at);
+        if(state.sort==='amount_desc') return Number(b.total_amount||0)-Number(a.total_amount||0);
+        if(state.sort==='customer_asc') return compareText(cmap[a.customer_id]?.name,cmap[b.customer_id]?.name);
+        return timeValue(b.created_at)-timeValue(a.created_at);
+      });
+      updateListCount('orderList',filtered.length,orders.length);
+      $('#orderListHost').innerHTML=dataTable(['受注番号','顧客','状態','合計','受注日','作成日','操作'],filtered.map(o=>{
+        const customer=cmap[o.customer_id]||{};
+        return '<tr><td><strong>'+esc(o.order_number||'未採番')+'</strong></td><td>'+esc(customer.name||'—')+'</td><td>'+esc(statusText(o.status))+'</td><td class="amount">'+esc(money(o.total_amount))+'</td><td>'+esc(dateText(o.ordered_at))+'</td><td>'+esc(dateText(o.created_at))+'</td><td><button class="linkBtn orderDetail" type="button" data-id="'+esc(o.id)+'">詳細</button></td></tr>';
+      }));
+      document.querySelectorAll('.orderDetail').forEach(btn=>btn.onclick=async()=>{btn.disabled=true;try{await renderOrderDetail(btn.dataset.id);}catch(err){toast(err.message||String(err));}finally{btn.disabled=false;}});
+    };
+
+    bindListToolbar('orderList',renderRows);
+    renderRows();
   }
 
   async function renderPurchaseOrderDetail(id){
@@ -3002,31 +3111,42 @@
 
   async function renderPurchaseOrders(){
     const data=await rpc('internal_purchase_orders');
-    const rows=(data||[]).map(po=>
-      '<tr>'+
-        '<td><strong>'+esc(po.purchase_order_number||'未採番')+'</strong></td>'+
-        '<td>'+esc(po.customer_name||'—')+'</td>'+
-        '<td>'+esc(po.supplier_name||'—')+'</td>'+
-        '<td>'+esc(statusText(po.status))+'</td>'+
-        '<td class="amount">'+esc(money(po.total_cost))+'</td>'+
-        '<td>'+esc(po.order_number||'—')+'</td>'+
-        '<td><button class="linkBtn purchaseOrderDetail" type="button" data-id="'+esc(po.id)+'">詳細</button></td>'+
-      '</tr>'
-    );
+    const purchaseOrders=data||[];
 
     $('#home').innerHTML=
-      pageIntro('発注','受注に紐づく仕入・発注情報を確認します。')+
-      '<div id="purchaseOrderDetailHost"></div>'+
-      dataTable(['発注番号','顧客','仕入先','状態','原価','受注番号','操作'],rows);
+      pageIntro('発注','発注番号・顧客・仕入先で検索し、状態別に絞り込めます。')+
+      listToolbar('purchaseOrderList',purchaseOrders,'status','発注番号・顧客・仕入先・受注番号',[
+        ['created_desc','作成が新しい順'],
+        ['updated_desc','更新が新しい順'],
+        ['amount_desc','原価が高い順'],
+        ['supplier_asc','仕入先順']
+      ])+
+      '<div id="purchaseOrderDetailHost"></div><section class="section"><div id="purchaseOrderListHost"></div></section>';
 
-    document.querySelectorAll('.purchaseOrderDetail').forEach(btn=>{
-      btn.onclick=async()=>{
-        btn.disabled=true;
-        try{ await renderPurchaseOrderDetail(btn.dataset.id); }
-        catch(err){ toast(err.message||String(err)); }
-        finally{ btn.disabled=false; }
-      };
-    });
+    const renderRows=()=>{
+      const state=listToolbarState('purchaseOrderList');
+      let filtered=purchaseOrders.filter(po=>{
+        if(state.status!=='all'&&po.status!==state.status) return false;
+        return !state.query||[
+          po.purchase_order_number,po.customer_name,po.customer_code,
+          po.supplier_name,po.order_number,po.status
+        ].some(v=>String(v||'').toLowerCase().includes(state.query));
+      });
+      filtered=[...filtered].sort((a,b)=>{
+        if(state.sort==='updated_desc') return timeValue(b.updated_at)-timeValue(a.updated_at);
+        if(state.sort==='amount_desc') return Number(b.total_cost||0)-Number(a.total_cost||0);
+        if(state.sort==='supplier_asc') return compareText(a.supplier_name,b.supplier_name);
+        return timeValue(b.created_at)-timeValue(a.created_at);
+      });
+      updateListCount('purchaseOrderList',filtered.length,purchaseOrders.length);
+      $('#purchaseOrderListHost').innerHTML=dataTable(['発注番号','顧客','仕入先','状態','原価','受注番号','更新日','操作'],filtered.map(po=>
+        '<tr><td><strong>'+esc(po.purchase_order_number||'未採番')+'</strong></td><td>'+esc(po.customer_name||'—')+'</td><td>'+esc(po.supplier_name||'—')+'</td><td>'+esc(statusText(po.status))+'</td><td class="amount">'+esc(money(po.total_cost))+'</td><td>'+esc(po.order_number||'—')+'</td><td>'+esc(dateText(po.updated_at))+'</td><td><button class="linkBtn purchaseOrderDetail" type="button" data-id="'+esc(po.id)+'">詳細</button></td></tr>'
+      ));
+      document.querySelectorAll('.purchaseOrderDetail').forEach(btn=>btn.onclick=async()=>{btn.disabled=true;try{await renderPurchaseOrderDetail(btn.dataset.id);}catch(err){toast(err.message||String(err));}finally{btn.disabled=false;}});
+    };
+
+    bindListToolbar('purchaseOrderList',renderRows);
+    renderRows();
   }
 
   async function renderDeliveryDetail(id){
@@ -3240,65 +3360,75 @@
 
     if(role==='customer_user'){
       const data=await rpc('customer_operations_home');
-      const rows=(data.deliveries||[]).map(d=>
-        '<tr>'+
-          '<td><strong>'+esc(d.delivery_number||'未採番')+'</strong></td>'+
-          '<td>'+esc(statusText(d.status))+'</td>'+
-          '<td>'+esc(dateText(d.scheduled_at))+'</td>'+
-          '<td>'+esc(dateText(d.delivered_at))+'</td>'+
-          '<td><button class="linkBtn customerDeliveryDetail" type="button" data-id="'+esc(d.id)+'">詳細</button></td>'+
-        '</tr>'
-      );
-
+      const deliveries=data.deliveries||[];
       $('#home').innerHTML=
-        pageIntro('納品','納品予定と完了状況を確認できます。')+
-        '<div id="deliveryDetailHost"></div>'+
-        dataTable(['納品番号','状態','予定日','納品日','操作'],rows);
+        pageIntro('納品','納品予定と完了状況を検索・状態別に確認できます。')+
+        listToolbar('customerDeliveryList',deliveries,'status','納品番号・状態',[
+          ['scheduled_asc','予定日が近い順'],
+          ['created_desc','新しい順']
+        ])+
+        '<div id="deliveryDetailHost"></div><div id="customerDeliveryListHost"></div>';
 
-      document.querySelectorAll('.customerDeliveryDetail').forEach(btn=>{
-        btn.onclick=async()=>{
-          btn.disabled=true;
-          try{ await renderCustomerDeliveryDetail(btn.dataset.id); }
-          catch(err){ toast(err.message||String(err)); }
-          finally{ btn.disabled=false; }
-        };
-      });
+      const renderRows=()=>{
+        const state=listToolbarState('customerDeliveryList');
+        let filtered=deliveries.filter(d=>(state.status==='all'||d.status===state.status)&&(!state.query||[d.delivery_number,d.status].some(v=>String(v||'').toLowerCase().includes(state.query))));
+        filtered=[...filtered].sort((a,b)=>state.sort==='created_desc'?timeValue(b.created_at)-timeValue(a.created_at):(timeValue(a.scheduled_at)||Number.MAX_SAFE_INTEGER)-(timeValue(b.scheduled_at)||Number.MAX_SAFE_INTEGER));
+        updateListCount('customerDeliveryList',filtered.length,deliveries.length);
+        $('#customerDeliveryListHost').innerHTML=dataTable(['納品番号','状態','予定日','納品日','操作'],filtered.map(d=>
+          '<tr><td><strong>'+esc(d.delivery_number||'未採番')+'</strong></td><td>'+esc(statusText(d.status))+'</td><td>'+esc(dateText(d.scheduled_at))+'</td><td>'+esc(dateText(d.delivered_at))+'</td><td><button class="linkBtn customerDeliveryDetail" type="button" data-id="'+esc(d.id)+'">詳細</button></td></tr>'
+        ));
+        document.querySelectorAll('.customerDeliveryDetail').forEach(btn=>btn.onclick=async()=>{btn.disabled=true;try{await renderCustomerDeliveryDetail(btn.dataset.id);}catch(err){toast(err.message||String(err));}finally{btn.disabled=false;}});
+      };
+      bindListToolbar('customerDeliveryList',renderRows);
+      renderRows();
       return;
     }
 
     const [{data,error},cmap]=await Promise.all([
       supabase.from('deliveries')
-        .select('id,customer_id,order_id,delivery_number,status,scheduled_at,delivered_at,created_at')
+        .select('id,customer_id,order_id,delivery_number,status,scheduled_at,delivered_at,installation_location,delivery_contact_name,created_at,updated_at')
         .order('created_at',{ascending:false}),
       customerMap()
     ]);
     if(error) throw error;
-
-    const rows=(data||[]).map(d=>{
-      const c=cmap[d.customer_id]||{};
-      return '<tr>'+
-        '<td><strong>'+esc(d.delivery_number||'未採番')+'</strong></td>'+
-        '<td>'+esc(c.name||'—')+'</td>'+
-        '<td>'+esc(statusText(d.status))+'</td>'+
-        '<td>'+esc(dateText(d.scheduled_at))+'</td>'+
-        '<td>'+esc(dateText(d.delivered_at))+'</td>'+
-        '<td><button class="linkBtn deliveryDetail" type="button" data-id="'+esc(d.id)+'">詳細</button></td>'+
-      '</tr>';
-    });
+    const deliveries=data||[];
 
     $('#home').innerHTML=
-      pageIntro('納品','受注に紐づく納品情報を確認します。')+
-      '<div id="deliveryDetailHost"></div>'+
-      dataTable(['納品番号','顧客','状態','予定日','納品日','操作'],rows);
+      pageIntro('納品','納品番号・顧客・設置場所で検索し、予定・完了を状態別に確認できます。')+
+      listToolbar('deliveryList',deliveries,'status','納品番号・顧客・設置場所・担当者',[
+        ['scheduled_asc','予定日が近い順'],
+        ['created_desc','作成が新しい順'],
+        ['updated_desc','更新が新しい順'],
+        ['customer_asc','顧客名順']
+      ])+
+      '<div id="deliveryDetailHost"></div><section class="section"><div id="deliveryListHost"></div></section>';
 
-    document.querySelectorAll('.deliveryDetail').forEach(btn=>{
-      btn.onclick=async()=>{
-        btn.disabled=true;
-        try{ await renderDeliveryDetail(btn.dataset.id); }
-        catch(err){ toast(err.message||String(err)); }
-        finally{ btn.disabled=false; }
-      };
-    });
+    const renderRows=()=>{
+      const state=listToolbarState('deliveryList');
+      let filtered=deliveries.filter(d=>{
+        if(state.status!=='all'&&d.status!==state.status) return false;
+        const customer=cmap[d.customer_id]||{};
+        return !state.query||[
+          d.delivery_number,customer.name,customer.customer_code,d.installation_location,
+          d.delivery_contact_name,d.status
+        ].some(v=>String(v||'').toLowerCase().includes(state.query));
+      });
+      filtered=[...filtered].sort((a,b)=>{
+        if(state.sort==='created_desc') return timeValue(b.created_at)-timeValue(a.created_at);
+        if(state.sort==='updated_desc') return timeValue(b.updated_at)-timeValue(a.updated_at);
+        if(state.sort==='customer_asc') return compareText(cmap[a.customer_id]?.name,cmap[b.customer_id]?.name);
+        return (timeValue(a.scheduled_at)||Number.MAX_SAFE_INTEGER)-(timeValue(b.scheduled_at)||Number.MAX_SAFE_INTEGER);
+      });
+      updateListCount('deliveryList',filtered.length,deliveries.length);
+      $('#deliveryListHost').innerHTML=dataTable(['納品番号','顧客','状態','予定日','納品日','設置場所','操作'],filtered.map(d=>{
+        const customer=cmap[d.customer_id]||{};
+        return '<tr><td><strong>'+esc(d.delivery_number||'未採番')+'</strong></td><td>'+esc(customer.name||'—')+'</td><td>'+esc(statusText(d.status))+'</td><td>'+esc(dateText(d.scheduled_at))+'</td><td>'+esc(dateText(d.delivered_at))+'</td><td>'+esc(d.installation_location||'—')+'</td><td><button class="linkBtn deliveryDetail" type="button" data-id="'+esc(d.id)+'">詳細</button></td></tr>';
+      }));
+      document.querySelectorAll('.deliveryDetail').forEach(btn=>btn.onclick=async()=>{btn.disabled=true;try{await renderDeliveryDetail(btn.dataset.id);}catch(err){toast(err.message||String(err));}finally{btn.disabled=false;}});
+    };
+
+    bindListToolbar('deliveryList',renderRows);
+    renderRows();
   }
 
   async function renderTicketDetail(ticketId){
@@ -3545,49 +3675,60 @@
       cmap=map;
     }
 
-    const rows=(data||[]).map(t=>{
-      const c=customer?{}:(cmap[t.customer_id]||{});
-      return '<tr>'+
-        '<td><strong>'+esc(t.ticket_number||'—')+'</strong></td>'+
-        (customer?'':'<td>'+esc(c.name||'—')+'</td>')+
-        '<td>'+esc(t.subject||'')+'</td>'+
-        '<td>'+esc(statusText(t.status))+'</td>'+
-        '<td>'+esc(t.priority||'normal')+'</td>'+
-        '<td>'+esc(dateText(t.created_at))+'</td>'+
-        '<td><button class="linkBtn ticketDetail" type="button" data-id="'+esc(t.id)+'">詳細</button></td>'+
-      '</tr>';
-    });
-
     const createBox=customer
-      ? '<section class="card section">'+
-          '<h2>新しく問い合わせる</h2>'+
-          '<p class="sectionDesc">件名と内容を入力してください。</p>'+
-          '<form id="ticketForm">'+
-            '<div class="field"><label>件名</label><input id="subject" required></div>'+
-            '<div class="field"><label>内容</label><textarea id="description" rows="5"></textarea></div>'+
-            '<button class="green" type="submit">問い合わせを送信</button>'+
-          '</form>'+
-          '<div id="ticketMsg" class="notice hidden"></div>'+
-        '</section>'
+      ? '<section class="card section"><h2>新しく問い合わせる</h2><p class="sectionDesc">件名と内容を入力してください。</p><form id="ticketForm"><div class="field"><label>件名</label><input id="subject" required></div><div class="field"><label>内容</label><textarea id="description" rows="5"></textarea></div><button class="green" type="submit">問い合わせを送信</button></form><div id="ticketMsg" class="notice hidden"></div></section>'
       : '';
 
     $('#home').innerHTML=
-      pageIntro(customer?'問い合わせ':'サポート',customer?'問い合わせの作成・返信・履歴確認ができます。':'問い合わせの詳細、メッセージ、引き継ぎ状況を確認します。')+
+      pageIntro(customer?'問い合わせ':'サポート',customer?'問い合わせの作成・返信・履歴確認ができます。':'問い合わせを検索・状態別に絞り込み、優先度順で確認できます。')+
       createBox+
-      '<div id="ticketDetailHost"></div>'+
-      '<section class="section">'+dataTable(
-        customer?['番号','件名','状態','優先度','作成日','操作']:['番号','顧客','件名','状態','優先度','作成日','操作'],
-        rows
-      )+'</section>';
+      listToolbar('ticketList',data,'status',customer?'番号・件名':'番号・顧客・件名・優先度',[
+        ['priority_desc','優先度が高い順'],
+        ['created_desc','作成が新しい順'],
+        ['updated_desc','更新が新しい順']
+      ])+
+      '<div id="ticketDetailHost"></div><section class="section"><div id="ticketListHost"></div></section>';
 
-    document.querySelectorAll('.ticketDetail').forEach(btn=>{
-      btn.onclick=async()=>{
-        btn.disabled=true;
-        try{ await renderTicketDetail(btn.dataset.id); }
-        catch(err){ toast(err.message||String(err)); }
-        finally{ btn.disabled=false; }
-      };
-    });
+    const priorityRank={urgent:0,high:1,normal:2,low:3};
+    const renderRows=()=>{
+      const state=listToolbarState('ticketList');
+      let filtered=data.filter(t=>{
+        if(state.status!=='all'&&t.status!==state.status) return false;
+        const customerInfo=customer?{}:(cmap[t.customer_id]||{});
+        return !state.query||[
+          t.ticket_number,t.subject,t.priority,t.status,
+          customerInfo.name,customerInfo.customer_code
+        ].some(v=>String(v||'').toLowerCase().includes(state.query));
+      });
+      filtered=[...filtered].sort((a,b)=>{
+        if(state.sort==='updated_desc') return timeValue(b.updated_at)-timeValue(a.updated_at);
+        if(state.sort==='created_desc') return timeValue(b.created_at)-timeValue(a.created_at);
+        const p=(priorityRank[a.priority]??9)-(priorityRank[b.priority]??9);
+        return p!==0?p:timeValue(b.created_at)-timeValue(a.created_at);
+      });
+      updateListCount('ticketList',filtered.length,data.length);
+
+      $('#ticketListHost').innerHTML=dataTable(
+        customer?['番号','件名','状態','優先度','作成日','操作']:['番号','顧客','件名','状態','優先度','更新日','操作'],
+        filtered.map(t=>{
+          const customerInfo=customer?{}:(cmap[t.customer_id]||{});
+          return '<tr>'+
+            '<td><strong>'+esc(t.ticket_number||'—')+'</strong></td>'+
+            (customer?'':'<td>'+esc(customerInfo.name||'—')+'</td>')+
+            '<td>'+esc(t.subject||'')+'</td>'+
+            '<td>'+esc(statusText(t.status))+'</td>'+
+            '<td>'+(t.priority==='urgent'?'<span class="hold">urgent</span>':esc(t.priority||'normal'))+'</td>'+
+            '<td>'+esc(dateText(customer?t.created_at:t.updated_at))+'</td>'+
+            '<td><button class="linkBtn ticketDetail" type="button" data-id="'+esc(t.id)+'">詳細</button></td>'+
+          '</tr>';
+        })
+      );
+
+      document.querySelectorAll('.ticketDetail').forEach(btn=>btn.onclick=async()=>{btn.disabled=true;try{await renderTicketDetail(btn.dataset.id);}catch(err){toast(err.message||String(err));}finally{btn.disabled=false;}});
+    };
+
+    bindListToolbar('ticketList',renderRows);
+    renderRows();
 
     if(customer){
       $('#ticketForm').onsubmit=async e=>{
@@ -3596,8 +3737,7 @@
         if(btn) btn.disabled=true;
         try{
           await rpc('create_customer_ticket',{
-            p_asset_id:null,
-            p_contract_id:null,
+            p_asset_id:null,p_contract_id:null,
             p_subject:$('#subject').value.trim(),
             p_description:$('#description').value.trim()||null
           });
