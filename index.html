@@ -999,6 +999,225 @@
     });
   }
 
+  async function renderTicketDetail(ticketId){
+    const role=bootData.context?.role;
+    const customer=role==='customer_user';
+    const internal=role==='internal_admin'||role==='internal_staff';
+    const support=role==='support_staff';
+
+    const detail=customer
+      ? await rpc('customer_ticket_detail',{p_ticket_id:ticketId})
+      : await rpc('support_ticket_workspace',{p_ticket_id:ticketId});
+
+    const t=detail?.ticket;
+    if(!t) throw new Error('問い合わせが見つかりません。');
+
+    const messages=detail.messages||[];
+    const attachments=detail.attachments||[];
+    const handoffs=detail.handoffs||[];
+    const asset=detail.asset||null;
+    const contract=detail.contract||null;
+    const c=detail.customer||null;
+
+    const visibilityLabel=v=>({customer:'顧客向け',support:'サポート内',internal:'社内のみ'}[v]||v||'顧客向け');
+    const messagesHtml=messages.length
+      ? messages.map(m=>
+          '<div class="item">'+
+            '<div class="row between"><strong>'+esc(customer?'メッセージ':visibilityLabel(m.visibility))+'</strong><span class="muted">'+esc(dateText(m.created_at))+'</span></div>'+
+            '<p style="white-space:pre-wrap">'+esc(m.body||'')+'</p>'+
+          '</div>'
+        ).join('')
+      : '<div class="empty">メッセージはまだありません。</div>';
+
+    const attachmentRows=attachments.map(a=>
+      '<tr><td>'+esc(a.file_name||'—')+'</td><td>'+esc(a.visibility?visibilityLabel(a.visibility):'顧客向け')+'</td><td>'+esc(a.size_bytes||0)+'</td><td>'+esc(dateText(a.created_at))+'</td></tr>'
+    );
+
+    const handoffRows=handoffs.map(h=>
+      '<tr>'+
+        '<td>'+esc(h.state||'—')+'</td>'+
+        '<td>'+esc(h.reason||'—')+'</td>'+
+        '<td>'+esc(h.next_action||'—')+'</td>'+
+        '<td>'+esc(dateText(h.created_at))+'</td>'+
+        (internal?'<td>'+
+          (h.state==='pending'?'<button class="linkBtn handoffAccept" data-id="'+esc(h.id)+'" type="button">受理</button>':'')+
+          (h.state==='accepted'?'<button class="linkBtn handoffComplete" data-id="'+esc(h.id)+'" type="button">完了</button>':'')+
+        '</td>':'')+
+      '</tr>'
+    );
+
+    let visibilitySelect='';
+    if(customer){
+      visibilitySelect='<input type="hidden" id="ticketMessageVisibility" value="customer">';
+    }else if(support){
+      visibilitySelect=
+        '<div class="field"><label>公開範囲</label><select id="ticketMessageVisibility">'+
+          '<option value="customer">顧客向け</option>'+
+          '<option value="support">サポート内</option>'+
+        '</select></div>';
+    }else{
+      visibilitySelect=
+        '<div class="field"><label>公開範囲</label><select id="ticketMessageVisibility">'+
+          '<option value="customer">顧客向け</option>'+
+          '<option value="support">サポート内</option>'+
+          '<option value="internal">社内のみ</option>'+
+        '</select></div>';
+    }
+
+    const actionButtons=!customer
+      ? '<div class="row" style="margin-top:14px">'+
+          (t.status==='closed'
+            ? '<button id="ticketReopenBtn" class="green" type="button">問い合わせを再開</button>'
+            : '<button id="ticketCloseBtn" class="green" type="button">問い合わせを完了</button>')+
+          (t.status!=='closed'
+            ? '<button id="ticketHandoffToggle" class="ghost" type="button">自社へ引き継ぐ</button>'
+            : '')+
+        '</div>'+
+        (t.status!=='closed'
+          ? '<div id="ticketHandoffBox" class="hidden" style="margin-top:12px">'+
+              '<div class="field"><label>引き継ぎ理由</label><textarea id="handoffReason" rows="2"></textarea></div>'+
+              '<div class="field"><label>次に行うこと</label><textarea id="handoffNextAction" rows="2"></textarea></div>'+
+              '<button id="ticketHandoffBtn" class="orange" type="button">引き継ぎを登録</button>'+
+            '</div>'
+          : '')+
+        '<div id="ticketActionMsg" class="notice hidden"></div>'
+      : '';
+
+    $('#ticketDetailHost').innerHTML=
+      '<section class="card section">'+
+        '<div class="quoteDetailHead">'+
+          '<div><h2>問い合わせ詳細</h2><p class="sectionDesc">'+esc(t.ticket_number||'—')+' / '+esc(t.subject||'')+'</p></div>'+
+          '<button id="ticketDetailClose" class="ghost" type="button">閉じる</button>'+
+        '</div>'+
+        kpis([
+          ['状態',statusText(t.status)],
+          ['優先度',t.priority||'normal'],
+          ['作成日',dateText(t.created_at)],
+          ['更新日',dateText(t.updated_at)]
+        ])+
+        (c?'<div class="row"><span class="pill">顧客 '+esc(c.name||'—')+'</span></div>':'')+
+        '<div class="notice">'+esc(t.description||'内容なし')+'</div>'+
+        '<div class="row">'+
+          (asset?'<span class="pill">機器 '+esc(asset.asset_number||asset.model_name||'—')+'</span>':'')+
+          (contract?'<span class="pill">契約 '+esc(contract.contract_number||'—')+'</span>':'')+
+        '</div>'+
+        actionButtons+
+        '<section class="section">'+
+          '<h3>メッセージ</h3>'+
+          messagesHtml+
+          '<form id="ticketMessageForm" class="card section" style="box-shadow:none">'+
+            visibilitySelect+
+            '<div class="field"><label>返信</label><textarea id="ticketMessageBody" rows="4" required></textarea></div>'+
+            '<button class="primary" type="submit">メッセージを送信</button>'+
+          '</form>'+
+          '<div id="ticketMessageMsg" class="notice hidden"></div>'+
+        '</section>'+
+        (!customer?'<section class="section"><h3>引き継ぎ履歴</h3>'+dataTable(internal?['状態','理由','次の対応','作成日','操作']:['状態','理由','次の対応','作成日'],handoffRows)+'</section>':'')+
+        '<section class="section"><h3>添付ファイル</h3>'+dataTable(['ファイル名','公開範囲','サイズ(bytes)','作成日'],attachmentRows)+'</section>'+
+      '</section>';
+
+    $('#ticketDetailClose').onclick=()=>{$('#ticketDetailHost').innerHTML='';};
+    $('#ticketDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
+
+    $('#ticketMessageForm').onsubmit=async e=>{
+      e.preventDefault();
+      const btn=e.submitter;
+      if(btn) btn.disabled=true;
+      try{
+        await rpc('post_ticket_message',{
+          p_ticket_id:t.id,
+          p_visibility:$('#ticketMessageVisibility').value,
+          p_body:$('#ticketMessageBody').value.trim()
+        });
+        notice('#ticketMessageMsg','メッセージを送信しました。',true);
+        toast('メッセージを送信しました');
+        await renderTicketDetail(t.id);
+      }catch(err){
+        notice('#ticketMessageMsg',err.message||String(err));
+      }finally{
+        if(btn) btn.disabled=false;
+      }
+    };
+
+    if(!customer){
+      const closeBtn=$('#ticketCloseBtn');
+      if(closeBtn){
+        closeBtn.onclick=async()=>{
+          closeBtn.disabled=true;
+          try{
+            await rpc('close_support_ticket',{p_ticket_id:t.id});
+            toast('問い合わせを完了しました');
+            await renderTicketDetail(t.id);
+          }catch(err){
+            notice('#ticketActionMsg',err.message||String(err));
+          }finally{ closeBtn.disabled=false; }
+        };
+      }
+
+      const reopenBtn=$('#ticketReopenBtn');
+      if(reopenBtn){
+        reopenBtn.onclick=async()=>{
+          reopenBtn.disabled=true;
+          try{
+            await rpc('reopen_support_ticket',{p_ticket_id:t.id});
+            toast('問い合わせを再開しました');
+            await renderTicketDetail(t.id);
+          }catch(err){
+            notice('#ticketActionMsg',err.message||String(err));
+          }finally{ reopenBtn.disabled=false; }
+        };
+      }
+
+      const toggle=$('#ticketHandoffToggle');
+      if(toggle) toggle.onclick=()=>$('#ticketHandoffBox').classList.toggle('hidden');
+
+      const handoffBtn=$('#ticketHandoffBtn');
+      if(handoffBtn){
+        handoffBtn.onclick=async()=>{
+          handoffBtn.disabled=true;
+          try{
+            await rpc('handoff_ticket_to_internal',{
+              p_ticket_id:t.id,
+              p_reason:$('#handoffReason').value.trim(),
+              p_next_action:$('#handoffNextAction').value.trim()
+            });
+            toast('引き継ぎを登録しました');
+            await renderTicketDetail(t.id);
+          }catch(err){
+            notice('#ticketActionMsg',err.message||String(err));
+          }finally{ handoffBtn.disabled=false; }
+        };
+      }
+
+      if(internal){
+        document.querySelectorAll('.handoffAccept').forEach(btn=>{
+          btn.onclick=async()=>{
+            btn.disabled=true;
+            try{
+              await rpc('accept_ticket_handoff',{p_handoff_id:btn.dataset.id});
+              toast('引き継ぎを受理しました');
+              await renderTicketDetail(t.id);
+            }catch(err){
+              notice('#ticketActionMsg',err.message||String(err));
+            }finally{ btn.disabled=false; }
+          };
+        });
+        document.querySelectorAll('.handoffComplete').forEach(btn=>{
+          btn.onclick=async()=>{
+            btn.disabled=true;
+            try{
+              await rpc('complete_ticket_handoff',{p_handoff_id:btn.dataset.id});
+              toast('引き継ぎを完了しました');
+              await renderTicketDetail(t.id);
+            }catch(err){
+              notice('#ticketActionMsg',err.message||String(err));
+            }finally{ btn.disabled=false; }
+          };
+        });
+      }
+    }
+  }
+
   async function renderSupport(){
     const role=bootData.context?.role;
     const [{data,error},cmap]=await Promise.all([
@@ -1016,16 +1235,35 @@
         '<td>'+esc(statusText(t.status))+'</td>'+
         '<td>'+esc(t.priority||'normal')+'</td>'+
         '<td>'+esc(dateText(t.created_at))+'</td>'+
+        '<td><button class="linkBtn ticketDetail" type="button" data-id="'+esc(t.id)+'">詳細</button></td>'+
       '</tr>';
     });
 
     let createBox='';
     if(role==='customer_user'){
+      const [assetRes,contractRes]=await Promise.all([
+        supabase.from('assets').select('id,asset_number,model_name,status').order('created_at',{ascending:false}),
+        supabase.from('contracts').select('id,contract_number,status').order('created_at',{ascending:false})
+      ]);
+      if(assetRes.error) throw assetRes.error;
+      if(contractRes.error) throw contractRes.error;
+
+      const assetOptions=(assetRes.data||[]).map(a=>
+        '<option value="'+esc(a.id)+'">'+esc(a.asset_number||a.model_name||'機器')+'</option>'
+      ).join('');
+      const contractOptions=(contractRes.data||[]).map(c=>
+        '<option value="'+esc(c.id)+'">'+esc(c.contract_number||'契約')+'</option>'
+      ).join('');
+
       createBox=
         '<section class="card section">'+
           '<h2>新しく問い合わせる</h2>'+
-          '<p class="sectionDesc">件名と内容を入力して送信してください。</p>'+
+          '<p class="sectionDesc">必要に応じて対象の契約・機器を選択できます。</p>'+
           '<form id="ticketForm">'+
+            '<div class="row">'+
+              '<div class="field" style="flex:1;min-width:180px"><label>対象機器（任意）</label><select id="ticketAsset"><option value="">指定なし</option>'+assetOptions+'</select></div>'+
+              '<div class="field" style="flex:1;min-width:180px"><label>対象契約（任意）</label><select id="ticketContract"><option value="">指定なし</option>'+contractOptions+'</select></div>'+
+            '</div>'+
             '<div class="field"><label>件名</label><input id="subject" required></div>'+
             '<div class="field"><label>内容</label><textarea id="description" rows="4"></textarea></div>'+
             '<button class="green" type="submit">送信する</button>'+
@@ -1035,17 +1273,29 @@
     }
 
     $('#home').innerHTML=
-      pageIntro(role==='customer_user'?'問い合わせ':'サポート','問い合わせの状況を確認します。')+
+      pageIntro(role==='customer_user'?'問い合わせ':'サポート','問い合わせの詳細、メッセージ、引き継ぎ状況を確認します。')+
       createBox+
-      '<section class="section">'+dataTable(['番号','顧客','件名','状態','優先度','作成日'],rows)+'</section>';
+      '<div id="ticketDetailHost"></div>'+
+      '<section class="section">'+dataTable(['番号','顧客','件名','状態','優先度','作成日','操作'],rows)+'</section>';
+
+    document.querySelectorAll('.ticketDetail').forEach(btn=>{
+      btn.onclick=async()=>{
+        btn.disabled=true;
+        try{ await renderTicketDetail(btn.dataset.id); }
+        catch(err){ toast(err.message||String(err)); }
+        finally{ btn.disabled=false; }
+      };
+    });
 
     if(role==='customer_user'){
       $('#ticketForm').onsubmit=async e=>{
         e.preventDefault();
+        const btn=e.submitter;
+        if(btn) btn.disabled=true;
         try{
           await rpc('create_customer_ticket',{
-            p_asset_id:null,
-            p_contract_id:null,
+            p_asset_id:$('#ticketAsset').value||null,
+            p_contract_id:$('#ticketContract').value||null,
             p_subject:$('#subject').value.trim(),
             p_description:$('#description').value.trim()||null
           });
@@ -1054,138 +1304,11 @@
           setTimeout(()=>go('support'),450);
         }catch(err){
           notice('#ticketMsg',err.message||String(err));
+        }finally{
+          if(btn) btn.disabled=false;
         }
       };
     }
-  }
-
-  async function renderInternalAssetDetail(id){
-    const detail=await rpc('internal_asset_detail',{p_asset_id:id});
-    const a=detail?.asset;
-    if(!a) throw new Error('機器が見つかりません。');
-    const c=detail.customer||{};
-    const tickets=detail.tickets||[];
-    const contracts=detail.customer_contracts||[];
-
-    const ticketRows=tickets.map(t=>
-      '<tr><td>'+esc(t.ticket_number||'—')+'</td><td>'+esc(t.subject||'')+'</td><td>'+esc(statusText(t.status))+'</td><td>'+esc(t.priority||'normal')+'</td></tr>'
-    );
-    const contractRows=contracts.map(ct=>
-      '<tr><td>'+esc(ct.contract_number||'未採番')+'</td><td>'+esc(statusText(ct.status))+'</td><td>'+esc(dateText(ct.start_date))+'</td><td>'+esc(dateText(ct.end_date))+'</td></tr>'
-    );
-
-    $('#assetDetailHost').innerHTML=
-      '<section class="card section">'+
-        '<div class="quoteDetailHead">'+
-          '<div><h2>機器詳細</h2><p class="sectionDesc">'+esc(a.asset_number||'未採番')+' / '+esc(c.name||'')+'</p></div>'+
-          '<button id="assetDetailClose" class="ghost" type="button">閉じる</button>'+
-        '</div>'+
-        kpis([
-          ['状態',statusText(a.status)],
-          ['問い合わせ',tickets.length],
-          ['契約',contracts.length],
-          ['登録日',dateText(a.created_at)]
-        ])+
-        '<form id="assetEditForm">'+
-          '<div class="row">'+
-            '<div class="field" style="flex:1;min-width:180px"><label>機器番号</label><input id="assetEditNumber" value="'+esc(a.asset_number||'')+'"></div>'+
-            '<div class="field" style="flex:1;min-width:180px"><label>機種</label><input id="assetEditModel" value="'+esc(a.model_name||'')+'"></div>'+
-          '</div>'+
-          '<div class="field"><label>シリアル番号</label><input id="assetEditSerial" value="'+esc(a.serial_number||'')+'"></div>'+
-          '<div class="field"><label>社内メモ</label><textarea id="assetEditNote" rows="3">'+esc(a.internal_note||'')+'</textarea></div>'+
-          '<button class="primary" type="submit">変更を保存</button>'+
-        '</form>'+
-        '<div id="assetEditMsg" class="notice hidden"></div>'+
-        '<section class="section"><h3>この機器の問い合わせ</h3>'+dataTable(['番号','件名','状態','優先度'],ticketRows)+'</section>'+
-        '<section class="section"><h3>顧客の契約</h3>'+dataTable(['契約番号','状態','開始日','終了日'],contractRows)+'</section>'+
-      '</section>';
-
-    $('#assetDetailClose').onclick=()=>{$('#assetDetailHost').innerHTML='';};
-    $('#assetDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
-
-    $('#assetEditForm').onsubmit=async e=>{
-      e.preventDefault();
-      const btn=e.submitter;
-      if(btn) btn.disabled=true;
-      try{
-        await rpc('update_asset',{
-          p_asset_id:a.id,
-          p_asset_number:$('#assetEditNumber').value.trim()||null,
-          p_serial_number:$('#assetEditSerial').value.trim()||null,
-          p_model_name:$('#assetEditModel').value.trim()||null,
-          p_internal_note:$('#assetEditNote').value.trim()||null
-        });
-        notice('#assetEditMsg','機器情報を更新しました。',true);
-        toast('機器を更新しました');
-        setTimeout(()=>go('assets'),400);
-      }catch(err){
-        notice('#assetEditMsg',err.message||String(err));
-      }finally{
-        if(btn) btn.disabled=false;
-      }
-    };
-  }
-
-  async function renderInternalContractDetail(id){
-    const detail=await rpc('internal_contract_detail',{p_contract_id:id});
-    const ct=detail?.contract;
-    if(!ct) throw new Error('契約が見つかりません。');
-    const c=detail.customer||{};
-    const assets=detail.assets||[];
-
-    const assetRows=assets.map(a=>
-      '<tr><td>'+esc(a.asset_number||'未採番')+'</td><td>'+esc(a.model_name||'—')+'</td><td>'+esc(a.serial_number||'—')+'</td><td>'+esc(statusText(a.status))+'</td></tr>'
-    );
-
-    $('#contractDetailHost').innerHTML=
-      '<section class="card section">'+
-        '<div class="quoteDetailHead">'+
-          '<div><h2>契約詳細</h2><p class="sectionDesc">'+esc(ct.contract_number||'未採番')+' / '+esc(c.name||'')+'</p></div>'+
-          '<button id="contractDetailClose" class="ghost" type="button">閉じる</button>'+
-        '</div>'+
-        kpis([
-          ['状態',statusText(ct.status)],
-          ['開始日',dateText(ct.start_date)],
-          ['終了日',dateText(ct.end_date)],
-          ['登録機器',assets.length]
-        ])+
-        '<form id="contractEditForm">'+
-          '<div class="field"><label>契約番号</label><input id="contractEditNumber" value="'+esc(ct.contract_number||'')+'"></div>'+
-          '<div class="row">'+
-            '<div class="field" style="flex:1;min-width:180px"><label>開始日</label><input id="contractEditStart" type="date" value="'+esc(ct.start_date||'')+'"></div>'+
-            '<div class="field" style="flex:1;min-width:180px"><label>終了日</label><input id="contractEditEnd" type="date" value="'+esc(ct.end_date||'')+'"></div>'+
-          '</div>'+
-          '<div class="field"><label>社内メモ</label><textarea id="contractEditNote" rows="3">'+esc(ct.internal_note||'')+'</textarea></div>'+
-          '<button class="primary" type="submit">変更を保存</button>'+
-        '</form>'+
-        '<div id="contractEditMsg" class="notice hidden"></div>'+
-        '<section class="section"><h3>顧客の機器</h3>'+dataTable(['機器番号','機種','シリアル','状態'],assetRows)+'</section>'+
-      '</section>';
-
-    $('#contractDetailClose').onclick=()=>{$('#contractDetailHost').innerHTML='';};
-    $('#contractDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
-
-    $('#contractEditForm').onsubmit=async e=>{
-      e.preventDefault();
-      const btn=e.submitter;
-      if(btn) btn.disabled=true;
-      try{
-        await rpc('update_contract',{
-          p_contract_id:ct.id,
-          p_contract_number:$('#contractEditNumber').value.trim()||null,
-          p_start_date:$('#contractEditStart').value||null,
-          p_end_date:$('#contractEditEnd').value||null,
-          p_internal_note:$('#contractEditNote').value.trim()||null
-        });
-        notice('#contractEditMsg','契約情報を更新しました。',true);
-        toast('契約を更新しました');
-        setTimeout(()=>go('assets'),400);
-      }catch(err){
-        notice('#contractEditMsg',err.message||String(err));
-      }finally{
-        if(btn) btn.disabled=false;
-      }
-    };
   }
 
   async function renderAssets(){
