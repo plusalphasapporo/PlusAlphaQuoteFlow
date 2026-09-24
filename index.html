@@ -1056,9 +1056,10 @@
           '<section class="formSection">'+
             '<div class="formSectionHead"><span class="sectionNo">01</span><h3>会社・拠点</h3></div>'+
             '<div class="modalGrid2">'+
-              '<div class="field"><label>会社名 <span class="muted">必須</span></label><input id="customerName" required autofocus></div>'+
+              '<div class="field"><label>会社名・法人名 <span class="muted">必須</span></label><input id="customerName" required autofocus placeholder="例：株式会社〇〇"></div>'+
+              '<div class="field"><label>屋号・店舗名</label><input id="customerTradeName" placeholder="例：〇〇札幌店"></div>'+
               '<div class="field"><label>顧客番号</label><input id="customerCodePreview" value="'+esc(options?.next_customer_code||'自動採番')+'" readonly></div>'+
-              '<div class="field"><label>拠点区分</label><select id="customerBranchType"><option value="head_office">本店</option><option value="branch">支店</option></select></div>'+
+              '<div class="field"><label>拠点区分</label><select id="customerBranchType"><option value="head_office">本店・本社</option><option value="branch">支店・営業所・店舗</option></select></div>'+
               '<div class="field" id="customerParentField" style="display:none"><label>親顧客</label><select id="customerParent"><option value="">選択してください</option>'+parentOptions+'</select></div>'+
             '</div>'+
           '</section>'+
@@ -1081,10 +1082,21 @@
             '</div>'+
           '</section>'+
           '<section class="formSection">'+
-            '<div class="formSectionHead"><span class="sectionNo">04</span><h3>運用設定</h3></div>'+
+            '<div class="formSectionHead"><span class="sectionNo">04</span><h3>主担当者</h3></div>'+
+            '<p class="sectionDesc">登録時に主担当者まで一緒に登録できます。担当者が未定の場合は空欄でも保存できます。</p>'+
+            '<div class="modalGrid3">'+
+              '<div class="field"><label>担当者名</label><input id="customerContactName" placeholder="例：山田 太郎"></div>'+
+              '<div class="field"><label>役職・部署</label><input id="customerContactTitle" placeholder="例：総務部 部長"></div>'+
+              '<div class="field"><label>直通電話</label><input id="customerContactPhone"></div>'+
+              '<div class="field"><label>携帯電話</label><input id="customerContactMobile"></div>'+
+              '<div class="field"><label>メール</label><input id="customerContactEmail" type="email"></div>'+
+              '<div class="field"><label>希望連絡方法</label><select id="customerContactPreferred"><option value="">指定なし</option><option value="phone">電話</option><option value="mobile">携帯</option><option value="email">メール</option></select></div>'+
+            '</div>'+
+          '</section>'+
+          '<section class="formSection">'+
+            '<div class="formSectionHead"><span class="sectionNo">05</span><h3>運用設定</h3></div>'+
             '<div class="field"><label>サポート会社</label><select id="customerSupportCompany"><option value="">指定なし</option>'+supportOptions+'</select></div>'+
-            '<div class="field"><label>社内メモ</label><textarea id="customerNote" rows="4"></textarea></div>'+
-            '<p class="muted">担当者・機器・物件は顧客登録後に追加します。</p>'+
+            '<div class="field"><label>社内メモ・注意事項</label><textarea id="customerNote" rows="4" placeholder="契約前の注意事項、訪問時の補足、社内共有事項など"></textarea></div>'+
           '</section>'+
           '<div id="customerCreateMsg" class="notice hidden"></div>'+
         '</div>'+
@@ -1109,9 +1121,10 @@
       const btn=e.submitter;
       if(btn) btn.disabled=true;
       try{
-        const created=await rpc('create_customer_full',{
+        const created=await rpc('create_customer_full_v2',{
           p_customer_code:null,
           p_name:$('#customerName').value.trim(),
+          p_trade_name:$('#customerTradeName').value.trim()||null,
           p_branch_type:$('#customerBranchType').value,
           p_parent_customer_id:$('#customerParent').value||null,
           p_postal_code:$('#customerPostalCode').value.trim()||null,
@@ -1123,7 +1136,13 @@
           p_email:$('#customerEmail').value.trim()||null,
           p_website:$('#customerWebsite').value.trim()||null,
           p_support_company_id:$('#customerSupportCompany').value||null,
-          p_internal_note:$('#customerNote').value.trim()||null
+          p_internal_note:$('#customerNote').value.trim()||null,
+          p_contact_name:$('#customerContactName').value.trim()||null,
+          p_contact_title:$('#customerContactTitle').value.trim()||null,
+          p_contact_phone:$('#customerContactPhone').value.trim()||null,
+          p_contact_mobile:$('#customerContactMobile').value.trim()||null,
+          p_contact_email:$('#customerContactEmail').value.trim()||null,
+          p_contact_preferred_channel:$('#customerContactPreferred').value||null
         });
         closeAppModal();
         toast('顧客 '+(created?.customer_code||'')+' を登録しました');
