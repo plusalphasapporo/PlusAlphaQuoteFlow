@@ -6245,7 +6245,7 @@
     $('#supportNewForm').onsubmit=async e=>{
       e.preventDefault(); const btn=e.submitter; if(btn) btn.disabled=true;
       try{
-        const result=await rpc('internal_create_support_ticket',{
+        const result=await rpc('create_support_ticket',{
           p_customer_id:$('#supportNewCustomer').value,
           p_asset_id:$('#supportNewAsset').value||null,
           p_contract_id:$('#supportNewContract').value||null,
