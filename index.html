@@ -1179,12 +1179,13 @@
     const home=$('#home');
 
     if(role==='internal_admin'||role==='internal_staff'){
-      const [ops,q,unreadHandoffs,supportWorkspace,deadlineStates]=await Promise.all([
+      const [ops,q,unreadHandoffs,supportWorkspace,deadlineStates,callconnectDash]=await Promise.all([
         rpc('internal_operations_dashboard'),
         rpc('internal_handoff_queue'),
         rpc('internal_unread_handoff_notifications'),
         rpc('internal_support_cases_list'),
-        rpc('support_deadline_states')
+        rpc('support_deadline_states'),
+        rpc('callconnect_dashboard')
       ]);
       const internalDeadlineMap={};
       (deadlineStates||[]).forEach(x=>internalDeadlineMap[x.ticket_id]=x);
@@ -1313,6 +1314,14 @@
         '<section class="card section">'+
           '<div class="row between"><div><h2>納品予定</h2><p class="sectionDesc">本日分と予定超過を上位表示します。</p></div><button class="ghost dashGoDelivery" type="button">納品一覧を開く</button></div>'+
           dataTable(['納品番号','顧客','予定','設置場所','担当','状態','操作'],deliveryRows)+
+        '</section>'+
+        '<section class="card section">'+
+          '<div class="row between"><div><h2>CallConnect</h2><p class="sectionDesc">入電・不在着信・顧客照合状況を確認します。</p></div><button class="ghost dashGoCallConnect" type="button">CallConnectを開く</button></div>'+
+          '<div class="modalGrid3">'+
+            '<div class="item"><strong>接続状態</strong><p>'+esc(callconnectDash?.integration_state==='connected'?'接続済み':'設定待ち')+'</p></div>'+
+            '<div class="item"><strong>受信通話</strong><p>'+esc(callconnectDash?.total_calls||0)+'件</p></div>'+
+            '<div class="item"><strong>未照合</strong><p>'+esc(callconnectDash?.unmatched_calls||0)+'件</p></div>'+
+          '</div>'+
         '</section>'+
         '<section class="card section">'+
           '<div class="row between"><div><h2>問い合わせ</h2><p class="sectionDesc">緊急・高優先度・担当未設定を優先して確認します。</p></div><button class="ghost dashGoSupport" type="button">サポートを開く</button></div>'+
