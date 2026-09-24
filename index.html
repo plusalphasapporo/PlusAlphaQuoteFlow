@@ -15,7 +15,7 @@
     .hidden{display:none!important}.muted{color:var(--muted)}.notice{padding:12px 14px;border-radius:10px;background:#eff6ff;color:#1e3a8a;margin:12px 0}.error{background:#fef2f2;color:#991b1b}.ok{background:#ecfdf5;color:#065f46}
     .row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.between{justify-content:space-between}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:16px 0}
     .kpi{background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px}.kpi .label{font-size:12px;color:var(--muted);font-weight:800}.kpi .value{font-size:30px;font-weight:900;margin-top:6px}
-    .section{margin-top:18px}.item{border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:10px}.item h3{margin:0 0 5px;font-size:14px}.item p{margin:4px 0;font-size:13px;color:#475569}
+    .section{margin-top:18px}.app-nav{display:flex;gap:8px;margin:16px 0;flex-wrap:wrap}.app-nav button.active{background:var(--navy);color:#fff}.item{border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:10px}.item h3{margin:0 0 5px;font-size:14px}.item p{margin:4px 0;font-size:13px;color:#475569}
     table{width:100%;border-collapse:collapse}th,td{padding:10px 12px;border-bottom:1px solid #edf1f6;text-align:left;font-size:13px}th{color:#64748b;background:#fafcff}
     .pill{display:inline-flex;padding:5px 9px;border-radius:999px;background:#f8fafc;border:1px solid var(--line);font-size:12px;font-weight:800}.pill.good{background:#ecfdf5;color:#047857}.pill.bad{background:#fef2f2;color:#b91c1c}
     #toast{position:fixed;right:18px;bottom:18px;background:#0f172a;color:#fff;padding:11px 14px;border-radius:10px;display:none;z-index:30}
@@ -57,6 +57,7 @@
       <div><h1 id="pageTitle" style="margin-bottom:4px"></h1><div id="companyName" class="muted"></div></div>
       <div id="integrations" class="row"></div>
     </div>
+    <div id="appNav" class="app-nav"></div>
     <div id="home"></div>
   </section>
 </main>
@@ -79,7 +80,7 @@
   const notice = (id,msg,ok=false) => { const e=$(id); e.textContent=msg; e.className='notice '+(ok?'ok':'error'); e.classList.remove('hidden'); };
   const rpc = async (name,args={}) => { const {data,error}=await supabase.rpc(name,args); if(error) throw error; return data; };
 
-  let bootData=null, mfaState={};
+  let bootData=null, mfaState={}, currentPage='home';
 
   function kpis(items){
     return '<div class="grid">'+items.map(([l,v])=>'<div class="kpi"><div class="label">'+esc(l)+'</div><div class="value">'+esc(v??0)+'</div></div>').join('')+'</div>';
@@ -93,6 +94,65 @@
       const txt={connected:'接続済み',degraded:'一部障害',manual:'手動運用',disabled:'未接続'}[st]||st;
       return '<span class="pill '+(good?'good':'bad')+'">'+l+' : '+txt+'</span>';
     }).join('');
+  }
+
+  function renderNav(){
+    const role=bootData?.context?.role;
+    const internal=role==='internal_admin'||role==='internal_staff';
+    const nav=$('#appNav');
+    if(!internal){ nav.innerHTML=''; return; }
+    nav.innerHTML=
+      '<button class="ghost '+(currentPage==='home'?'active':'')+'" data-app-page="home">ホーム</button>'+
+      '<button class="ghost '+(currentPage==='assets'?'active':'')+'" data-app-page="assets">OA機器台帳</button>';
+    nav.querySelectorAll('[data-app-page]').forEach(b=>b.onclick=async()=>{
+      currentPage=b.dataset.appPage;
+      renderNav();
+      await renderCurrentPage();
+    });
+  }
+
+  async function renderAssets(){
+    const home=$('#home');
+    home.innerHTML='<section class="card section"><h2>OA機器台帳</h2><p class="muted">読み込み中...</p></section>';
+    try{
+      const assets=await rpc('internal_assets_list');
+      const rows=(assets||[]).map(a=>'<tr>'+
+        '<td>'+esc(a.customer?.name||'')+'</td>'+
+        '<td><b>'+esc(a.asset_number||'—')+'</b></td>'+
+        '<td>'+esc(a.model_name||'—')+'</td>'+
+        '<td>'+esc(a.serial_number||'—')+'</td>'+
+        '<td>'+esc(a.status||'')+'</td>'+
+        '<td>'+esc(a.open_ticket_count||0)+' / '+esc(a.ticket_count||0)+'</td>'+
+        '<td><button class="ghost asset-detail" data-id="'+esc(a.id)+'">詳細</button></td>'+
+      '</tr>').join('');
+      home.innerHTML=
+        '<section class="card section"><div class="row between"><div><h2 style="margin-bottom:4px">OA機器台帳</h2><div class="muted">Supabase正本データを表示しています。</div></div><span class="pill">'+esc((assets||[]).length)+'台</span></div>'+
+        ((assets||[]).length
+          ? '<div style="overflow:auto;margin-top:14px"><table><thead><tr><th>顧客</th><th>機器番号</th><th>型番</th><th>シリアル</th><th>状態</th><th>未完了 / 全問い合わせ</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>'
+          : '<div class="notice" style="margin-top:14px">現在、OA機器の登録データは0件です。デモデータは表示していません。</div>')+
+        '<div id="assetDetailBox"></div></section>';
+      document.querySelectorAll('.asset-detail').forEach(b=>b.onclick=async()=>{
+        const box=$('#assetDetailBox');
+        box.innerHTML='<div class="notice">詳細を読み込み中...</div>';
+        try{
+          const d=await rpc('internal_asset_detail',{p_asset_id:b.dataset.id});
+          const a=d.asset||{}, customer=d.customer||{}, tickets=d.tickets||[], contracts=d.customer_contracts||[];
+          box.innerHTML=
+            '<div class="item"><div class="row between"><h3>'+esc(a.asset_number||a.model_name||'OA機器')+'</h3><span class="pill">'+esc(a.status||'')+'</span></div>'+
+            '<p><b>顧客:</b> '+esc(customer.name||'')+'</p>'+
+            '<p><b>型番:</b> '+esc(a.model_name||'—')+'　<b>シリアル:</b> '+esc(a.serial_number||'—')+'</p>'+
+            '<p><b>内部メモ:</b> '+esc(a.internal_note||'—')+'</p>'+
+            '<p><b>顧客契約:</b> '+esc(contracts.length)+'件　<b>機器関連問い合わせ:</b> '+esc(tickets.length)+'件</p></div>';
+        }catch(err){ box.innerHTML='<div class="notice error">'+esc(err.message||String(err))+'</div>'; }
+      });
+    }catch(err){
+      home.innerHTML='<section class="card section"><h2>OA機器台帳</h2><div class="notice error">'+esc(err.message||String(err))+'</div></section>';
+    }
+  }
+
+  async function renderCurrentPage(){
+    if(currentPage==='assets') return renderAssets();
+    return renderHome();
   }
 
   async function renderHome(){
@@ -190,7 +250,8 @@
     $('#pageTitle').textContent=roleLabel(bootData.context?.role);
     $('#companyName').textContent=bootData.context?.company_name||'';
     integrations();
-    await renderHome();
+    renderNav();
+    await renderCurrentPage();
   }
 
   $('#loginForm').onsubmit=async e=>{
