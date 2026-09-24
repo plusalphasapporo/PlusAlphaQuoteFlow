@@ -2832,7 +2832,7 @@
         completeBtn.disabled=true;
         try{
           const value=$('#deliveryCompleteAt').value;
-          await rpc('complete_delivery',{
+          await rpc('complete_delivery_at',{
             p_delivery_id:d.id,
             p_delivered_at:value ? new Date(value).toISOString() : null
           });
