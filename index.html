@@ -63,6 +63,15 @@
     .supportPhonePanel h2{margin:0;font-size:21px}.supportPhoneStatus{display:flex;align-items:center;gap:8px;margin:8px 0 14px}
     .supportPhoneLatest{border:1px solid #dbeafe;background:#fff;border-radius:14px;padding:14px;margin-top:12px}
     .supportPhoneLatest strong{font-size:17px}.supportPhoneLatest small{display:block;color:var(--muted);margin-top:4px}
+    .supportPhoneLookup{margin-top:14px;padding:14px;border:1px solid #bfdbfe;background:#fff;border-radius:14px}
+    .supportPhoneLookupForm{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}
+    .supportPhoneLookupForm .field{margin:0}
+    .supportPhoneLookup input{font-size:22px;font-weight:900;letter-spacing:.04em}
+    .supportPhoneLookupResult{margin-top:12px}
+    .supportPhoneLookupCard{border:1px solid var(--line);border-radius:14px;padding:14px;background:#f8fafc}
+    .supportPhoneLookupCard h3{margin:0 0 4px;font-size:18px}
+    .supportPhoneLookupMeta{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+    @media(max-width:640px){.supportPhoneLookupForm{grid-template-columns:1fr}.supportPhoneLookupForm button{width:100%}}
     .supportActionPanel{border:1px solid var(--line);background:#fff;border-radius:18px;padding:16px}
     .supportActionGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
     .supportActionTile{border:1px solid var(--line);background:#f8fafc;border-radius:14px;padding:14px;text-align:left}
@@ -362,7 +371,7 @@
     'customer_ticket_detail','internal_numbering_settings','internal_accounts_list',
     'internal_account_companies','internal_audit_workspace','internal_document_profile','internal_demo_seed_status','internal_company_settings','internal_entity_audit_history',
     'internal_products_list','internal_lease_rates_list','internal_order_profitability','internal_customer_unified_workspace','internal_receiving_workspace','internal_order_operation','role_knowledge_articles',
-    'support_customer_directory','support_asset_directory','support_handoff_history','support_customer_context','support_workflow_states','support_ticket_workflow_state','support_unread_notifications','support_unread_handoff_updates','support_deadline_states','support_ticket_deadline_state','support_assignment_states','support_ticket_assignment_state','callconnect_dashboard','callconnect_api_settings','callconnect_unread_notifications','callconnect_customer_directory',
+    'support_customer_directory','support_asset_directory','support_handoff_history','support_customer_context','support_customer_phone_search','support_workflow_states','support_ticket_workflow_state','support_unread_notifications','support_unread_handoff_updates','support_deadline_states','support_ticket_deadline_state','support_assignment_states','support_ticket_assignment_state','callconnect_dashboard','callconnect_api_settings','callconnect_unread_notifications','callconnect_customer_directory',
     'internal_case_directory','internal_handoff_history','internal_knowledge_articles'
   ]);
 
@@ -1815,6 +1824,14 @@
         '<div class="supportConsoleHero">'+
           '<section class="supportPhonePanel">'+
             '<div class="row between"><div><h2>電話受付</h2><p class="sectionDesc">CallConnectとQuoteFlowを並行して使う受付画面です。</p></div><span class="pill '+(callconnectDash?.integration_state==='connected'?'good':'warn')+'">'+esc(callconnectDash?.integration_state==='connected'?'CallConnect接続済み':'接続確認')+'</span></div>'+
+            '<div class="supportPhoneLookup">'+
+              '<div class="supportPhoneLookupForm">'+
+                '<div class="field"><label>電話番号で顧客検索</label><input id="supportPhoneLookupInput" inputmode="tel" autocomplete="off" placeholder="例：0111234567 / 09012345678"></div>'+
+                '<button id="supportPhoneLookupBtn" class="primary" type="button">検索</button>'+
+              '</div>'+
+              '<div id="supportPhoneLookupMsg" class="notice hidden"></div>'+
+              '<div id="supportPhoneLookupResult" class="supportPhoneLookupResult"></div>'+
+            '</div>'+
             '<div class="supportQuickActions">'+
               '<button id="supportOpenCallConnectApp" class="primary" type="button">CallConnectを開く</button>'+
               '<button id="supportOpenCallHistory" class="ghost" type="button">通話履歴</button>'+
@@ -1866,6 +1883,74 @@
             '<div class="supportStep"><span class="supportStepNum">5</span><strong>完了 / 引継ぎ</strong><small>解決または自社へ</small></div>'+
           '</div>'+
         '</section>';
+      const supportPhoneLookupInput=$('#supportPhoneLookupInput');
+      const supportPhoneLookupBtn=$('#supportPhoneLookupBtn');
+      const renderPhoneLookupResults=(items)=>{
+        const host=$('#supportPhoneLookupResult');
+        if(!host) return;
+        if(!items?.length){
+          host.innerHTML='<div class="empty">一致する担当顧客が見つかりません。</div>';
+          return;
+        }
+        host.innerHTML=items.map(x=>
+          '<div class="supportPhoneLookupCard">'+
+            '<div class="row between"><div><h3>'+esc(x.name||'')+'</h3><div class="muted">'+esc(x.customer_code||'—')+' / '+esc(x.matched_phone||x.phone||x.mobile||'—')+'</div></div><span class="pill good">一致</span></div>'+
+            '<div class="supportPhoneLookupMeta">'+
+              '<span class="pill">機器 '+esc(x.asset_count||0)+'台</span>'+
+              '<span class="pill">契約 '+esc(x.contract_count||0)+'件</span>'+
+              '<span class="pill '+(Number(x.open_tickets||0)>0?'warn':'')+'">対応中 '+esc(x.open_tickets||0)+'件</span>'+
+              (x.contact_name?'<span class="pill">担当 '+esc(x.contact_name)+'</span>':'')+
+            '</div>'+
+            '<div class="row">'+
+              '<button class="primary supportPhoneLookupOpen" type="button" data-id="'+esc(x.id)+'">顧客カルテ</button>'+
+              '<button class="green supportPhoneLookupIntake" type="button" data-id="'+esc(x.id)+'" data-name="'+esc(x.name||'')+'" data-phone="'+esc(x.matched_phone||x.phone||x.mobile||'')+'">この顧客で受付</button>'+
+            '</div>'+
+          '</div>'
+        ).join('');
+
+        document.querySelectorAll('.supportPhoneLookupOpen').forEach(btn=>btn.onclick=async()=>{
+          await go('support_customers');
+          const hit=[...document.querySelectorAll('.supportCustomerOpen')].find(x=>x.dataset.id===btn.dataset.id);
+          if(hit) hit.click();
+        });
+
+        document.querySelectorAll('.supportPhoneLookupIntake').forEach(btn=>btn.onclick=async()=>{
+          pendingCallConnectIntake={
+            customer_id:btn.dataset.id,
+            phone:btn.dataset.phone||'',
+            company:btn.dataset.name||'',
+            name:'',
+            call_id:'',
+            record_status:201
+          };
+          await go('support_new');
+        });
+      };
+
+      const doSupportPhoneLookup=async()=>{
+        const phone=(supportPhoneLookupInput?.value||'').trim();
+        const digits=phone.replace(/[^0-9]/g,'');
+        if(digits.length<4){
+          return notice('#supportPhoneLookupMsg','電話番号を4桁以上入力してください。');
+        }
+        supportPhoneLookupBtn.disabled=true;
+        try{
+          notice('#supportPhoneLookupMsg','電話番号で検索しています...',true);
+          const result=await rpc('support_customer_phone_search',{p_phone:phone});
+          $('#supportPhoneLookupMsg').classList.add('hidden');
+          renderPhoneLookupResults(result||[]);
+        }catch(err){
+          notice('#supportPhoneLookupMsg',err.message||String(err));
+        }finally{
+          supportPhoneLookupBtn.disabled=false;
+        }
+      };
+      supportPhoneLookupBtn.onclick=doSupportPhoneLookup;
+      supportPhoneLookupInput.onkeydown=e=>{
+        if(e.key==='Enter'){e.preventDefault();doSupportPhoneLookup();}
+      };
+      setTimeout(()=>supportPhoneLookupInput?.focus(),100);
+
       $('#supportNewFromHome').onclick=()=>go('support_new');
       $('#supportCasesFromHome').onclick=()=>go('support_cases');
       $('#supportOpenCallConnectApp').onclick=()=>window.open('https://www.callconnect.jp/users/sign_in','_blank','noopener,noreferrer');
@@ -7961,8 +8046,8 @@
       '<tr><td>'+esc(c.customer_code||'—')+'</td><td><strong>'+esc(c.name||'')+'</strong></td><td>'+esc(c.phone||'—')+'</td><td>'+esc(c.asset_count||0)+'</td><td>'+esc(c.contract_count||0)+'</td><td>'+esc(c.open_tickets||0)+'</td><td><button class="linkBtn supportCustomerOpen" type="button" data-id="'+esc(c.id)+'">確認</button></td></tr>'
     );
     $('#home').innerHTML=
-      pageIntro('顧客検索','担当している顧客だけを確認できます。')+
-      '<section class="card section"><div class="field" style="max-width:520px"><label>検索</label><input id="supportCustomerSearch"></div><div id="supportCustomerDetail"></div><div id="supportCustomerTable">'+dataTable(['顧客番号','顧客名','電話','機器','契約','対応中','操作'],rows)+'</div></section>';
+      pageIntro('顧客・機器','電話番号を中心に、担当顧客・機器・契約・問い合わせ履歴を確認します。')+
+      '<section class="card section"><div class="field" style="max-width:520px"><label>電話番号・顧客番号・顧客名</label><input id="supportCustomerSearch" inputmode="search" placeholder="まず電話番号を入力"></div><div id="supportCustomerDetail"></div><div id="supportCustomerTable">'+dataTable(['顧客番号','顧客名','電話','機器','契約','対応中','操作'],rows)+'</div></section>';
     const bind=()=>document.querySelectorAll('.supportCustomerOpen').forEach(btn=>btn.onclick=async()=>{
       const ctx=await rpc('support_customer_context',{p_customer_id:btn.dataset.id});
       const assetRows=(ctx.assets||[]).map(a=>'<tr><td>'+esc(a.asset_number||'—')+'</td><td>'+esc(a.model_name||'—')+'</td><td>'+esc(a.serial_number||'—')+'</td><td>'+esc(statusText(a.status))+'</td></tr>');
