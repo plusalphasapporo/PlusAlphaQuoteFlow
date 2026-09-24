@@ -1123,7 +1123,7 @@
     };
 
     await checkUnread();
-    callconnectNotificationPollTimer=setInterval(checkUnread,3000);
+    callconnectNotificationPollTimer=setInterval(checkUnread,1000);
 
     callconnectNotificationChannel=supabase
       .channel('callconnect-incoming-live')
@@ -1132,18 +1132,33 @@
         schema:'public',
         table:'callconnect_notifications'
       },async payload=>{
-        const unread=await refreshCallConnectUnread();
-        const item=(unread.items||[]).find(x=>x.id===payload.new?.id);
-        if(!item) return;
-        const type={201:'着信',401:'不在着信',402:'営業時間外着信'}[item.record_status]||'入電';
-        const who=item.contact_company||item.contact_name||item.contact_number||'電話番号未取得';
-        toast('CallConnect '+type+'：'+who);
+        const fastItem=payload.new||{};
+        if(!fastItem?.id) return;
+
+        const type={201:'着信',401:'不在着信',402:'営業時間外着信'}[fastItem.record_status]||'入電';
+        const who=fastItem.matched_customer_name||fastItem.contact_company||fastItem.contact_name||fastItem.contact_number||'電話番号未取得';
+
         try{
-          await showCallConnectIncomingPopup(item);
-          lastCallConnectPopupId=item.id;
+          // WebSocket受信直後に、そのまま即表示。RPC待ちをしない。
+          await showCallConnectIncomingPopup(fastItem);
+          lastCallConnectPopupId=fastItem.id;
+          toast('CallConnect '+type+'：'+who);
         }catch(err){
-          console.error('CallConnect popup failed',err);
+          console.error('CallConnect fast popup failed',err);
         }
+
+        // 詳細情報は後追いで取得して画面を更新。
+        try{
+          const unread=await refreshCallConnectUnread();
+          const item=(unread.items||[]).find(x=>x.id===fastItem.id);
+          if(item){
+            await showCallConnectIncomingPopup(item);
+            lastCallConnectPopupId=item.id;
+          }
+        }catch(err){
+          console.error('CallConnect popup enrichment failed',err);
+        }
+
         if(currentPage==='support_callconnect') await renderSupportCallConnect();
         await setupGlobalHeader();
       })
