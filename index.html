@@ -145,6 +145,15 @@
     .metricMini{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:#526174}
     .formInlineGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
     .profitPositive{color:#047857;font-weight:900}.profitNegative{color:#b91c1c;font-weight:900}
+    .callIncomingWrap{position:fixed;right:18px;bottom:18px;z-index:12000;max-width:min(430px,calc(100vw - 24px));width:100%}
+    .callIncomingCard{background:#fff;border:2px solid #2563eb;border-radius:18px;box-shadow:0 20px 60px rgba(15,23,42,.25);overflow:hidden}
+    .callIncomingHead{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;padding:16px 18px;background:#eff6ff}
+    .callIncomingHead h3{margin:0;font-size:20px}.callIncomingHead p{margin:4px 0 0;color:#526174}
+    .callIncomingBody{padding:16px 18px}.callIncomingNumber{font-size:22px;font-weight:900;letter-spacing:.02em;margin:4px 0 10px}
+    .callIncomingMeta{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0 14px}
+    .callIncomingMeta .item{padding:10px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px}
+    .callIncomingActions{display:flex;gap:8px;flex-wrap:wrap;padding:0 18px 18px}
+    @media(max-width:640px){.callIncomingWrap{right:8px;bottom:8px;max-width:calc(100vw - 16px)}.callIncomingMeta{grid-template-columns:1fr}}
     @media(max-width:900px){.formInlineGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
     @media(max-width:640px){.formInlineGrid{grid-template-columns:1fr}}
         body.modalOpen{overflow:hidden}
@@ -940,15 +949,16 @@
   async function refreshSupportUnreadBadge(){
     if(bootData?.context?.role!=='support_staff') return {count:0,items:[]};
     try{
-      const [unread,handoffUpdates,deadlineStates]=await Promise.all([
+      const [unread,handoffUpdates,deadlineStates,callUnread]=await Promise.all([
         rpc('support_unread_notifications'),
         rpc('support_unread_handoff_updates'),
-        rpc('support_deadline_states')
+        rpc('support_deadline_states'),
+        rpc('callconnect_unread_notifications')
       ]);
       const deadlineAttention=(deadlineStates||[]).filter(x=>x.deadline_state==='overdue'||x.deadline_state==='due_today');
       const overdueCount=deadlineAttention.filter(x=>x.deadline_state==='overdue').length;
       const dueTodayCount=deadlineAttention.filter(x=>x.deadline_state==='due_today').length;
-      const count=Number(unread?.count||0)+Number(handoffUpdates?.count||0)+overdueCount+dueTodayCount;
+      const count=Number(unread?.count||0)+Number(handoffUpdates?.count||0)+overdueCount+dueTodayCount+Number(callUnread?.count||0);
       if(count>0){
         $('#notificationCount').textContent=count>99?'99+':String(count);
         $('#notificationCount').classList.remove('hidden');
@@ -978,6 +988,64 @@
     }
   }
 
+  async function showCallConnectIncomingPopup(item){
+    document.querySelectorAll('.callIncomingWrap').forEach(x=>x.remove());
+    const type={201:'着信',401:'不在着信',402:'営業時間外着信'}[item?.record_status]||'入電';
+    const display=item?.contact_company||item?.contact_name||'顧客未照合';
+    const number=item?.contact_number||'電話番号未取得';
+    const role=bootData?.context?.role;
+
+    document.body.insertAdjacentHTML('beforeend',
+      '<div class="callIncomingWrap" id="callIncomingWrap">'+
+        '<div class="callIncomingCard">'+
+          '<div class="callIncomingHead">'+
+            '<div><span class="pill good">CallConnect '+esc(type)+'</span><h3>'+esc(display)+'</h3><p>新しい電話イベントを受信しました。</p></div>'+
+            '<button id="callIncomingClose" class="ghost" type="button">×</button>'+
+          '</div>'+
+          '<div class="callIncomingBody">'+
+            '<div class="callIncomingNumber">'+esc(number)+'</div>'+
+            '<div class="callIncomingMeta">'+
+              '<div class="item"><strong>顧客照合</strong><br><span>'+esc(item?.matched_customer_id?'一致':'未照合')+'</span></div>'+
+              '<div class="item"><strong>案件</strong><br><span>'+esc(item?.support_ticket_id?'作成済み':'未作成')+'</span></div>'+
+            '</div>'+
+          '</div>'+
+          '<div class="callIncomingActions">'+
+            '<button id="callIncomingOpenCallConnect" class="primary" type="button">CallConnectを開く</button>'+
+            ((item?.matched_customer_id&&(role==='internal_admin'||role==='internal_staff'))?'<button id="callIncomingOpenCustomer" class="ghost" type="button">顧客カルテ</button>':'')+
+            (item?.support_ticket_id?'<button id="callIncomingOpenTicket" class="ghost" type="button">案件を開く</button>':'')+
+          '</div>'+
+        '</div>'+
+      '</div>'
+    );
+
+    const markRead=async()=>{
+      try{
+        await rpc('mark_callconnect_notification_read',{p_notification_id:item.id});
+        await setupGlobalHeader();
+      }catch(_){}
+    };
+    const close=async()=>{ await markRead(); $('#callIncomingWrap')?.remove(); };
+
+    $('#callIncomingClose').onclick=close;
+    $('#callIncomingOpenCallConnect').onclick=async()=>{ await close(); await go('support_callconnect'); };
+    const customerBtn=$('#callIncomingOpenCustomer');
+    if(customerBtn){
+      customerBtn.onclick=async()=>{
+        await close();
+        await go('customers');
+        await renderCustomerDetail(item.matched_customer_id);
+      };
+    }
+    const ticketBtn=$('#callIncomingOpenTicket');
+    if(ticketBtn){
+      ticketBtn.onclick=async()=>{
+        await close();
+        await go('support');
+        await renderTicketDetail(item.support_ticket_id);
+      };
+    }
+  }
+
   async function startCallConnectNotificationRealtime(){
     if(callconnectNotificationChannel){
       try{await supabase.removeChannel(callconnectNotificationChannel);}catch(_){}
@@ -996,9 +1064,10 @@
         const unread=await refreshCallConnectUnread();
         const item=(unread.items||[]).find(x=>x.id===payload.new?.id);
         if(!item) return;
-        const type={201:'着信',400:'着信キャンセル',401:'不在着信',402:'営業時間外着信'}[item.record_status]||'入電';
+        const type={201:'着信',401:'不在着信',402:'営業時間外着信'}[item.record_status]||'入電';
         const who=item.contact_company||item.contact_name||item.contact_number||'電話番号未取得';
         toast('CallConnect '+type+'：'+who);
+        await showCallConnectIncomingPopup(item);
         if(currentPage==='support_callconnect') await renderSupportCallConnect();
         await setupGlobalHeader();
       })
@@ -1041,15 +1110,16 @@
     const role=bootData?.context?.role;
     if(!(role==='internal_admin'||role==='internal_staff')) return {count:0,items:[]};
     try{
-      const [biz,unread,deadlineStates]=await Promise.all([
+      const [biz,unread,deadlineStates,callUnread]=await Promise.all([
         rpc('internal_business_dashboard'),
         rpc('internal_unread_handoff_notifications'),
-        rpc('support_deadline_states')
+        rpc('support_deadline_states'),
+        rpc('callconnect_unread_notifications')
       ]);
       const deadlineAttention=(deadlineStates||[]).filter(x=>x.deadline_state==='overdue'||x.deadline_state==='due_today');
       const overdueCount=deadlineAttention.filter(x=>x.deadline_state==='overdue').length;
       const dueTodayCount=deadlineAttention.filter(x=>x.deadline_state==='due_today').length;
-      const count=Number(biz?.kpis?.urgent_open_tickets||0)+Number(unread?.count||0)+overdueCount+dueTodayCount;
+      const count=Number(biz?.kpis?.urgent_open_tickets||0)+Number(unread?.count||0)+overdueCount+dueTodayCount+Number(callUnread?.count||0);
       if(count>0){
         $('#notificationCount').textContent=count>99?'99+':String(count);
         $('#notificationCount').classList.remove('hidden');
