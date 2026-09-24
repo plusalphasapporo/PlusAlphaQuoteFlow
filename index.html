@@ -76,8 +76,12 @@
     .supportIntakeStep strong{display:block}.supportIntakeStep small{display:block;color:var(--muted);margin-top:3px}
     .supportIntakeContext{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}
     .supportIntakeContext .item{padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:#fff}
-    .supportIntakeActions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}
-    @media(max-width:720px){.supportIntakeFlow,.supportIntakeContext{grid-template-columns:1fr}}
+    .supportIntakeActions{display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;margin-top:16px;padding-top:16px;border-top:1px solid var(--line)}
+    .supportIntakePrimary{display:grid;gap:6px;flex:1;min-width:320px}
+    .supportIntakePrimary .primary{width:100%;min-height:54px;font-size:15px}
+    .supportIntakePrimary span{font-size:12px;color:var(--muted);line-height:1.5}
+    #supportNewSaveOnlyBtn{min-height:54px}
+    @media(max-width:720px){.supportIntakeFlow,.supportIntakeContext{grid-template-columns:1fr}.supportIntakePrimary{min-width:100%}.supportIntakeActions>button{width:100%}}
     .supportPhoneLookupMeta{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
     @media(max-width:640px){.supportPhoneLookupForm{grid-template-columns:1fr}.supportPhoneLookupForm button{width:100%}}
     .supportActionPanel{border:1px solid var(--line);background:#fff;border-radius:18px;padding:16px}
@@ -6277,7 +6281,7 @@
           '</div>'+
           '<div class="supportWorkGrid">'+
             '<div>'+
-              '<div class="notice"><strong>内容と写真を確認してから、AI・ナレッジ・マニュアルで対応方法を探します。</strong><br><span class="muted">候補は自動送信しません。内容を確認してから顧客へ案内します。</span></div>'+
+              '<div class="notice"><strong>ここから対応を開始します。</strong><br><span class="muted">①内容・写真を確認 → ②AI・ナレッジ・マニュアルで検索 → ③必要ならTeamViewer → ④解決または自社へ引継ぎ。候補は自動送信しません。</span></div>'+
               '<div class="modalGrid2">'+
                 '<div class="item"><strong>受付経路</strong><p>'+esc(intakeSource)+'</p></div>'+
                 '<div class="item"><strong>AI連携</strong><p>'+esc(aiStateText)+'</p></div>'+
@@ -6395,13 +6399,14 @@
               ['契約',contract?.contract_number||'未指定'],
               ['機器',asset?.asset_number||'未指定']
             ]))+
+        (support?firstLineAssist:'')+
         '<div id="supportTicketCustomerContext" class="modalGrid2">'+
           '<section class="card section" style="box-shadow:none;margin:0"><h3>案件概要</h3><div class="item"><strong>種別</strong><p>'+supportRequestTypeBadge(t.request_type)+'</p></div><div class="item"><strong>件名</strong><p>'+esc(t.subject||'')+'</p></div>'+supportRequestDetailsHtml(t.request_type,t.request_details||{})+'<div class="item"><strong>補足内容</strong><p style="white-space:pre-wrap">'+esc(displayDescription)+'</p></div><div class="item"><strong>顧客</strong><p>'+esc(cust?.customer_code||'—')+' / '+esc(cust?.name||'—')+'</p></div></section>'+
           '<section class="card section" style="box-shadow:none;margin:0"><h3>連絡・対象情報</h3><div class="item"><strong>主担当者</strong><p>'+esc(primary?.name||'未登録')+'<br><span class="muted">'+esc(primary?.phone||primary?.email||'連絡先未登録')+'</span></p></div><div class="item"><strong>契約</strong><p>'+(contract?esc(contract.contract_number||'—'):'未指定')+'</p></div><div class="item"><strong>機器</strong><p>'+(asset?esc(asset.asset_number||'—')+' / '+esc(asset.model_name||''):'未指定')+'</p></div></section>'+
         '</div>'+
         internalEdit+
         (!customer?'<section class="formSection"><div class="formSectionHead"><span class="sectionNo">'+(internal?'02':'01')+'</span><h3>対応期限</h3></div><div class="modalGrid2"><div class="item"><strong>初動期限</strong><p>'+supportDeadlineBadge(deadlineState?.first_response_overdue?'overdue':(deadlineState?.first_response_due_at?'scheduled':'unset'))+'<br>'+esc(dateTimeText(deadlineState?.first_response_due_at))+'</p></div><div class="item"><strong>対応完了目標</strong><p>'+supportDeadlineBadge(deadlineState?.resolution_overdue?'overdue':(deadlineState?.resolution_due_at?'scheduled':'unset'))+'<br>'+esc(dateTimeText(deadlineState?.resolution_due_at))+'</p></div></div><div class="item"><strong>初動実施</strong><p>'+esc(deadlineState?.first_response_at?dateTimeText(deadlineState.first_response_at):'未実施')+'</p></div>'+(internal&&t.status!=='closed'?'<div class="modalGrid2"><div class="field"><label>初動期限を変更</label><input id="ticketFirstResponseDue" type="datetime-local"></div><div class="field"><label>対応完了目標を変更</label><input id="ticketResolutionDue" type="datetime-local"></div></div><button id="ticketDeadlineSave" class="primary" type="button">期限を保存</button><div id="ticketDeadlineMsg" class="notice hidden"></div>':'')+'</section>':'')+
-        firstLineAssist+
+        (!support?firstLineAssist:'')+
         actionButtons+
         '<section class="section"><h3>対応履歴・メッセージ</h3>'+messagesHtml+
           '<form id="ticketMessageForm" class="card section" style="box-shadow:none">'+visibilitySelect+'<div class="field"><label>返信</label><textarea id="ticketMessageBody" rows="4" required></textarea></div><button class="primary" type="submit">メッセージを送信</button></form><div id="ticketMessageMsg" class="notice hidden"></div></section>'+
@@ -7991,11 +7996,11 @@
   async function renderSupportNew(){
     const customers=await rpc('support_customer_directory');
     $('#home').innerHTML=
-      pageIntro('新規受付','顧客を確認したら、内容を入力してそのまま対応開始できます。')+
+      pageIntro('新規受付','問い合わせを登録したら一覧へ戻らず、そのまま対応作業を開始します。')+
       '<div class="supportIntakeFlow">'+
         '<div class="supportIntakeStep done"><strong>1. 顧客確認</strong><small>電話番号検索から顧客を選択</small></div>'+
-        '<div class="supportIntakeStep active"><strong>2. 受付内容</strong><small>機器・内容・優先度を確認</small></div>'+
-        '<div class="supportIntakeStep"><strong>3. 対応開始</strong><small>AI・ナレッジへ自動で移動</small></div>'+
+        '<div class="supportIntakeStep active"><strong>2. 問い合わせ登録</strong><small>内容・機器・優先度を入力</small></div>'+
+        '<div class="supportIntakeStep"><strong>3. そのまま作業</strong><small>登録後すぐ対応ワークスペースを開く</small></div>'+
       '</div>'+
       '<section class="card section">'+
         '<form id="supportNewForm">'+
@@ -8014,9 +8019,11 @@
             '<div class="field"><label>対象契約</label><select id="supportNewContract"><option value="">指定なし</option></select></div>'+
           '</div>'+
           '<div class="supportIntakeActions">'+
-            '<button id="supportNewStartBtn" class="primary" type="submit">登録して対応開始</button>'+
-            '<button id="supportNewSaveOnlyBtn" class="ghost" type="button">登録だけする</button>'+
-            '<span class="muted">対応開始すると、自分を担当にしてAI・ナレッジ画面へ進みます。</span>'+
+            '<div class="supportIntakePrimary">'+
+              '<button id="supportNewStartBtn" class="primary" type="submit">受付を登録して、このまま対応する →</button>'+
+              '<span>登録後、自分を担当者に設定して「対応中」にし、その案件の作業画面をすぐ開きます。</span>'+
+            '</div>'+
+            '<button id="supportNewSaveOnlyBtn" class="ghost" type="button">未対応として登録だけ</button>'+
           '</div>'+
         '</form>'+
         '<div id="supportNewMsg" class="notice hidden"></div>'+
@@ -8085,7 +8092,7 @@
         if(startNow){
           await rpc('claim_support_ticket',{p_ticket_id:result.id}).catch(()=>{});
           await rpc('set_support_workflow_stage',{p_ticket_id:result.id,p_stage:'in_progress'}).catch(()=>{});
-          toast('受付を登録し、対応を開始しました');
+          toast('受付を登録しました。作業画面を開きます'+(result?.ticket_number?' '+result.ticket_number:''));
           await go('support_cases');
           await renderTicketDetail(result.id);
           setTimeout(()=>{
