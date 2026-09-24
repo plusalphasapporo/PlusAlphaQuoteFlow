@@ -204,6 +204,7 @@
       ['deliveries','納品'],
       ['assets','契約・機器'],
       ['support','サポート'],
+      ['accounts','アカウント'],
       ['security','セキュリティ'],
       ['settings','設定']
     ],
@@ -2081,6 +2082,111 @@
       '<section class="card section"><h2>機器</h2>'+dataTable(['機器番号','機種','シリアル','状態'],assetRows)+'</section>';
   }
 
+  async function renderAccounts(){
+    if(bootData.context?.role!=='internal_admin') throw new Error('管理者のみ利用できます。');
+
+    const accounts=await rpc('internal_accounts_list');
+    const roleText=r=>({
+      internal_admin:'自社管理者',
+      internal_staff:'自社スタッフ',
+      support_staff:'サポート会社',
+      customer_user:'顧客会社'
+    }[r]||r||'—');
+
+    const rows=(accounts||[]).map(a=>
+      '<tr>'+
+        '<td><strong>'+esc(a.display_name||'—')+'</strong>'+(a.is_current_user?' <span class="pill good">自分</span>':'')+'</td>'+
+        '<td>'+esc(a.email||'—')+'</td>'+
+        '<td>'+esc(a.company_name||'—')+'</td>'+
+        '<td>'+esc(roleText(a.role))+'</td>'+
+        '<td>'+(a.is_active?'<span class="pill good">有効</span>':'<span class="pill bad">停止中</span>')+'</td>'+
+        '<td>'+(Number(a.mfa_count||0)>0?'<span class="pill good">登録済み</span>':'<span class="pill bad">未登録</span>')+'</td>'+
+        '<td>'+esc(a.session_count||0)+'</td>'+
+        '<td>'+esc(dateText(a.last_sign_in_at))+'</td>'+
+        '<td><button class="linkBtn accountEdit" type="button" data-id="'+esc(a.user_id)+'">編集</button></td>'+
+      '</tr>'
+    );
+
+    $('#home').innerHTML=
+      pageIntro('アカウント管理','権限、利用状態、MFA登録状況、セッション数を確認します。')+
+      '<div id="accountEditHost"></div>'+
+      '<section class="card section">'+
+        dataTable(['表示名','メール','会社','権限','状態','MFA','セッション','最終ログイン','操作'],rows)+
+      '</section>';
+
+    document.querySelectorAll('.accountEdit').forEach(btn=>{
+      btn.onclick=()=>{
+        const a=(accounts||[]).find(x=>x.user_id===btn.dataset.id);
+        if(!a) return;
+
+        const companyType=a.company_type;
+        let roleOptions='';
+        if(companyType==='internal'){
+          roleOptions=
+            '<option value="internal_admin" '+(a.role==='internal_admin'?'selected':'')+'>自社管理者</option>'+
+            '<option value="internal_staff" '+(a.role==='internal_staff'?'selected':'')+'>自社スタッフ</option>';
+        }else if(companyType==='support'){
+          roleOptions='<option value="support_staff" selected>サポート会社</option>';
+        }else{
+          roleOptions='<option value="customer_user" selected>顧客会社</option>';
+        }
+
+        $('#accountEditHost').innerHTML=
+          '<section class="card section">'+
+            '<div class="quoteDetailHead">'+
+              '<div><h2>アカウント編集</h2><p class="sectionDesc">'+esc(a.email||'')+' / '+esc(a.company_name||'')+'</p></div>'+
+              '<button id="accountEditClose" class="ghost" type="button">閉じる</button>'+
+            '</div>'+
+            '<form id="accountEditForm">'+
+              '<div class="field"><label>表示名</label><input id="accountDisplayName" value="'+esc(a.display_name||'')+'" required></div>'+
+              '<div class="field"><label>権限</label><select id="accountRole" '+(a.is_current_user?'disabled':'')+'>'+roleOptions+'</select></div>'+
+              '<label class="row" style="margin:12px 0"><input id="accountActive" type="checkbox" '+(a.is_active?'checked':'')+' '+(a.is_current_user?'disabled':'')+'> アカウントを有効にする</label>'+
+              '<div class="notice">'+
+                'MFA: '+(Number(a.mfa_count||0)>0?'登録済み':'未登録')+
+                ' / セッション: '+esc(a.session_count||0)+
+                ' / 最終ログイン: '+esc(dateText(a.last_sign_in_at))+
+              '</div>'+
+              (a.is_current_user?'<p class="muted">自分自身の権限変更・利用停止はできません。</p>':'')+
+              '<button class="primary" type="submit">変更を保存</button>'+
+            '</form>'+
+            '<div id="accountEditMsg" class="notice hidden"></div>'+
+          '</section>';
+
+        $('#accountEditClose').onclick=()=>{$('#accountEditHost').innerHTML='';};
+        $('#accountEditHost').scrollIntoView({behavior:'smooth',block:'start'});
+
+        $('#accountEditForm').onsubmit=async e=>{
+          e.preventDefault();
+          const save=e.submitter;
+          if(save) save.disabled=true;
+          try{
+            await rpc('update_account_profile',{
+              p_user_id:a.user_id,
+              p_display_name:$('#accountDisplayName').value.trim(),
+              p_role:a.is_current_user?a.role:$('#accountRole').value,
+              p_is_active:a.is_current_user?true:$('#accountActive').checked
+            });
+            notice('#accountEditMsg','アカウント情報を更新しました。',true);
+            toast('アカウントを更新しました');
+            setTimeout(()=>go('accounts'),350);
+          }catch(err){
+            const msg=String(err.message||err);
+            const ja=msg.includes('at least one active internal admin')
+              ? '有効な自社管理者を最低1名残す必要があります。'
+              : msg.includes('cannot change your own role')
+                ? '自分自身の権限は変更できません。'
+                : msg.includes('cannot deactivate your own account')
+                  ? '自分自身のアカウントは停止できません。'
+                  : msg;
+            notice('#accountEditMsg',ja);
+          }finally{
+            if(save) save.disabled=false;
+          }
+        };
+      };
+    });
+  }
+
   async function renderSecurity(){
     const [{data:{session}},aal,factors]=await Promise.all([
       supabase.auth.getSession(),
@@ -2220,6 +2326,7 @@
       if(page==='purchase_orders') return await renderPurchaseOrders();
       if(page==='deliveries') return await renderDeliveries();
       if(page==='support') return await renderSupport();
+      if(page==='accounts') return await renderAccounts();
       if(page==='security') return await renderSecurity();
       if(page==='settings') return await renderSettings();
       if(page==='assets') return await renderAssets();
