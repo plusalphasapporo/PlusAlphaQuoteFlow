@@ -3949,7 +3949,8 @@
           '</form><div id="orderBasicMsg" class="notice hidden"></div>'+
         '</section>'+
         '<section class="card section" style="box-shadow:none">'+
-          '<h3>発注を作成</h3>'+
+          '<div class="row between"><div><h3>発注を作成</h3><p class="sectionDesc">商品マスタ検索・原価集計・入力途中保存に対応しています。</p></div><span id="orderPORequiredStatus" class="pill"></span></div>'+
+          '<div id="orderPODraftNotice" class="notice hidden"></div>'+
           '<form id="orderCreatePOForm">'+
             '<div class="modalGrid2">'+
               '<div class="field"><label>発注番号（任意）</label><input id="orderPONumber"></div>'+
@@ -3958,10 +3959,11 @@
               '<div class="field"><label>発注予定納期</label><input id="orderPOExpectedDate" type="date"></div>'+
             '</div>'+
             '<div class="field"><label>社内メモ</label><textarea id="orderPONote" rows="2"></textarea></div>'+
-            '<div class="field"><label>商品マスタから追加</label><select id="orderPOProductPicker"><option value="">商品を選択してください</option>'+
-              (products||[]).filter(p=>p.is_active!==false && p.procurement_target!==false).map(p=>'<option value="'+esc(p.id)+'">'+esc(p.product_code||'—')+' / '+esc(p.name)+' / 原価 '+esc(money(p.cost_price))+'</option>').join('')+
-            '</select></div>'+
-            '<div class="row" style="margin-bottom:10px"><button id="orderPOAddProduct" class="ghost" type="button">商品を発注明細へ追加</button></div>'+
+            '<div class="row" style="gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px">'+
+              '<div class="field" style="flex:1;min-width:220px;margin:0"><label>商品検索</label><input id="orderPOProductSearch" placeholder="商品コード・商品名・メーカー・仕入先"></div>'+
+              '<div class="field" style="flex:2;min-width:300px;margin:0"><label>商品マスタから追加 <span id="orderPOProductCount" class="muted"></span></label><select id="orderPOProductPicker"><option value="">商品を選択してください</option></select></div>'+
+              '<div><button id="orderPOAddProduct" class="primary" type="button">商品を発注明細へ追加</button></div>'+
+            '</div>'+
             '<div id="orderPOItems" class="quoteItems">'+
               '<div class="quoteItemRow" data-po-item-row>'+
                 '<input class="poi-product-id" type="hidden">'+
@@ -3973,12 +3975,14 @@
                 '<button class="removePOItem" type="button" title="明細を削除">×</button>'+
               '</div>'+
             '</div>'+
-            '<div class="row"><button id="addPOItem" class="ghost" type="button">＋ 明細追加</button><button class="primary" type="submit">発注を作成</button></div>'+
+            '<div class="amountSummary"><div class="summaryBox"><span>発注原価合計</span><strong id="orderPOSumCost">¥0</strong></div><div class="summaryBox"><span>明細数</span><strong id="orderPOItemCount">0</strong></div></div>'+
+            '<div class="row"><button id="addPOItem" class="ghost" type="button">＋ 自由明細</button><button id="orderPOClearDraft" class="ghost" type="button">入力内容をクリア</button><button class="primary" type="submit">発注を作成</button></div>'+
           '</form>'+
           '<div id="orderPOCreateMsg" class="notice hidden"></div>'+
         '</section>'+
         '<section class="card section" style="box-shadow:none">'+
-          '<h3>納品予定を作成</h3>'+
+          '<div class="row between"><div><h3>納品予定を作成</h3><p class="sectionDesc">納品予定日時・設置場所・担当者を登録します。</p></div><span id="orderDeliveryRequiredStatus" class="pill"></span></div>'+
+          '<div id="orderDeliveryDraftNotice" class="notice hidden"></div>'+
           '<form id="orderCreateDeliveryForm">'+
             '<div class="modalGrid2">'+
               '<div class="field"><label>納品番号（任意）</label><input id="orderDeliveryNumber"></div>'+
@@ -3995,7 +3999,7 @@
             '</div>'+
             '<div class="field"><label>納品内容・作業内容</label><textarea id="orderDeliveryNotes" rows="3"></textarea></div>'+
             '<div class="field"><label>社内メモ</label><textarea id="orderDeliveryInternalNote" rows="2"></textarea></div>'+
-            '<button class="primary" type="submit">納品予定を作成</button>'+
+            '<div class="row"><button id="orderDeliveryClearDraft" class="ghost" type="button">入力内容をクリア</button><button class="primary" type="submit">納品予定を作成</button></div>'+
           '</form>'+
           '<div id="orderDeliveryCreateMsg" class="notice hidden"></div>'+
         '</section>'+
@@ -4025,12 +4029,18 @@
           const rows=document.querySelectorAll('[data-po-item-row]');
           if(rows.length<=1) return;
           btn.closest('[data-po-item-row]').remove();
+          recalcPO();
+          updatePORequired();
+          schedulePODraft();
         };
       });
     }
     $('#addPOItem').onclick=()=>{
       $('#orderPOItems').insertAdjacentHTML('beforeend',poItemRow());
       bindPORemove();
+      recalcPO();
+      updatePORequired();
+      schedulePODraft();
     };
     const addProductBtn=$('#orderPOAddProduct');
     if(addProductBtn) addProductBtn.onclick=()=>{
@@ -4045,8 +4055,169 @@
         track_serials:!!p.track_serials
       }));
       bindPORemove();
+      recalcPO();
+      updatePORequired();
+      schedulePODraft();
     };
     bindPORemove();
+
+    const activeProducts=(products||[]).filter(p=>p.is_active!==false && p.procurement_target!==false);
+    const poDraftKey='quoteflow.orderPODraft.'+(bootData?.context?.user_id||'current')+'.'+o.id;
+    const deliveryDraftKey='quoteflow.orderDeliveryDraft.'+(bootData?.context?.user_id||'current')+'.'+o.id;
+    let poDraftTimer=null;
+    let deliveryDraftTimer=null;
+    let restoringPODraft=false;
+    let restoringDeliveryDraft=false;
+
+    const renderPOProductOptions=()=>{
+      const q=($('#orderPOProductSearch').value||'').trim().toLowerCase();
+      const filtered=activeProducts.filter(p=>!q||[
+        p.product_code,p.name,p.manufacturer,p.supplier_name,(p.tags||[]).join(' ')
+      ].some(v=>String(v||'').toLowerCase().includes(q)));
+      const selected=$('#orderPOProductPicker').value;
+      $('#orderPOProductPicker').innerHTML='<option value="">商品を選択してください</option>'+
+        filtered.map(p=>'<option value="'+esc(p.id)+'">'+esc(p.product_code||'—')+' / '+esc(p.name)+' / 原価 '+esc(money(p.cost_price))+'</option>').join('');
+      if(filtered.some(p=>p.id===selected)) $('#orderPOProductPicker').value=selected;
+      $('#orderPOProductCount').textContent='('+filtered.length+'件)';
+    };
+
+    const recalcPO=()=>{
+      let total=0;
+      const rows=[...document.querySelectorAll('[data-po-item-row]')];
+      rows.forEach(row=>{
+        total+=Number(row.querySelector('.poi-qty')?.value||0)*Number(row.querySelector('.poi-unit')?.value||0);
+      });
+      $('#orderPOSumCost').textContent=money(total);
+      $('#orderPOItemCount').textContent=String(rows.length);
+    };
+
+    const updatePORequired=()=>{
+      const missing=[];
+      const rows=[...document.querySelectorAll('[data-po-item-row]')];
+      if(!rows.length||rows.every(r=>!r.querySelector('.poi-desc')?.value.trim())) missing.push('明細');
+      const badQty=rows.some(r=>Number(r.querySelector('.poi-qty')?.value||0)<=0);
+      if(badQty) missing.push('数量');
+      $('#orderPORequiredStatus').textContent=missing.length?'要確認: '+missing.join('・'):'入力OK';
+    };
+
+    const serializePORows=()=>[...document.querySelectorAll('[data-po-item-row]')].map(row=>({
+      product_id:row.querySelector('.poi-product-id')?.value||'',
+      track_serials:row.querySelector('.poi-track-serials')?.value||'false',
+      description:row.querySelector('.poi-desc')?.value||'',
+      quantity:row.querySelector('.poi-qty')?.value||'',
+      unit:row.querySelector('.poi-unit-name')?.value||'台',
+      unit_cost:row.querySelector('.poi-unit')?.value||'',
+      expected_delivery_date:row.querySelector('.poi-expected')?.value||''
+    }));
+
+    const savePODraft=()=>{
+      if(restoringPODraft) return;
+      const data={
+        saved_at:new Date().toISOString(),
+        number:$('#orderPONumber').value,
+        supplier:$('#orderPOSupplier').value,
+        ordered_at:$('#orderPOOrderedAt').value,
+        expected:$('#orderPOExpectedDate').value,
+        note:$('#orderPONote').value,
+        items:serializePORows()
+      };
+      localStorage.setItem(poDraftKey,JSON.stringify(data));
+      const n=$('#orderPODraftNotice');
+      if(n){n.classList.remove('hidden');n.classList.add('ok');n.textContent='発注入力をこの端末に自動保存しました。';}
+    };
+
+    const schedulePODraft=()=>{ clearTimeout(poDraftTimer); poDraftTimer=setTimeout(savePODraft,300); };
+
+    const restorePODraft=()=>{
+      let data=null;
+      try{data=JSON.parse(localStorage.getItem(poDraftKey)||'null');}catch(_){}
+      if(!data) return;
+      restoringPODraft=true;
+      try{
+        $('#orderPONumber').value=data.number||'';
+        $('#orderPOSupplier').value=data.supplier||'';
+        $('#orderPOOrderedAt').value=data.ordered_at||'';
+        $('#orderPOExpectedDate').value=data.expected||'';
+        $('#orderPONote').value=data.note||'';
+        if(Array.isArray(data.items)&&data.items.length){
+          $('#orderPOItems').innerHTML=data.items.map(x=>poItemRow({
+            product_id:x.product_id,track_serials:x.track_serials==='true',description:x.description,
+            quantity:x.quantity,unit:x.unit,unit_cost:x.unit_cost,expected_delivery_date:x.expected_delivery_date
+          })).join('');
+          bindPORemove();
+        }
+        const n=$('#orderPODraftNotice');
+        if(n){n.classList.remove('hidden');n.classList.add('ok');n.textContent='前回の発注入力途中データを復元しました。';}
+      }finally{restoringPODraft=false;}
+    };
+
+    const saveDeliveryDraft=()=>{
+      if(restoringDeliveryDraft) return;
+      const ids=['orderDeliveryNumber','orderDeliveryScheduled','orderDeliveryPostal','orderDeliveryContactName','orderDeliveryAddress1','orderDeliveryAddress2','orderDeliveryContactPhone','orderDeliveryInstallLocation','orderDeliveryAssigned','orderDeliveryNotes','orderDeliveryInternalNote'];
+      const data={saved_at:new Date().toISOString()};
+      ids.forEach(id=>data[id]=$('#'+id)?.value||'');
+      localStorage.setItem(deliveryDraftKey,JSON.stringify(data));
+      const n=$('#orderDeliveryDraftNotice');
+      if(n){n.classList.remove('hidden');n.classList.add('ok');n.textContent='納品予定入力をこの端末に自動保存しました。';}
+    };
+
+    const scheduleDeliveryDraft=()=>{ clearTimeout(deliveryDraftTimer); deliveryDraftTimer=setTimeout(saveDeliveryDraft,300); };
+
+    const restoreDeliveryDraft=()=>{
+      let data=null;
+      try{data=JSON.parse(localStorage.getItem(deliveryDraftKey)||'null');}catch(_){}
+      if(!data) return;
+      restoringDeliveryDraft=true;
+      try{
+        Object.keys(data).forEach(id=>{if(id!=='saved_at'&&$('#'+id)) $('#'+id).value=data[id]||'';});
+        const n=$('#orderDeliveryDraftNotice');
+        if(n){n.classList.remove('hidden');n.classList.add('ok');n.textContent='前回の納品予定入力途中データを復元しました。';}
+      }finally{restoringDeliveryDraft=false;}
+    };
+
+    const updateDeliveryRequired=()=>{
+      const missing=[];
+      if(!$('#orderDeliveryScheduled').value) missing.push('納品予定日時');
+      $('#orderDeliveryRequiredStatus').textContent=missing.length?'要確認: '+missing.join('・'):'入力OK';
+    };
+
+    $('#orderPOProductSearch').oninput=renderPOProductOptions;
+    renderPOProductOptions();
+    restorePODraft();
+    restoreDeliveryDraft();
+    recalcPO();
+    updatePORequired();
+    updateDeliveryRequired();
+
+    $('#orderCreatePOForm').addEventListener('input',()=>{recalcPO();updatePORequired();schedulePODraft();});
+    $('#orderCreatePOForm').addEventListener('change',()=>{recalcPO();updatePORequired();schedulePODraft();});
+    $('#orderCreateDeliveryForm').addEventListener('input',()=>{updateDeliveryRequired();scheduleDeliveryDraft();});
+    $('#orderCreateDeliveryForm').addEventListener('change',()=>{updateDeliveryRequired();scheduleDeliveryDraft();});
+
+    $('#orderPOClearDraft').onclick=()=>{
+      if(!confirm('発注の入力途中内容をクリアしますか？')) return;
+      localStorage.removeItem(poDraftKey);
+      $('#orderCreatePOForm').reset();
+      $('#orderPOItems').innerHTML=poItemRow();
+      bindPORemove();
+      renderPOProductOptions();
+      recalcPO();
+      updatePORequired();
+      $('#orderPODraftNotice').classList.add('hidden');
+    };
+
+    $('#orderDeliveryClearDraft').onclick=()=>{
+      if(!confirm('納品予定の入力途中内容をクリアしますか？')) return;
+      localStorage.removeItem(deliveryDraftKey);
+      $('#orderCreateDeliveryForm').reset();
+      $('#orderDeliveryPostal').value=customer.postal_code||'';
+      $('#orderDeliveryAddress1').value=customer.address1||'';
+      $('#orderDeliveryAddress2').value=customer.address2||'';
+      $('#orderDeliveryContactName').value=customer.primary_contact_name||'';
+      $('#orderDeliveryContactPhone').value=customer.primary_contact_phone||customer.phone||customer.mobile||'';
+      updateDeliveryRequired();
+      $('#orderDeliveryDraftNotice').classList.add('hidden');
+    };
 
     const orderBasicDate=$('#orderBasicDate');
     if(orderBasicDate && o.ordered_at){
@@ -4079,6 +4250,11 @@
           const quantity=Number(row.querySelector('.poi-qty').value||0);
           const unit_cost=Number(row.querySelector('.poi-unit').value||0);
           if(!description) throw new Error((index+1)+'行目の明細名を入力してください。');
+          if(quantity<=0) throw new Error((index+1)+'行目の数量は0より大きい値を入力してください。');
+          if(unit_cost<0) throw new Error((index+1)+'行目の単価原価は0以上で入力してください。');
+          const orderedDate=$('#orderPOOrderedAt').value?$('#orderPOOrderedAt').value.slice(0,10):null;
+          const itemDue=row.querySelector('.poi-expected')?.value||null;
+          if(orderedDate&&itemDue&&itemDue<orderedDate) throw new Error((index+1)+'行目の明細納期は発注日以降にしてください。');
           return {
             product_id:row.querySelector('.poi-product-id')?.value||null,
             description,
@@ -4089,7 +4265,10 @@
             track_serials:row.querySelector('.poi-track-serials')?.value==='true'
           };
         });
-        await rpc('create_purchase_order_full',{
+        const orderedDate=$('#orderPOOrderedAt').value?$('#orderPOOrderedAt').value.slice(0,10):null;
+        const expectedDate=$('#orderPOExpectedDate').value||null;
+        if(orderedDate&&expectedDate&&expectedDate<orderedDate) throw new Error('発注予定納期は発注日以降にしてください。');
+        const createdPO=await rpc('create_purchase_order_full',{
           p_order_id:o.id,
           p_purchase_order_number:$('#orderPONumber').value.trim()||null,
           p_supplier_name:$('#orderPOSupplier').value.trim()||null,
@@ -4098,9 +4277,11 @@
           p_internal_note:$('#orderPONote').value.trim()||null,
           p_items:items
         });
+        localStorage.removeItem(poDraftKey);
         notice('#orderPOCreateMsg','発注を作成しました。',true);
         toast('発注を作成しました');
-        await renderOrderDetail(o.id);
+        await renderProcurementWorkspace('purchase_orders');
+        if(createdPO?.id) await renderPurchaseOrderDetail(createdPO.id);
       }catch(err){
         notice('#orderPOCreateMsg',err.message||String(err));
       }finally{
@@ -4113,7 +4294,8 @@
       const btn=e.submitter;
       if(btn) btn.disabled=true;
       try{
-        await rpc('create_delivery_full',{
+        if(!$('#orderDeliveryScheduled').value) throw new Error('納品予定日時を入力してください。');
+        const createdDelivery=await rpc('create_delivery_full',{
           p_order_id:o.id,
           p_delivery_number:$('#orderDeliveryNumber').value.trim()||null,
           p_scheduled_at:$('#orderDeliveryScheduled').value ? new Date($('#orderDeliveryScheduled').value).toISOString() : null,
@@ -4127,9 +4309,11 @@
           p_notes:$('#orderDeliveryNotes').value.trim()||null,
           p_internal_note:$('#orderDeliveryInternalNote').value.trim()||null
         });
+        localStorage.removeItem(deliveryDraftKey);
         notice('#orderDeliveryCreateMsg','納品予定を作成しました。',true);
         toast('納品予定を作成しました');
-        await renderOrderDetail(o.id);
+        await renderProcurementWorkspace('delivery');
+        if(createdDelivery?.id) await renderDeliveryDetail(createdDelivery.id);
       }catch(err){
         notice('#orderDeliveryCreateMsg',err.message||String(err));
       }finally{
