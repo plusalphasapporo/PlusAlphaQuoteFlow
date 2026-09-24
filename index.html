@@ -322,7 +322,7 @@
     'customer_ticket_detail','internal_numbering_settings','internal_accounts_list',
     'internal_account_companies','internal_audit_workspace','internal_document_profile','internal_demo_seed_status','internal_company_settings','internal_entity_audit_history',
     'internal_products_list','internal_lease_rates_list','internal_order_profitability','internal_customer_unified_workspace','internal_receiving_workspace','internal_order_operation','role_knowledge_articles',
-    'support_customer_directory','support_asset_directory','support_handoff_history','support_customer_context','support_workflow_states','support_ticket_workflow_state','support_unread_notifications',
+    'support_customer_directory','support_asset_directory','support_handoff_history','support_customer_context','support_workflow_states','support_ticket_workflow_state','support_unread_notifications','support_unread_handoff_updates',
     'internal_case_directory','internal_handoff_history','internal_knowledge_articles'
   ]);
 
@@ -850,6 +850,8 @@
       in_progress:'対応中',
       teamviewer_waiting:'TeamViewer待ち',
       internal_handoff_waiting:'自社引継ぎ待ち',
+      internal_in_progress:'自社対応中',
+      support_review_waiting:'サポート会社確認待ち',
       completed:'完了'
     }[v]||'未対応');
   }
@@ -859,6 +861,8 @@
     if(v==='unhandled') return '<span class="hold">'+esc(label)+'</span>';
     if(v==='teamviewer_waiting') return '<span class="pill">'+esc(label)+'</span>';
     if(v==='internal_handoff_waiting') return '<span class="pill">'+esc(label)+'</span>';
+    if(v==='internal_in_progress') return '<span class="pill warn">'+esc(label)+'</span>';
+    if(v==='support_review_waiting') return '<span class="pill good">'+esc(label)+'</span>';
     if(v==='completed') return '<span class="pill good">'+esc(label)+'</span>';
     return '<span class="pill good">'+esc(label)+'</span>';
   }
@@ -896,15 +900,22 @@
   async function refreshSupportUnreadBadge(){
     if(bootData?.context?.role!=='support_staff') return {count:0,items:[]};
     try{
-      const unread=await rpc('support_unread_notifications');
-      const count=Number(unread?.count||0);
+      const [unread,handoffUpdates]=await Promise.all([
+        rpc('support_unread_notifications'),
+        rpc('support_unread_handoff_updates')
+      ]);
+      const count=Number(unread?.count||0)+Number(handoffUpdates?.count||0);
       if(count>0){
         $('#notificationCount').textContent=count>99?'99+':String(count);
         $('#notificationCount').classList.remove('hidden');
       }else{
         $('#notificationCount').classList.add('hidden');
       }
-      return unread||{count:0,items:[]};
+      return {
+        count,
+        items:unread?.items||[],
+        handoff_updates:handoffUpdates?.items||[]
+      };
     }catch(_){
       return {count:0,items:[]};
     }
@@ -929,6 +940,15 @@
       .on('postgres_changes',{event:'UPDATE',schema:'public',table:'support_tickets'},async()=>{
         await refreshSupportUnreadBadge();
         if(currentPage==='home') await renderHome();
+      })
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'support_handoffs'},async payload=>{
+        const unread=await refreshSupportUnreadBadge();
+        const item=(unread.handoff_updates||[]).find(x=>x.handoff_id===payload.new?.id);
+        if(item){
+          const stateText=item.handoff_state==='accepted'?'自社が引継ぎを受理しました':'自社対応が完了しました';
+          toast(stateText+'：'+(item.customer_name||'')+' '+(item.subject||''));
+          if(currentPage==='home') await renderHome();
+        }
       })
       .subscribe();
   }
@@ -993,8 +1013,11 @@
         ]);
         count=Number(biz?.kpis?.urgent_open_tickets||0)+Number(unreadHandoffs?.count||0);
       }else if(role==='support_staff'){
-        const unread=await rpc('support_unread_notifications');
-        count=Number(unread?.count||0);
+        const [unread,handoffUpdates]=await Promise.all([
+          rpc('support_unread_notifications'),
+          rpc('support_unread_handoff_updates')
+        ]);
+        count=Number(unread?.count||0)+Number(handoffUpdates?.count||0);
       }else if(role==='customer_user'){
         const h=await rpc('customer_portal_home');
         count=(h?.recent_tickets||[]).filter(x=>x.status!=='closed').length;
@@ -1254,11 +1277,12 @@
     }
 
     if(role==='support_staff'){
-      const [h,workspace,workflowStates,unread]=await Promise.all([
+      const [h,workspace,workflowStates,unread,handoffUpdates]=await Promise.all([
         rpc('support_home'),
         rpc('internal_support_cases_list'),
         rpc('support_workflow_states'),
-        rpc('support_unread_notifications')
+        rpc('support_unread_notifications'),
+        rpc('support_unread_handoff_updates')
       ]);
       const stageMap={};
       (workflowStates||[]).forEach(x=>stageMap[x.ticket_id]=x.support_stage);
@@ -1282,6 +1306,8 @@
       }).sort(queueSort);
       const remoteWaiting=tickets.filter(t=>t.status!=='closed'&&t.support_stage==='teamviewer_waiting').sort(queueSort);
       const handoffWaiting=tickets.filter(t=>t.status!=='closed'&&t.support_stage==='internal_handoff_waiting').sort(queueSort);
+      const internalWorking=tickets.filter(t=>t.status!=='closed'&&t.support_stage==='internal_in_progress').sort(queueSort);
+      const supportReview=tickets.filter(t=>t.status!=='closed'&&t.support_stage==='support_review_waiting').sort(queueSort);
 
       const queueItems=(items,emptyText)=>items.length
         ? items.slice(0,5).map(t=>
@@ -1295,6 +1321,18 @@
         : '<div class="empty" style="padding:16px">'+esc(emptyText)+'</div>';
 
       const unreadItems=(unread?.items||[]);
+      const handoffUpdateItems=(handoffUpdates?.items||[]);
+      const handoffUpdateRows=handoffUpdateItems.slice(0,8).map(h=>
+        '<tr>'+
+          '<td><span class="hold">NEW</span></td>'+
+          '<td>'+esc(h.handoff_state==='accepted'?'自社対応開始':'自社対応完了')+'</td>'+
+          '<td>'+supportRequestTypeBadge(h.request_type)+'</td>'+
+          '<td>'+esc(h.customer_name||'—')+'</td>'+
+          '<td><strong>'+esc(h.subject||'')+'</strong></td>'+
+          '<td>'+esc(h.handoff_state==='accepted'?'自社対応中':'サポート会社確認待ち')+'</td>'+
+          '<td><button class="linkBtn supportHandoffUpdateOpen" type="button" data-handoff-id="'+esc(h.handoff_id)+'" data-ticket-id="'+esc(h.ticket_id)+'">確認</button></td>'+
+        '</tr>'
+      );
       const unreadRows=unreadItems.slice(0,8).map(t=>
         '<tr>'+
           '<td><span class="hold">NEW</span></td>'+
@@ -1308,6 +1346,9 @@
 
       home.innerHTML=
         pageIntro('サポートダッシュボード','優先対応を上から処理し、電話・チャット受付から遠隔対応、自社引継ぎまで一画面で確認します。')+
+        (handoffUpdateItems.length
+          ? '<section class="card section"><div class="row between"><div><h2>自社からの引継ぎ進捗</h2><p class="sectionDesc">自社が受理・対応完了した引継ぎです。対応完了後は内容確認して顧客案内または案件完了へ進みます。</p></div><span class="hold">'+esc(handoffUpdateItems.length)+'件未読</span></div>'+dataTable(['新着','進捗','種別','顧客','件名','現在工程','操作'],handoffUpdateRows)+'</section>'
+          : '')+
         (unreadItems.length
           ? '<section class="card section"><div class="row between"><div><h2>新着の障害・設定依頼</h2><p class="sectionDesc">まだあなたが開いていない案件です。確認すると既読になります。</p></div><span class="hold">'+esc(unreadItems.length)+'件未読</span></div>'+dataTable(['新着','種別','顧客','件名','登録日','操作'],unreadRows)+'</section>'
           : '')+
@@ -1315,7 +1356,9 @@
           ['未対応の障害',unhandledIncidents.length],
           ['本日の設定依頼',todaySettings.length],
           ['TeamViewer待ち',remoteWaiting.length],
-          ['自社引継ぎ待ち',handoffWaiting.length]
+          ['自社引継ぎ待ち',handoffWaiting.length],
+          ['自社対応中',internalWorking.length],
+          ['確認待ち',supportReview.length]
         ])+
         '<section class="card section">'+
           '<div class="row between"><div><h2>今やるべき対応</h2><p class="sectionDesc">未対応障害 → 本日の設定依頼 → TeamViewer待ち → 自社引継ぎ待ちの順で確認します。</p></div><div class="row"><button id="supportNewFromHome" class="primary" type="button">＋ 問い合わせ受付</button><button id="supportCasesFromHome" class="ghost" type="button">全案件</button></div></div>'+
@@ -1323,7 +1366,9 @@
             '<article class="supportPriorityCard urgent"><div class="supportPriorityHead"><div><h3>1. 未対応の障害</h3><p>最優先で内容・写真を確認して対応開始</p></div><span class="supportPriorityCount">'+esc(unhandledIncidents.length)+'</span></div>'+queueItems(unhandledIncidents,'未対応の障害はありません。')+'</article>'+
             '<article class="supportPriorityCard"><div class="supportPriorityHead"><div><h3>2. 本日の設定依頼</h3><p>希望日時が本日の設定作業</p></div><span class="supportPriorityCount">'+esc(todaySettings.length)+'</span></div>'+queueItems(todaySettings,'本日予定の設定依頼はありません。')+'</article>'+
             '<article class="supportPriorityCard remote"><div class="supportPriorityHead"><div><h3>3. TeamViewer待ち</h3><p>ID・時間確認後、そのまま遠隔対応へ</p></div><span class="supportPriorityCount">'+esc(remoteWaiting.length)+'</span></div>'+queueItems(remoteWaiting,'TeamViewer待ちはありません。')+'</article>'+
-            '<article class="supportPriorityCard handoff"><div class="supportPriorityHead"><div><h3>4. 自社引継ぎ待ち</h3><p>サポート会社で解決できず、自社対応待ち</p></div><span class="supportPriorityCount">'+esc(handoffWaiting.length)+'</span></div>'+queueItems(handoffWaiting,'自社引継ぎ待ちはありません。')+'</article>'+
+            '<article class="supportPriorityCard handoff"><div class="supportPriorityHead"><div><h3>4. 自社引継ぎ待ち</h3><p>自社がまだ受理していない案件</p></div><span class="supportPriorityCount">'+esc(handoffWaiting.length)+'</span></div>'+queueItems(handoffWaiting,'自社引継ぎ待ちはありません。')+'</article>'+
+            '<article class="supportPriorityCard"><div class="supportPriorityHead"><div><h3>5. 自社対応中</h3><p>自社担当者が現在対応している案件</p></div><span class="supportPriorityCount">'+esc(internalWorking.length)+'</span></div>'+queueItems(internalWorking,'自社対応中の案件はありません。')+'</article>'+
+            '<article class="supportPriorityCard"><div class="supportPriorityHead"><div><h3>6. サポート会社確認待ち</h3><p>自社対応完了。顧客案内または完了処理へ</p></div><span class="supportPriorityCount">'+esc(supportReview.length)+'</span></div>'+queueItems(supportReview,'確認待ちの案件はありません。')+'</article>'+
           '</div>'+
         '</section>'+
         '<section class="card section"><div class="row between"><div><h2>標準対応フロー</h2><p class="sectionDesc">案件カルテではこの順番で対応します。</p></div></div>'+
@@ -1345,6 +1390,16 @@
         '</section>';
       $('#supportNewFromHome').onclick=()=>go('support_new');
       $('#supportCasesFromHome').onclick=()=>go('support_cases');
+      document.querySelectorAll('.supportHandoffUpdateOpen').forEach(btn=>btn.onclick=async()=>{
+        btn.disabled=true;
+        try{
+          await rpc('mark_support_handoff_update_read',{p_handoff_id:btn.dataset.handoffId});
+          await refreshSupportUnreadBadge();
+          await go('support_cases');
+          await renderTicketDetail(btn.dataset.ticketId);
+        }catch(err){toast(err.message||String(err));}
+        finally{btn.disabled=false;}
+      });
       document.querySelectorAll('.supportUnreadOpen').forEach(btn=>btn.onclick=async()=>{
         btn.disabled=true;
         try{
@@ -5380,8 +5435,13 @@
     if(support && (t.request_type==='incident'||t.request_type==='setting_request')){
       try{
         await rpc('mark_support_ticket_read',{p_ticket_id:t.id});
-        await refreshSupportUnreadBadge();
       }catch(_){}
+      for(const h of (detail.handoffs||[])){
+        if(h.requested_by_role==='support_staff' && (h.state==='accepted'||h.state==='completed')){
+          try{await rpc('mark_support_handoff_update_read',{p_handoff_id:h.id});}catch(_){}
+        }
+      }
+      await refreshSupportUnreadBadge();
     }
 
     const messages=detail.messages||[];
@@ -5473,9 +5533,10 @@
       '<tr><td>'+esc(a.file_name||'—')+'</td><td><strong>'+esc(attachmentSourceLabel(a))+'</strong>'+(a.uploader_name?'<br><span class="muted">'+esc(a.uploader_name)+'</span>':'')+'</td><td>'+esc(a.visibility?visibilityLabel(a.visibility):'顧客向け')+'</td><td>'+esc(a.size_bytes||0)+'</td><td>'+esc(dateText(a.created_at))+'</td></tr>'
     );
 
+    const handoffStateLabel=v=>({pending:'自社受理待ち',accepted:'自社対応中',completed:'自社対応完了'}[v]||v||'—');
     const handoffRows=handoffs.map(h=>
-      '<tr><td>'+esc(h.state||'—')+'</td><td>'+esc(h.reason||'—')+'</td><td>'+esc(h.next_action||'—')+'</td><td>'+esc(dateText(h.created_at))+'</td>'+
-        (internal?'<td>'+(h.state==='pending'?'<button class="linkBtn handoffAccept" data-id="'+esc(h.id)+'" type="button">受理</button>':'')+(h.state==='accepted'?'<button class="linkBtn handoffComplete" data-id="'+esc(h.id)+'" type="button">完了</button>':'')+'</td>':'')+
+      '<tr><td>'+esc(handoffStateLabel(h.state))+'</td><td>'+esc(h.reason||'—')+'</td><td>'+esc(h.next_action||'—')+'</td><td>'+esc(dateText(h.created_at))+'</td>'+
+        (internal?'<td>'+(h.state==='pending'?'<button class="linkBtn handoffAccept" data-id="'+esc(h.id)+'" type="button">受理</button>':'')+(h.state==='accepted'?'<button class="linkBtn handoffComplete" data-id="'+esc(h.id)+'" type="button">自社対応完了・サポートへ戻す</button>':'')+'</td>':'')+
       '</tr>'
     );
 
@@ -5755,7 +5816,7 @@
           catch(err){notice('#ticketActionMsg',err.message||String(err));}finally{btn.disabled=false;}
         });
         document.querySelectorAll('.handoffComplete').forEach(btn=>btn.onclick=async()=>{
-          btn.disabled=true;try{await rpc('complete_ticket_handoff',{p_handoff_id:btn.dataset.id});toast('引き継ぎを完了しました');await renderTicketDetail(t.id);}
+          btn.disabled=true;try{await rpc('complete_ticket_handoff',{p_handoff_id:btn.dataset.id});toast('自社対応を完了し、サポート会社へ戻しました');await renderTicketDetail(t.id);}
           catch(err){notice('#ticketActionMsg',err.message||String(err));}finally{btn.disabled=false;}
         });
       }
@@ -5865,6 +5926,8 @@
               '<button class="workspaceTab supportStageTab" type="button" data-stage="in_progress">対応中</button>'+
               '<button class="workspaceTab supportStageTab" type="button" data-stage="teamviewer_waiting">TeamViewer待ち</button>'+
               '<button class="workspaceTab supportStageTab" type="button" data-stage="internal_handoff_waiting">自社引継ぎ待ち</button>'+
+              '<button class="workspaceTab supportStageTab" type="button" data-stage="internal_in_progress">自社対応中</button>'+
+              '<button class="workspaceTab supportStageTab" type="button" data-stage="support_review_waiting">サポート会社確認待ち</button>'+
               '<button class="workspaceTab supportStageTab" type="button" data-stage="completed">完了</button>'+
             '</div>'+
           '</section>'
