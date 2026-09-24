@@ -1942,20 +1942,17 @@
   }
 
   function quoteItemRow(item={}){
-    const meta=[item.manufacturer,item.supplier_name,item.unit,item.procurement_target===false?'仕入対象外':(item.procurement_target?'仕入対象':'')].filter(Boolean).join(' / ');
     return '<div class="quoteItemRow" data-quote-item-row>'+
       '<input class="qi-product-id" type="hidden" value="'+esc(item.product_id||'')+'">'+
-      '<input class="qi-manufacturer" type="hidden" value="'+esc(item.manufacturer||'')+'">'+
-      '<input class="qi-supplier" type="hidden" value="'+esc(item.supplier_name||'')+'">'+
-      '<input class="qi-unit-name" type="hidden" value="'+esc(item.unit||'台')+'">'+
-      '<input class="qi-procure" type="hidden" value="'+esc(item.procurement_target===false?'false':'true')+'">'+
-      '<input class="qi-expected" type="hidden" value="'+esc(item.expected_delivery_date||'')+'">'+
-      '<div class="field descField"><label>明細名</label><input class="qi-desc" required value="'+esc(item.description||'')+'" placeholder="例：システム保守費用">'+
-        (meta?'<div class="muted" style="font-size:11px;margin-top:4px">'+esc(meta)+'</div>':'')+
-      '</div>'+
+      '<div class="field descField"><label>明細名</label><input class="qi-desc" required value="'+esc(item.description||'')+'" placeholder="例：複合機本体"></div>'+
       '<div class="field"><label>数量</label><input class="qi-qty" type="number" min="0" step="0.01" required value="'+esc(item.quantity ?? 1)+'"></div>'+
-      '<div class="field"><label>単価</label><input class="qi-unit" type="number" min="0" step="1" required value="'+esc(item.unit_price ?? 0)+'"></div>'+
-      '<div class="field"><label>原価</label><input class="qi-cost" type="number" min="0" step="1" value="'+esc(item.cost_price ?? 0)+'"></div>'+
+      '<div class="field"><label>単位</label><input class="qi-unit-name" value="'+esc(item.unit||'台')+'"></div>'+
+      '<div class="field"><label>販売単価</label><input class="qi-unit" type="number" min="0" step="1" required value="'+esc(item.unit_price ?? 0)+'"></div>'+
+      '<div class="field"><label>仕入原価</label><input class="qi-cost" type="number" min="0" step="1" value="'+esc(item.cost_price ?? 0)+'"></div>'+
+      '<div class="field"><label>メーカー</label><input class="qi-manufacturer" value="'+esc(item.manufacturer||'')+'"></div>'+
+      '<div class="field"><label>仕入先</label><input class="qi-supplier" value="'+esc(item.supplier_name||'')+'"></div>'+
+      '<div class="field"><label>納期予定</label><input class="qi-expected" type="date" value="'+esc(item.expected_delivery_date||'')+'"></div>'+
+      '<label class="row" style="align-self:end;margin-bottom:10px"><input class="qi-procure" type="checkbox" '+(item.procurement_target===false?'':'checked')+'> 仕入対象</label>'+
       '<button class="removeItem" type="button" title="明細を削除">×</button>'+
     '</div>';
   }
@@ -1972,11 +1969,14 @@
       if(quantity<0||unit_price<0||cost_price<0) throw new Error('数量・単価・原価は0以上で入力してください。');
       return {
         product_id:row.querySelector('.qi-product-id')?.value||null,
-        description,quantity,unit_price,cost_price,
-        manufacturer:row.querySelector('.qi-manufacturer')?.value||null,
-        supplier_name:row.querySelector('.qi-supplier')?.value||null,
-        unit:row.querySelector('.qi-unit-name')?.value||'台',
-        procurement_target:(row.querySelector('.qi-procure')?.value||'true')==='true',
+        description,
+        quantity,
+        unit_price,
+        cost_price,
+        manufacturer:row.querySelector('.qi-manufacturer')?.value.trim()||null,
+        supplier_name:row.querySelector('.qi-supplier')?.value.trim()||null,
+        unit:row.querySelector('.qi-unit-name')?.value.trim()||'台',
+        procurement_target:row.querySelector('.qi-procure')?.checked!==false,
         expected_delivery_date:row.querySelector('.qi-expected')?.value||null
       };
     });
