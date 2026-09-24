@@ -166,6 +166,7 @@
       ['orders','受注'],
       ['purchase_orders','発注'],
       ['deliveries','納品'],
+      ['assets','契約・機器'],
       ['support','サポート'],
       ['settings','設定']
     ],
@@ -176,6 +177,7 @@
       ['orders','受注'],
       ['purchase_orders','発注'],
       ['deliveries','納品'],
+      ['assets','契約・機器'],
       ['support','サポート']
     ],
     support_staff: [
@@ -291,6 +293,91 @@
       '</section>';
   }
 
+  async function renderCustomerDetail(customerId){
+    const [customerRes,quoteRes,orderRes,contractRes,assetRes,ticketRes]=await Promise.all([
+      supabase.from('customers')
+        .select('id,customer_code,name,phone,status,manual_hold,internal_note,created_at,updated_at')
+        .eq('id',customerId).single(),
+      supabase.from('quotes')
+        .select('id,quote_number,status,total_amount,valid_until,created_at')
+        .eq('customer_id',customerId)
+        .order('created_at',{ascending:false}),
+      supabase.from('orders')
+        .select('id,order_number,status,total_amount,ordered_at,created_at')
+        .eq('customer_id',customerId)
+        .order('created_at',{ascending:false}),
+      supabase.from('contracts')
+        .select('id,contract_number,status,start_date,end_date,created_at')
+        .eq('customer_id',customerId)
+        .order('created_at',{ascending:false}),
+      supabase.from('assets')
+        .select('id,asset_number,serial_number,model_name,status,created_at')
+        .eq('customer_id',customerId)
+        .order('created_at',{ascending:false}),
+      supabase.from('support_tickets')
+        .select('id,ticket_number,subject,status,priority,created_at')
+        .eq('customer_id',customerId)
+        .order('created_at',{ascending:false})
+        .limit(50)
+    ]);
+
+    for(const r of [customerRes,quoteRes,orderRes,contractRes,assetRes,ticketRes]){
+      if(r.error) throw r.error;
+    }
+
+    const c=customerRes.data;
+    const quotes=quoteRes.data||[];
+    const orders=orderRes.data||[];
+    const contracts=contractRes.data||[];
+    const assets=assetRes.data||[];
+    const tickets=ticketRes.data||[];
+    const openTickets=tickets.filter(t=>t.status!=='closed').length;
+
+    const quoteRows=quotes.map(q=>
+      '<tr><td>'+esc(q.quote_number||'下書き')+'</td><td>'+esc(statusText(q.status))+'</td><td class="amount">'+esc(money(q.total_amount))+'</td><td>'+esc(dateText(q.valid_until))+'</td></tr>'
+    );
+    const orderRows=orders.map(o=>
+      '<tr><td>'+esc(o.order_number||'未採番')+'</td><td>'+esc(statusText(o.status))+'</td><td class="amount">'+esc(money(o.total_amount))+'</td><td>'+esc(dateText(o.ordered_at))+'</td></tr>'
+    );
+    const contractRows=contracts.map(ct=>
+      '<tr><td>'+esc(ct.contract_number||'未採番')+'</td><td>'+esc(statusText(ct.status))+'</td><td>'+esc(dateText(ct.start_date))+'</td><td>'+esc(dateText(ct.end_date))+'</td></tr>'
+    );
+    const assetRows=assets.map(a=>
+      '<tr><td>'+esc(a.asset_number||'未採番')+'</td><td>'+esc(a.model_name||'—')+'</td><td>'+esc(a.serial_number||'—')+'</td><td>'+esc(statusText(a.status))+'</td></tr>'
+    );
+    const ticketRows=tickets.map(t=>
+      '<tr><td>'+esc(t.ticket_number||'—')+'</td><td>'+esc(t.subject||'')+'</td><td>'+esc(statusText(t.status))+'</td><td>'+esc(t.priority||'normal')+'</td></tr>'
+    );
+
+    $('#customerDetailHost').innerHTML=
+      '<section class="card section">'+
+        '<div class="quoteDetailHead">'+
+          '<div><h2>顧客詳細</h2><p class="sectionDesc">'+esc(c.customer_code||'—')+' / '+esc(c.name||'')+'</p></div>'+
+          '<button id="customerDetailClose" class="ghost" type="button">閉じる</button>'+
+        '</div>'+
+        kpis([
+          ['見積',quotes.length],
+          ['受注',orders.length],
+          ['契約',contracts.length],
+          ['対応中問い合わせ',openTickets]
+        ])+
+        '<div class="row">'+
+          '<span class="pill">電話 '+esc(c.phone||'—')+'</span>'+
+          '<span class="pill">'+esc(statusText(c.status))+'</span>'+
+          (c.manual_hold?'<span class="pill bad">手動ホールド中</span>':'<span class="pill good">取引可能</span>')+
+        '</div>'+
+        (c.internal_note?'<div class="notice">社内メモ: '+esc(c.internal_note)+'</div>':'')+
+        '<section class="section"><h3>見積</h3>'+dataTable(['見積番号','状態','合計','有効期限'],quoteRows)+'</section>'+
+        '<section class="section"><h3>受注</h3>'+dataTable(['受注番号','状態','合計','受注日'],orderRows)+'</section>'+
+        '<section class="section"><h3>契約</h3>'+dataTable(['契約番号','状態','開始日','終了日'],contractRows)+'</section>'+
+        '<section class="section"><h3>機器</h3>'+dataTable(['機器番号','機種','シリアル','状態'],assetRows)+'</section>'+
+        '<section class="section"><h3>問い合わせ</h3>'+dataTable(['番号','件名','状態','優先度'],ticketRows)+'</section>'+
+      '</section>';
+
+    $('#customerDetailClose').onclick=()=>{$('#customerDetailHost').innerHTML='';};
+    $('#customerDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
+  }
+
   async function renderCustomers(){
     const {data,error}=await supabase
       .from('customers')
@@ -305,11 +392,22 @@
         '<td>'+esc(statusText(c.status))+'</td>'+
         '<td>'+(c.manual_hold?'<span class="hold">手動ホールド中</span>':'<span class="normal">通常</span>')+'</td>'+
         '<td>'+esc(dateText(c.updated_at))+'</td>'+
+        '<td><button class="linkBtn customerDetail" type="button" data-id="'+esc(c.id)+'">詳細</button></td>'+
       '</tr>'
     );
     $('#home').innerHTML=
-      pageIntro('顧客','顧客マスタと取引停止状態を確認します。')+
-      dataTable(['顧客コード','顧客名','電話','状態','取引状態','更新日'],rows);
+      pageIntro('顧客','顧客マスタと取引・契約・機器・サポート状況をまとめて確認します。')+
+      '<div id="customerDetailHost"></div>'+
+      dataTable(['顧客コード','顧客名','電話','状態','取引状態','更新日','操作'],rows);
+
+    document.querySelectorAll('.customerDetail').forEach(btn=>{
+      btn.onclick=async()=>{
+        btn.disabled=true;
+        try{ await renderCustomerDetail(btn.dataset.id); }
+        catch(err){ toast(err.message||String(err)); }
+        finally{ btn.disabled=false; }
+      };
+    });
   }
 
   async function customerMap(){
@@ -961,7 +1059,137 @@
     }
   }
 
+  async function renderInternalAssetDetail(id){
+    const detail=await rpc('internal_asset_detail',{p_asset_id:id});
+    const a=detail?.asset;
+    if(!a) throw new Error('機器が見つかりません。');
+    const c=detail.customer||{};
+    const tickets=detail.tickets||[];
+    const contracts=detail.customer_contracts||[];
+
+    const ticketRows=tickets.map(t=>
+      '<tr><td>'+esc(t.ticket_number||'—')+'</td><td>'+esc(t.subject||'')+'</td><td>'+esc(statusText(t.status))+'</td><td>'+esc(t.priority||'normal')+'</td></tr>'
+    );
+    const contractRows=contracts.map(ct=>
+      '<tr><td>'+esc(ct.contract_number||'未採番')+'</td><td>'+esc(statusText(ct.status))+'</td><td>'+esc(dateText(ct.start_date))+'</td><td>'+esc(dateText(ct.end_date))+'</td></tr>'
+    );
+
+    $('#assetDetailHost').innerHTML=
+      '<section class="card section">'+
+        '<div class="quoteDetailHead">'+
+          '<div><h2>機器詳細</h2><p class="sectionDesc">'+esc(a.asset_number||'未採番')+' / '+esc(c.name||'')+'</p></div>'+
+          '<button id="assetDetailClose" class="ghost" type="button">閉じる</button>'+
+        '</div>'+
+        kpis([
+          ['状態',statusText(a.status)],
+          ['問い合わせ',tickets.length],
+          ['契約',contracts.length],
+          ['登録日',dateText(a.created_at)]
+        ])+
+        '<div class="row"><span class="pill">機種 '+esc(a.model_name||'—')+'</span><span class="pill">S/N '+esc(a.serial_number||'—')+'</span></div>'+
+        (a.internal_note?'<div class="notice">社内メモ: '+esc(a.internal_note)+'</div>':'')+
+        '<section class="section"><h3>この機器の問い合わせ</h3>'+dataTable(['番号','件名','状態','優先度'],ticketRows)+'</section>'+
+        '<section class="section"><h3>顧客の契約</h3>'+dataTable(['契約番号','状態','開始日','終了日'],contractRows)+'</section>'+
+      '</section>';
+
+    $('#assetDetailClose').onclick=()=>{$('#assetDetailHost').innerHTML='';};
+    $('#assetDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
+  }
+
+  async function renderInternalContractDetail(id){
+    const detail=await rpc('internal_contract_detail',{p_contract_id:id});
+    const ct=detail?.contract;
+    if(!ct) throw new Error('契約が見つかりません。');
+    const c=detail.customer||{};
+    const assets=detail.assets||[];
+
+    const assetRows=assets.map(a=>
+      '<tr><td>'+esc(a.asset_number||'未採番')+'</td><td>'+esc(a.model_name||'—')+'</td><td>'+esc(a.serial_number||'—')+'</td><td>'+esc(statusText(a.status))+'</td></tr>'
+    );
+
+    $('#contractDetailHost').innerHTML=
+      '<section class="card section">'+
+        '<div class="quoteDetailHead">'+
+          '<div><h2>契約詳細</h2><p class="sectionDesc">'+esc(ct.contract_number||'未採番')+' / '+esc(c.name||'')+'</p></div>'+
+          '<button id="contractDetailClose" class="ghost" type="button">閉じる</button>'+
+        '</div>'+
+        kpis([
+          ['状態',statusText(ct.status)],
+          ['開始日',dateText(ct.start_date)],
+          ['終了日',dateText(ct.end_date)],
+          ['登録機器',assets.length]
+        ])+
+        (ct.internal_note?'<div class="notice">社内メモ: '+esc(ct.internal_note)+'</div>':'')+
+        '<section class="section"><h3>顧客の機器</h3>'+dataTable(['機器番号','機種','シリアル','状態'],assetRows)+'</section>'+
+      '</section>';
+
+    $('#contractDetailClose').onclick=()=>{$('#contractDetailHost').innerHTML='';};
+    $('#contractDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
+  }
+
   async function renderAssets(){
+    const role=bootData.context?.role;
+    const internal=role==='internal_admin'||role==='internal_staff';
+
+    if(internal){
+      const [assets,contractRes,cmap]=await Promise.all([
+        rpc('internal_assets_list'),
+        supabase.from('contracts')
+          .select('id,customer_id,contract_number,status,start_date,end_date,created_at')
+          .order('created_at',{ascending:false}),
+        customerMap()
+      ]);
+      if(contractRes.error) throw contractRes.error;
+
+      const assetRows=(assets||[]).map(a=>
+        '<tr>'+
+          '<td><strong>'+esc(a.asset_number||'未採番')+'</strong></td>'+
+          '<td>'+esc(a.customer?.name||'—')+'</td>'+
+          '<td>'+esc(a.model_name||'—')+'</td>'+
+          '<td>'+esc(a.serial_number||'—')+'</td>'+
+          '<td>'+esc(statusText(a.status))+'</td>'+
+          '<td>'+esc(a.open_ticket_count||0)+'</td>'+
+          '<td><button class="linkBtn internalAssetDetail" type="button" data-id="'+esc(a.id)+'">詳細</button></td>'+
+        '</tr>'
+      );
+      const contractRows=(contractRes.data||[]).map(ct=>{
+        const c=cmap[ct.customer_id]||{};
+        return '<tr>'+
+          '<td><strong>'+esc(ct.contract_number||'未採番')+'</strong></td>'+
+          '<td>'+esc(c.name||'—')+'</td>'+
+          '<td>'+esc(statusText(ct.status))+'</td>'+
+          '<td>'+esc(dateText(ct.start_date))+'</td>'+
+          '<td>'+esc(dateText(ct.end_date))+'</td>'+
+          '<td><button class="linkBtn internalContractDetail" type="button" data-id="'+esc(ct.id)+'">詳細</button></td>'+
+        '</tr>';
+      });
+
+      $('#home').innerHTML=
+        pageIntro('契約・機器','顧客ごとの契約、機器、関連サポート状況を確認します。')+
+        '<div id="contractDetailHost"></div>'+
+        '<div id="assetDetailHost"></div>'+
+        '<section class="card section"><h2>契約</h2>'+dataTable(['契約番号','顧客','状態','開始日','終了日','操作'],contractRows)+'</section>'+
+        '<section class="card section"><h2>機器</h2>'+dataTable(['機器番号','顧客','機種','シリアル','状態','対応中','操作'],assetRows)+'</section>';
+
+      document.querySelectorAll('.internalAssetDetail').forEach(btn=>{
+        btn.onclick=async()=>{
+          btn.disabled=true;
+          try{ await renderInternalAssetDetail(btn.dataset.id); }
+          catch(err){ toast(err.message||String(err)); }
+          finally{ btn.disabled=false; }
+        };
+      });
+      document.querySelectorAll('.internalContractDetail').forEach(btn=>{
+        btn.onclick=async()=>{
+          btn.disabled=true;
+          try{ await renderInternalContractDetail(btn.dataset.id); }
+          catch(err){ toast(err.message||String(err)); }
+          finally{ btn.disabled=false; }
+        };
+      });
+      return;
+    }
+
     const [assetRes,contractRes]=await Promise.all([
       supabase.from('assets').select('id,asset_number,serial_number,model_name,status,created_at').order('created_at',{ascending:false}),
       supabase.from('contracts').select('id,contract_number,status,start_date,end_date,created_at').order('created_at',{ascending:false})
