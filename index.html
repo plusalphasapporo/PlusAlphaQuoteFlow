@@ -4355,8 +4355,9 @@
             '<div class="kpi"><div class="label">最終確認日時</div><div class="value">'+esc(callconnectApi?.last_api_check_at?dateTimeText(callconnectApi.last_api_check_at):'—')+'</div></div>'+
           '</div>'+
           '<form id="callconnectEndpointForm">'+
-            '<div class="modalGrid2">'+
+            '<div class="modalGrid3">'+
               '<div class="field"><label>Contacts List API URL</label><input id="callconnectContactsApiUrl" type="url" value="'+esc(callconnectApi?.contacts_api_url||'')+'" placeholder="CallConnect API仕様の Try it out! で表示されたURL"></div>'+
+              '<div class="field"><label>Contacts Create API URL</label><input id="callconnectContactsCreateApiUrl" type="url" value="'+esc(callconnectApi?.contacts_create_api_url||'')+'" placeholder="Contact作成APIの Try it out! で表示されたURL"></div>'+
               '<div class="field"><label>Records List API URL</label><input id="callconnectRecordsApiUrl" type="url" value="'+esc(callconnectApi?.records_api_url||'')+'" placeholder="CallConnect API仕様の Try it out! で表示されたURL"></div>'+
             '</div>'+
             '<div class="notice">接続先URLは固定値を推測せず、CallConnect公式API仕様画面で表示されたURLを登録します。</div>'+
@@ -4383,7 +4384,7 @@
             '<div class="supportStep done"><span class="supportStepNum">1</span><strong>Webhook</strong><small>通話終了後の履歴・顧客照合・案件化</small></div>'+
             '<div class="supportStep '+(callconnectApi?.api_key_configured?'done':'active')+'"><span class="supportStepNum">2</span><strong>REST API Key</strong><small>'+(callconnectApi?.api_key_configured?'登録済み':'未登録')+'</small></div>'+
             '<div class="supportStep '+(callconnectApi?.last_api_check_status==='connected'?'done':((callconnectApi?.api_key_configured&&callconnectApi?.contacts_api_url_configured)?'active':''))+'"><span class="supportStepNum">3</span><strong>API接続確認</strong><small>'+(callconnectApi?.last_api_check_status==='connected'?'接続確認済み':(callconnectApi?.api_key_configured&&callconnectApi?.contacts_api_url_configured?'接続テスト可能':'API KeyとURL設定が必要'))+'</small></div>'+
-            '<div class="supportStep"><span class="supportStepNum">4</span><strong>手動・自動同期</strong><small>顧客・通話履歴の再同期</small></div>'+
+            '<div class="supportStep '+(callconnectApi?.contacts_create_api_url_configured?'active':'')+'"><span class="supportStepNum">4</span><strong>顧客同期</strong><small>'+(callconnectApi?.contacts_create_api_url_configured?'Create URL設定済み・同期実装待ち':'Contacts Create API URLが必要')+'</small></div>'+
           '</div>'+
         '</section>';
     }else if(tab==='security'){
@@ -4494,8 +4495,9 @@
         e.preventDefault();
         const btn=e.submitter;if(btn)btn.disabled=true;
         try{
-          await rpc('save_callconnect_api_endpoints',{
+          await rpc('save_callconnect_api_endpoints_v2',{
             p_contacts_api_url:$('#callconnectContactsApiUrl').value.trim()||null,
+            p_contacts_create_api_url:$('#callconnectContactsCreateApiUrl').value.trim()||null,
             p_records_api_url:$('#callconnectRecordsApiUrl').value.trim()||null
           });
           notice('#callconnectEndpointMsg','CallConnect API URLを保存しました。',true);
@@ -7350,8 +7352,9 @@
         '<div class="modalGrid2">'+
           '<div class="item"><strong>API Key登録日時</strong><p>'+esc(dash?.api_key_configured_at?dateTimeText(dash.api_key_configured_at):'未設定')+'</p></div>'+
           '<div class="item"><strong>最終API確認</strong><p>'+esc(dash?.last_api_check_status||'未実施')+(dash?.last_api_check_at?'<br><span class="muted">'+esc(dateTimeText(dash.last_api_check_at))+'</span>':'')+'</p></div>'+
-          '<div class="item"><strong>Contacts API URL</strong><p>'+esc(dash?.contacts_api_url_configured?'設定済み':'未設定')+'</p></div>'+
-          '<div class="item"><strong>Records API URL</strong><p>'+esc(dash?.records_api_url_configured?'設定済み':'未設定')+'</p></div>'+
+          '<div class="item"><strong>Contacts List API URL</strong><p>'+esc(dash?.contacts_api_url_configured?'設定済み':'未設定')+'</p></div>'+
+          '<div class="item"><strong>Contacts Create API URL</strong><p>'+esc(dash?.contacts_create_api_url_configured?'設定済み':'未設定')+'</p></div>'+
+          '<div class="item"><strong>Records List API URL</strong><p>'+esc(dash?.records_api_url_configured?'設定済み':'未設定')+'</p></div>'+
         '</div>'+
         (dash?.last_api_error?'<div class="notice error">APIエラー: '+esc(dash.last_api_error)+'</div>':'')+
       '</section>'+
@@ -7363,7 +7366,7 @@
         '</div>'+
         (dash?.last_error?'<div class="notice error">最終エラー: '+esc(dash.last_error)+'</div>':'')+
       '</section>'+
-      (dash?.api_key_configured&&!dash?.contacts_api_url_configured?'<div class="notice error"><strong>着信時の顧客表示はまだ未完成です。</strong><br>CallConnect側に顧客を同期するため、Contacts API URLの設定が必要です。Webhookによる通話履歴保存・電話番号照合は動作しています。</div>':'')+
+      (dash?.api_key_configured&&!dash?.contacts_create_api_url_configured?'<div class="notice error"><strong>着信時の顧客表示はまだ未完成です。</strong><br>CallConnect側に顧客を同期するため、Contacts Create API URLの設定が必要です。Webhookによる通話履歴保存・電話番号照合は動作しています。</div>':'')+
       '<section class="card section"><div class="row between"><div><h2>通話履歴</h2><p class="sectionDesc">電話番号が顧客マスタと一致すると、自動で案件作成します。照合済みは「顧客カルテ」から直接開けます。未照合はここで顧客を指定できます。</p></div></div>'+
         dataTable(['日時','種別','電話番号','CallConnect担当','通話','顧客照合','案件','操作'],rows)+
       '</section>';
