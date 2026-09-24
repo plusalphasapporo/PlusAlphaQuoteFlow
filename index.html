@@ -294,7 +294,8 @@
     'customer_ticket_detail','internal_numbering_settings','internal_accounts_list',
     'internal_account_companies','internal_audit_workspace','internal_document_profile','internal_demo_seed_status',
     'internal_products_list','internal_lease_rates_list','internal_order_profitability','internal_customer_unified_workspace','internal_receiving_workspace','internal_order_operation','role_knowledge_articles',
-    'support_customer_directory','support_asset_directory','support_handoff_history','support_customer_context'
+    'support_customer_directory','support_asset_directory','support_handoff_history','support_customer_context',
+    'internal_case_directory','internal_handoff_history','internal_knowledge_articles'
   ]);
 
   function errorStatus(err){
@@ -430,10 +431,15 @@
     internal_admin: [
       ['home','ダッシュボード'],
       ['customers','顧客管理'],
+      ['assets','機器台帳'],
+      ['support','問い合わせ管理'],
+      ['cases','案件管理'],
+      ['handoffs','引継ぎ管理'],
       ['sales','見積・リース'],
       ['procurement','仕入・納品'],
-      ['assets','機器台帳'],
-      ['support','問い合わせ・引継ぎ'],
+      ['contracts','契約・保守'],
+      ['analysis','分析・レポート'],
+      ['knowledge_admin','ナレッジ管理'],
       ['accounts','ユーザー管理'],
       ['audit','監査ログ'],
       ['security','セキュリティ'],
@@ -442,10 +448,15 @@
     internal_staff: [
       ['home','ダッシュボード'],
       ['customers','顧客管理'],
+      ['assets','機器台帳'],
+      ['support','問い合わせ管理'],
+      ['cases','案件管理'],
+      ['handoffs','引継ぎ管理'],
       ['sales','見積・リース'],
       ['procurement','仕入・納品'],
-      ['assets','機器台帳'],
-      ['support','問い合わせ・引継ぎ'],
+      ['contracts','契約・保守'],
+      ['analysis','分析・レポート'],
+      ['knowledge_admin','ナレッジ管理'],
       ['security','セキュリティ']
     ],
     support_staff: [
@@ -3371,6 +3382,188 @@
   }
 
 
+
+  async function renderAssetDetail(assetId){
+    const detail=await rpc('internal_asset_detail',{p_asset_id:assetId});
+    const a=detail.asset||{};
+    const c=detail.customer||{};
+    const ticketRows=(detail.tickets||[]).map(t=>'<tr><td>'+esc(t.ticket_number||'—')+'</td><td>'+esc(t.subject||'')+'</td><td>'+esc(statusText(t.status))+'</td><td>'+esc(t.priority||'normal')+'</td></tr>');
+    const contractRows=(detail.customer_contracts||[]).map(ct=>'<tr><td>'+esc(ct.contract_number||'—')+'</td><td>'+esc(statusText(ct.status))+'</td><td>'+esc(dateText(ct.start_date))+'</td><td>'+esc(dateText(ct.end_date))+'</td></tr>');
+    $('#assetDetailHost').innerHTML=
+      '<section class="card section">'+
+        '<div class="quoteDetailHead"><div><h2>機器詳細</h2><p class="sectionDesc">'+esc(a.asset_number||'未採番')+' / '+esc(c.name||'')+'</p></div><button id="assetDetailCloseBtn" class="ghost" type="button">閉じる</button></div>'+
+        '<form id="assetDetailForm">'+
+          '<div class="modalGrid2">'+
+            '<div class="field"><label>機器番号</label><input id="assetDetailNumber" value="'+esc(a.asset_number||'')+'"></div>'+
+            '<div class="field"><label>機種</label><input id="assetDetailModel" value="'+esc(a.model_name||'')+'"></div>'+
+            '<div class="field"><label>シリアル番号</label><input id="assetDetailSerial" value="'+esc(a.serial_number||'')+'"></div>'+
+            '<div class="field"><label>状態</label><input value="'+esc(statusText(a.status))+'" disabled></div>'+
+          '</div>'+
+          '<div class="field"><label>社内メモ</label><textarea id="assetDetailNote" rows="3">'+esc(a.internal_note||'')+'</textarea></div>'+
+          '<button class="primary" type="submit">機器情報を保存</button>'+
+        '</form>'+
+        '<div id="assetDetailMsg" class="notice hidden"></div>'+
+        '<h3>関連する問い合わせ</h3>'+dataTable(['番号','件名','状態','優先度'],ticketRows)+
+        '<h3>顧客の契約・保守</h3>'+dataTable(['契約番号','状態','開始日','終了日'],contractRows)+
+      '</section>';
+    $('#assetDetailCloseBtn').onclick=()=>{$('#assetDetailHost').innerHTML='';};
+    $('#assetDetailForm').onsubmit=async e=>{
+      e.preventDefault();const btn=e.submitter;if(btn)btn.disabled=true;
+      try{
+        await rpc('update_asset',{
+          p_asset_id:a.id,p_asset_number:$('#assetDetailNumber').value.trim()||null,
+          p_serial_number:$('#assetDetailSerial').value.trim()||null,p_model_name:$('#assetDetailModel').value.trim()||null,
+          p_internal_note:$('#assetDetailNote').value.trim()||null
+        });
+        notice('#assetDetailMsg','機器情報を更新しました。',true);toast('機器情報を更新しました');
+        setTimeout(()=>go('assets'),350);
+      }catch(err){notice('#assetDetailMsg',err.message||String(err));}
+      finally{if(btn)btn.disabled=false;}
+    };
+    $('#assetDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
+  }
+
+  async function renderAssetLedger(){
+    const role=bootData?.context?.role;
+    if(role==='customer_user'){
+      const h=await rpc('customer_portal_home');
+      const rows=(h.assets||[]).map(a=>'<tr><td><strong>'+esc(a.asset_number||'—')+'</strong></td><td>'+esc(a.model_name||'—')+'</td><td>'+esc(a.serial_number||'—')+'</td><td>'+esc(statusText(a.status))+'</td></tr>');
+      $('#home').innerHTML=pageIntro('登録機器','現在登録されている機器を確認できます。')+'<section class="card section">'+dataTable(['機器番号','機種','シリアル','状態'],rows)+'</section>';
+      return;
+    }
+
+    const [assets,customers]=await Promise.all([rpc('internal_assets_list'),rpc('internal_customers_list')]);
+    const options=(customers||[]).map(c=>'<option value="'+esc(c.id)+'">'+esc(c.customer_code||'—')+' / '+esc(c.name)+'</option>').join('');
+    const rows=(assets||[]).map(a=>
+      '<tr><td><strong>'+esc(a.asset_number||'未採番')+'</strong></td><td>'+esc(a.customer?.name||'—')+'</td><td>'+esc(a.model_name||'—')+'</td><td>'+esc(a.serial_number||'—')+'</td><td>'+esc(statusText(a.status))+'</td><td>'+esc(a.open_ticket_count||0)+'</td><td><button class="linkBtn assetLedgerOpen" type="button" data-id="'+esc(a.id)+'">詳細</button></td></tr>'
+    );
+    $('#home').innerHTML=
+      pageIntro('機器台帳','納品・設置された機器をシリアル単位で管理します。')+
+      '<section class="card section"><div class="unifiedToolbar"><div><h2>機器一覧</h2><p class="sectionDesc">納品から自動登録された機器と手動登録した機器を同じ台帳で管理します。</p></div><button id="assetLedgerCreateBtn" class="primary" type="button">＋機器登録</button></div>'+
+      '<div id="assetDetailHost"></div>'+dataTable(['機器番号','顧客','機種','シリアル','状態','対応中','操作'],rows)+'</section>';
+
+    $('#assetLedgerCreateBtn').onclick=()=>openModal({
+      title:'機器を登録',description:'手動でOA機器台帳へ追加します。納品フローからも自動登録されます。',
+      body:
+        '<div class="field"><label>顧客</label><select id="ledgerCustomer" required><option value="">選択してください</option>'+options+'</select></div>'+
+        '<div class="modalGrid2"><div class="field"><label>機器番号</label><input id="ledgerNumber"></div><div class="field"><label>機種</label><input id="ledgerModel"></div><div class="field"><label>シリアル番号</label><input id="ledgerSerial"></div></div>'+
+        '<div class="field"><label>社内メモ</label><textarea id="ledgerNote" rows="3"></textarea></div>',
+      confirmLabel:'登録',
+      onSubmit:async()=>{
+        await rpc('create_asset',{p_customer_id:$('#ledgerCustomer').value,p_asset_number:$('#ledgerNumber').value.trim()||null,p_serial_number:$('#ledgerSerial').value.trim()||null,p_model_name:$('#ledgerModel').value.trim()||null,p_internal_note:$('#ledgerNote').value.trim()||null});
+        closeModal();toast('機器を登録しました');await go('assets');
+      }
+    });
+    document.querySelectorAll('.assetLedgerOpen').forEach(btn=>btn.onclick=()=>renderAssetDetail(btn.dataset.id));
+  }
+
+  async function renderContractDetail(contractId){
+    const detail=await rpc('internal_contract_detail',{p_contract_id:contractId});
+    const ct=detail.contract||{};
+    const c=detail.customer||{};
+    const assetRows=(detail.assets||[]).map(a=>'<tr><td>'+esc(a.asset_number||'—')+'</td><td>'+esc(a.model_name||'—')+'</td><td>'+esc(a.serial_number||'—')+'</td><td>'+esc(statusText(a.status))+'</td></tr>');
+    $('#contractDetailHost').innerHTML=
+      '<section class="card section">'+
+        '<div class="quoteDetailHead"><div><h2>契約・保守詳細</h2><p class="sectionDesc">'+esc(ct.contract_number||'未採番')+' / '+esc(c.name||'')+'</p></div><button id="contractDetailCloseBtn" class="ghost" type="button">閉じる</button></div>'+
+        '<form id="contractDetailForm">'+
+          '<div class="modalGrid3"><div class="field"><label>契約番号</label><input id="contractDetailNumber" value="'+esc(ct.contract_number||'')+'"></div><div class="field"><label>開始日</label><input id="contractDetailStart" type="date" value="'+esc(ct.start_date||'')+'"></div><div class="field"><label>終了日</label><input id="contractDetailEnd" type="date" value="'+esc(ct.end_date||'')+'"></div></div>'+
+          '<div class="field"><label>社内メモ</label><textarea id="contractDetailNote" rows="3">'+esc(ct.internal_note||'')+'</textarea></div>'+
+          '<button class="primary" type="submit">契約情報を保存</button>'+
+        '</form><div id="contractDetailMsg" class="notice hidden"></div>'+
+        '<h3>顧客の機器</h3>'+dataTable(['機器番号','機種','シリアル','状態'],assetRows)+
+      '</section>';
+    $('#contractDetailCloseBtn').onclick=()=>{$('#contractDetailHost').innerHTML='';};
+    $('#contractDetailForm').onsubmit=async e=>{
+      e.preventDefault();const btn=e.submitter;if(btn)btn.disabled=true;
+      try{
+        await rpc('update_contract',{p_contract_id:ct.id,p_contract_number:$('#contractDetailNumber').value.trim()||null,p_start_date:$('#contractDetailStart').value||null,p_end_date:$('#contractDetailEnd').value||null,p_internal_note:$('#contractDetailNote').value.trim()||null});
+        notice('#contractDetailMsg','契約情報を更新しました。',true);toast('契約情報を更新しました');setTimeout(()=>go('contracts'),350);
+      }catch(err){notice('#contractDetailMsg',err.message||String(err));}
+      finally{if(btn)btn.disabled=false;}
+    };
+    $('#contractDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
+  }
+
+  async function renderContractsWorkspace(){
+    const [{data,error},customers]=await Promise.all([
+      supabase.from('contracts').select('id,customer_id,contract_number,status,start_date,end_date,created_at').order('created_at',{ascending:false}),
+      rpc('internal_customers_list')
+    ]);
+    if(error) throw error;
+    const cmap={};(customers||[]).forEach(c=>cmap[c.id]=c);
+    const options=(customers||[]).map(c=>'<option value="'+esc(c.id)+'">'+esc(c.customer_code||'—')+' / '+esc(c.name)+'</option>').join('');
+    const rows=(data||[]).map(ct=>'<tr><td><strong>'+esc(ct.contract_number||'未採番')+'</strong></td><td>'+esc(cmap[ct.customer_id]?.name||'—')+'</td><td>'+esc(statusText(ct.status))+'</td><td>'+esc(dateText(ct.start_date))+'</td><td>'+esc(dateText(ct.end_date))+'</td><td><button class="linkBtn contractWorkspaceOpen" type="button" data-id="'+esc(ct.id)+'">詳細</button></td></tr>');
+    $('#home').innerHTML=
+      pageIntro('契約・保守','顧客ごとの契約期間・保守情報を管理します。')+
+      '<section class="card section"><div class="unifiedToolbar"><div><h2>契約・保守一覧</h2></div><button id="contractWorkspaceCreate" class="primary" type="button">＋契約登録</button></div><div id="contractDetailHost"></div>'+dataTable(['契約番号','顧客','状態','開始日','終了日','操作'],rows)+'</section>';
+    $('#contractWorkspaceCreate').onclick=()=>openModal({
+      title:'契約・保守を登録',description:'顧客に紐づく契約期間を登録します。',
+      body:'<div class="field"><label>顧客</label><select id="cwCustomer" required><option value="">選択してください</option>'+options+'</select></div><div class="modalGrid3"><div class="field"><label>契約番号</label><input id="cwNumber"></div><div class="field"><label>開始日</label><input id="cwStart" type="date"></div><div class="field"><label>終了日</label><input id="cwEnd" type="date"></div></div><div class="field"><label>社内メモ</label><textarea id="cwNote" rows="3"></textarea></div>',
+      confirmLabel:'登録',
+      onSubmit:async()=>{await rpc('create_contract',{p_customer_id:$('#cwCustomer').value,p_contract_number:$('#cwNumber').value.trim()||null,p_start_date:$('#cwStart').value||null,p_end_date:$('#cwEnd').value||null,p_internal_note:$('#cwNote').value.trim()||null});closeModal();toast('契約を登録しました');await go('contracts');}
+    });
+    document.querySelectorAll('.contractWorkspaceOpen').forEach(btn=>btn.onclick=()=>renderContractDetail(btn.dataset.id));
+  }
+
+  async function renderCasesWorkspace(){
+    const data=await rpc('internal_case_directory');
+    const rows=(data||[]).map(x=>
+      '<tr><td>'+esc(x.ticket_number||'—')+'</td><td>'+esc(x.customer_name||'')+'</td><td><strong>'+esc(x.subject||'')+'</strong><br><span class="muted">'+esc(x.asset_name||'')+'</span></td><td>'+esc(statusText(x.status))+'</td><td>'+esc(x.priority||'normal')+'</td><td>'+esc(x.assigned_name||'未割当')+'</td><td>'+esc(x.handoff_state||'—')+'</td><td><button class="linkBtn caseOpenBtn" type="button" data-id="'+esc(x.id)+'">対応画面</button></td></tr>'
+    );
+    $('#home').innerHTML=pageIntro('案件管理','問い合わせを案件として横断管理します。')+'<div id="caseDetailHost"></div><section class="card section">'+dataTable(['案件番号','顧客','内容/機器','状態','優先度','自社担当','引継ぎ','操作'],rows)+'</section>';
+    document.querySelectorAll('.caseOpenBtn').forEach(btn=>btn.onclick=async()=>{await renderTicketDetail(btn.dataset.id);const target=$('#ticketDetailHost');if(target){$('#caseDetailHost').innerHTML=target.innerHTML;target.innerHTML='';}});
+  }
+
+  async function renderHandoffsWorkspace(){
+    const data=await rpc('internal_handoff_history');
+    const rows=(data||[]).map(h=>
+      '<tr><td>'+esc(h.ticket_number||'—')+'</td><td>'+esc(h.customer_name||'')+'</td><td>'+esc(h.subject||'')+'</td><td>'+esc(h.state||'—')+'</td><td>'+esc(h.reason||'—')+'</td><td>'+esc(h.next_action||'—')+'</td><td>'+esc(h.requested_by_name||h.requested_by_role||'—')+'</td><td>'+esc(dateText(h.created_at))+'</td><td>'+(
+        h.state==='pending'?'<button class="linkBtn internalHandoffAccept" type="button" data-id="'+esc(h.id)+'">受理</button>':
+        h.state==='accepted'?'<button class="linkBtn internalHandoffComplete" type="button" data-id="'+esc(h.id)+'">完了</button>':'—'
+      )+'</td></tr>'
+    );
+    $('#home').innerHTML=pageIntro('引継ぎ管理','サポート会社から自社への引継ぎを一元管理します。')+'<section class="card section">'+dataTable(['案件','顧客','件名','状態','理由','次対応','依頼者','日時','操作'],rows)+'</section>';
+    document.querySelectorAll('.internalHandoffAccept').forEach(btn=>btn.onclick=async()=>{await rpc('accept_ticket_handoff',{p_handoff_id:btn.dataset.id});toast('引継ぎを受理しました');await renderHandoffsWorkspace();});
+    document.querySelectorAll('.internalHandoffComplete').forEach(btn=>btn.onclick=async()=>{await rpc('complete_ticket_handoff',{p_handoff_id:btn.dataset.id});toast('引継ぎを完了しました');await renderHandoffsWorkspace();});
+  }
+
+  async function renderAnalysis(){
+    const [biz,profit,cases]=await Promise.all([
+      rpc('internal_business_dashboard'),
+      rpc('internal_order_profitability'),
+      rpc('internal_case_directory')
+    ]);
+    const totalSales=(profit||[]).reduce((s,x)=>s+Number(x.sales||0),0);
+    const totalCost=(profit||[]).reduce((s,x)=>s+Number(x.cost||0),0);
+    const gross=totalSales-totalCost;
+    const open=(cases||[]).filter(x=>x.status!=='closed').length;
+    const urgent=(cases||[]).filter(x=>x.status!=='closed'&&x.priority==='urgent').length;
+    const rows=(profit||[]).map(x=>'<tr><td>'+esc(x.order_number||'—')+'</td><td>'+esc(x.customer_name||'')+'</td><td class="amount">'+esc(money(x.sales))+'</td><td class="amount">'+esc(money(x.cost))+'</td><td class="'+(Number(x.gross_profit)>=0?'profitPositive':'profitNegative')+'">'+esc(money(x.gross_profit))+'</td><td>'+esc(x.gross_margin)+'%</td></tr>');
+    $('#home').innerHTML=
+      pageIntro('分析・レポート','販売・粗利・案件状況を同じ正本データから集計します。')+
+      kpis([['受注売上',money(totalSales)],['仕入原価',money(totalCost)],['粗利',money(gross)],['対応中案件',open],['緊急案件',urgent],['納品予定超過',biz.kpis?.deliveries_overdue||0]])+
+      '<section class="card section"><h2>受注粗利</h2>'+dataTable(['受注番号','顧客','売上','原価','粗利','粗利率'],rows)+'</section>';
+  }
+
+  async function renderKnowledgeAdmin(){
+    const data=await rpc('internal_knowledge_articles');
+    const audienceText=a=>({internal:'自社のみ',support:'サポート会社',customer:'顧客会社',all:'全社'}[a]||a);
+    const rows=(data||[]).map(k=>'<tr><td><strong>'+esc(k.title||'')+'</strong></td><td>'+esc(k.category||'—')+'</td><td>'+esc(audienceText(k.audience))+'</td><td>'+esc(k.is_active?'公開':'非公開')+'</td><td>'+esc(dateText(k.updated_at))+'</td><td><button class="linkBtn knowledgeAdminEdit" type="button" data-id="'+esc(k.id)+'">編集</button></td></tr>');
+    $('#home').innerHTML=pageIntro('ナレッジ管理','サポート会社・顧客会社へ公開する手順とマニュアルを管理します。')+'<section class="card section"><div class="unifiedToolbar"><h2>ナレッジ</h2><button id="knowledgeAdminNew" class="primary" type="button">＋新規登録</button></div>'+dataTable(['タイトル','カテゴリ','公開先','状態','更新','操作'],rows)+'</section>';
+    const openEditor=(k={})=>openModal({
+      title:k.id?'ナレッジを編集':'ナレッジを登録',
+      description:'公開先を選ぶと、役割ごとのナレッジ/マニュアル画面へ反映されます。',
+      wide:true,
+      body:
+        '<div class="modalGrid3"><div class="field" style="grid-column:span 2"><label>タイトル</label><input id="kaTitle" value="'+esc(k.title||'')+'" required></div><div class="field"><label>カテゴリ</label><input id="kaCategory" value="'+esc(k.category||'')+'"></div><div class="field"><label>公開先</label><select id="kaAudience"><option value="internal" '+(k.audience==='internal'?'selected':'')+'>自社のみ</option><option value="support" '+(k.audience==='support'?'selected':'')+'>サポート会社</option><option value="customer" '+(k.audience==='customer'?'selected':'')+'>顧客会社</option><option value="all" '+(k.audience==='all'?'selected':'')+'>全社</option></select></div><div class="field" style="grid-column:span 2"><label>タグ</label><input id="kaTags" value="'+esc((k.tags||[]).join(', '))+'"></div></div>'+
+        '<div class="field"><label>本文</label><textarea id="kaBody" rows="10" required>'+esc(k.body||'')+'</textarea></div><label class="row"><input id="kaActive" type="checkbox" '+(k.is_active!==false?'checked':'')+'> 公開</label>',
+      confirmLabel:'保存',
+      onSubmit:async()=>{await rpc('save_knowledge_article',{p_id:k.id||null,p_title:$('#kaTitle').value.trim(),p_category:$('#kaCategory').value.trim()||null,p_body:$('#kaBody').value.trim(),p_audience:$('#kaAudience').value,p_tags:$('#kaTags').value.split(',').map(x=>x.trim()).filter(Boolean),p_is_active:$('#kaActive').checked});closeModal();toast('ナレッジを保存しました');await renderKnowledgeAdmin();}
+    });
+    $('#knowledgeAdminNew').onclick=()=>openEditor();
+    document.querySelectorAll('.knowledgeAdminEdit').forEach(btn=>btn.onclick=()=>openEditor((data||[]).find(x=>x.id===btn.dataset.id)||{}));
+  }
+
   async function renderKnowledge(){
     const data=await rpc('role_knowledge_articles');
     const role=bootData?.context?.role;
@@ -3982,6 +4175,11 @@
       if(page==='purchase_orders') return await renderPurchaseOrders();
       if(page==='deliveries') return await renderDeliveries();
       if(page==='support') return await renderSupport();
+      if(page==='cases') return await renderCasesWorkspace();
+      if(page==='handoffs') return await renderHandoffsWorkspace();
+      if(page==='contracts') return await renderContractsWorkspace();
+      if(page==='analysis') return await renderAnalysis();
+      if(page==='knowledge_admin') return await renderKnowledgeAdmin();
       if(page==='support_new') return await renderSupportNew();
       if(page==='support_cases') return await renderSupportCases();
       if(page==='support_customers') return await renderSupportCustomers();
@@ -3994,7 +4192,7 @@
       if(page==='audit') return await renderAudit();
       if(page==='security') return await renderSecurity();
       if(page==='settings') return await renderSettings();
-      if(page==='assets') return await renderAssets();
+      if(page==='assets') return await renderAssetLedger();
       return await renderHome();
     }catch(e){
       const raw=String(e.message||e);
