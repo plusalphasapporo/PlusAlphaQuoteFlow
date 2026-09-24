@@ -1784,6 +1784,14 @@
           '<button class="primary" type="submit">変更を保存</button>'+
         '</form>'+
         '<div id="deliveryEditMsg" class="notice hidden"></div>'+
+        '<section class="section">'+
+          '<h3>納品ステータス</h3>'+
+          (d.status==='delivered'
+            ? '<div class="notice ok">納品完了：'+esc(dateText(d.delivered_at))+'</div><button id="deliveryReopenBtn" class="ghost" type="button">予定に戻す</button>'
+            : '<div class="row"><div class="field" style="flex:1;min-width:220px"><label>納品完了日時</label><input id="deliveryCompleteAt" type="datetime-local"></div><div style="align-self:end"><button id="deliveryCompleteBtn" class="green" type="button">納品完了にする</button></div></div>'
+          )+
+          '<div id="deliveryStatusMsg" class="notice hidden"></div>'+
+        '</section>'+
       '</section>';
 
     $('#deliveryDetailClose').onclick=()=>{$('#deliveryDetailHost').innerHTML='';};
@@ -1805,6 +1813,50 @@
       const dt=new Date(d.scheduled_at);
       const local=new Date(dt.getTime()-dt.getTimezoneOffset()*60000).toISOString().slice(0,16);
       $('#deliveryEditScheduled').value=local;
+    }
+
+    const completeAt=$('#deliveryCompleteAt');
+    if(completeAt){
+      const now=new Date();
+      completeAt.value=new Date(now.getTime()-now.getTimezoneOffset()*60000).toISOString().slice(0,16);
+    }
+
+    const completeBtn=$('#deliveryCompleteBtn');
+    if(completeBtn){
+      completeBtn.onclick=async()=>{
+        completeBtn.disabled=true;
+        try{
+          const value=$('#deliveryCompleteAt').value;
+          await rpc('complete_delivery',{
+            p_delivery_id:d.id,
+            p_delivered_at:value ? new Date(value).toISOString() : null
+          });
+          notice('#deliveryStatusMsg','納品完了として記録しました。',true);
+          toast('納品完了にしました');
+          await renderDeliveryDetail(d.id);
+        }catch(err){
+          notice('#deliveryStatusMsg',err.message||String(err));
+        }finally{
+          completeBtn.disabled=false;
+        }
+      };
+    }
+
+    const reopenBtn=$('#deliveryReopenBtn');
+    if(reopenBtn){
+      reopenBtn.onclick=async()=>{
+        reopenBtn.disabled=true;
+        try{
+          await rpc('reopen_delivery',{p_delivery_id:d.id});
+          notice('#deliveryStatusMsg','納品予定へ戻しました。',true);
+          toast('納品予定へ戻しました');
+          await renderDeliveryDetail(d.id);
+        }catch(err){
+          notice('#deliveryStatusMsg',err.message||String(err));
+        }finally{
+          reopenBtn.disabled=false;
+        }
+      };
     }
 
     $('#deliveryEditForm').onsubmit=async e=>{
@@ -2616,6 +2668,8 @@
       'purchase_order.updated':'発注更新',
       'delivery.created':'納品作成',
       'delivery.updated':'納品更新',
+      'delivery.completed':'納品完了',
+      'delivery.reopened':'納品再開',
       'contract.created':'契約作成',
       'contract.updated':'契約更新',
       'asset.created':'機器作成',
