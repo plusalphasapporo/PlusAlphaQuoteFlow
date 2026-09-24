@@ -422,7 +422,8 @@
   function printEsc(v){ return esc(v); }
 
   async function openBusinessDocument(kind,payload){
-    const win=window.open('','_blank','noopener,noreferrer');
+    const win=window.open('','_blank');
+    if(win) win.opener=null;
     if(!win){
       toast('ポップアップがブロックされました。ブラウザで許可してください。');
       return;
