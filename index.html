@@ -187,6 +187,8 @@
     customer_user: [
       ['home','ホーム'],
       ['quotes','見積'],
+      ['orders','受注'],
+      ['deliveries','納品'],
       ['assets','契約・機器'],
       ['support','問い合わせ']
     ]
@@ -343,19 +345,27 @@
       return;
     }
 
-    const h=await rpc('customer_portal_home');
+    const [h,ops]=await Promise.all([rpc('customer_portal_home'),rpc('customer_operations_home')]);
     const open=(h.recent_tickets||[]).filter(t=>t.status!=='closed').length;
+    const planned=(ops.deliveries||[]).filter(d=>d.status==='planned'&&!d.delivered_at).length;
+    const recentDeliveries=(ops.deliveries||[]).slice(0,5).map(d=>
+      '<tr><td>'+esc(d.delivery_number||'未採番')+'</td><td>'+esc(statusText(d.status))+'</td><td>'+esc(dateText(d.scheduled_at))+'</td><td>'+esc(dateText(d.delivered_at))+'</td></tr>'
+    );
     home.innerHTML=
-      pageIntro('ホーム','見積・契約・機器・問い合わせの状況をまとめています。')+
+      pageIntro('ホーム','見積・受注・納品・契約・機器・問い合わせの状況をまとめています。')+
       kpis([
+        ['受注',(ops.orders||[]).length],
+        ['納品予定',planned],
         ['対応中',open],
-        ['問い合わせ',(h.recent_tickets||[]).length],
         ['登録機器',(h.assets||[]).length],
         ['契約',(h.contracts||[]).length]
       ])+
-      '<section class="card section"><h2>最近の問い合わせ</h2>'+
+      '<section class="card section"><div class="row between"><h2>最近の納品</h2><button class="ghost customerHomeGo" data-page="deliveries" type="button">納品を開く</button></div>'+
+      dataTable(['納品番号','状態','予定日','納品日'],recentDeliveries)+'</section>'+
+      '<section class="card section"><div class="row between"><h2>最近の問い合わせ</h2><button class="ghost customerHomeGo" data-page="support" type="button">問い合わせを開く</button></div>'+
       ((h.recent_tickets||[]).length?'<div class="tableWrap"><table><thead><tr><th>番号</th><th>件名</th><th>状態</th></tr></thead><tbody>'+(h.recent_tickets||[]).map(t=>'<tr><td>'+esc(t.ticket_number||'—')+'</td><td>'+esc(t.subject||'')+'</td><td>'+esc(statusText(t.status))+'</td></tr>').join('')+'</tbody></table></div>':'<p class="muted">問い合わせはまだありません。</p>')+
       '</section>';
+    document.querySelectorAll('.customerHomeGo').forEach(b=>b.onclick=()=>go(b.dataset.page));
   }
 
   async function renderCustomerDetail(customerId){
@@ -1178,7 +1188,72 @@
     };
   }
 
+  async function renderCustomerOrderDetail(orderId){
+    const detail=await rpc('customer_order_detail',{p_order_id:orderId});
+    const o=detail?.order;
+    if(!o) throw new Error('受注が見つかりません。');
+    const q=detail.quote||null;
+    const deliveries=detail.deliveries||[];
+
+    const deliveryRows=deliveries.map(d=>
+      '<tr>'+
+        '<td>'+esc(d.delivery_number||'未採番')+'</td>'+
+        '<td>'+esc(statusText(d.status))+'</td>'+
+        '<td>'+esc(dateText(d.scheduled_at))+'</td>'+
+        '<td>'+esc(dateText(d.delivered_at))+'</td>'+
+      '</tr>'
+    );
+
+    $('#orderDetailHost').innerHTML=
+      '<section class="card section">'+
+        '<div class="quoteDetailHead">'+
+          '<div><h2>受注詳細</h2><p class="sectionDesc">'+esc(o.order_number||'未採番')+'</p></div>'+
+          '<button id="orderDetailClose" class="ghost" type="button">閉じる</button>'+
+        '</div>'+
+        kpis([
+          ['受注金額',money(o.total_amount)],
+          ['状態',statusText(o.status)],
+          ['受注日',dateText(o.ordered_at)],
+          ['元見積',q?.quote_number||'—']
+        ])+
+        '<section class="section"><h3>納品状況</h3>'+dataTable(['納品番号','状態','予定日','納品日'],deliveryRows)+'</section>'+
+      '</section>';
+
+    $('#orderDetailClose').onclick=()=>{$('#orderDetailHost').innerHTML='';};
+    $('#orderDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
+  }
+
   async function renderOrders(){
+    const role=bootData.context?.role;
+
+    if(role==='customer_user'){
+      const data=await rpc('customer_operations_home');
+      const rows=(data.orders||[]).map(o=>
+        '<tr>'+
+          '<td><strong>'+esc(o.order_number||'未採番')+'</strong></td>'+
+          '<td>'+esc(statusText(o.status))+'</td>'+
+          '<td class="amount">'+esc(money(o.total_amount))+'</td>'+
+          '<td>'+esc(dateText(o.ordered_at))+'</td>'+
+          '<td><button class="linkBtn customerOrderDetail" type="button" data-id="'+esc(o.id)+'">詳細</button></td>'+
+        '</tr>'
+      );
+
+      $('#home').innerHTML=
+        pageIntro('受注','承諾済み見積から作成された受注状況を確認できます。')+
+        '<div id="orderDetailHost"></div>'+
+        dataTable(['受注番号','状態','合計','受注日','操作'],rows);
+
+      document.querySelectorAll('.customerOrderDetail').forEach(btn=>{
+        btn.onclick=async()=>{
+          btn.disabled=true;
+          try{ await renderCustomerOrderDetail(btn.dataset.id); }
+          catch(err){ toast(err.message||String(err)); }
+          finally{ btn.disabled=false; }
+        };
+      });
+      return;
+    }
+
     const [{data,error},cmap]=await Promise.all([
       supabase.from('orders').select('id,customer_id,quote_id,order_number,status,total_amount,ordered_at,created_at').order('created_at',{ascending:false}),
       customerMap()
@@ -1402,7 +1477,62 @@
     };
   }
 
+  async function renderCustomerDeliveryDetail(id){
+    const detail=await rpc('customer_delivery_detail',{p_delivery_id:id});
+    const d=detail?.delivery;
+    if(!d) throw new Error('納品が見つかりません。');
+    const o=detail.order||null;
+
+    $('#deliveryDetailHost').innerHTML=
+      '<section class="card section">'+
+        '<div class="quoteDetailHead">'+
+          '<div><h2>納品詳細</h2><p class="sectionDesc">'+esc(d.delivery_number||'未採番')+'</p></div>'+
+          '<button id="deliveryDetailClose" class="ghost" type="button">閉じる</button>'+
+        '</div>'+
+        kpis([
+          ['状態',statusText(d.status)],
+          ['予定日',dateText(d.scheduled_at)],
+          ['納品日',dateText(d.delivered_at)],
+          ['受注番号',o?.order_number||'—']
+        ])+
+        (d.notes?'<div class="notice">'+esc(d.notes)+'</div>':'')+
+      '</section>';
+
+    $('#deliveryDetailClose').onclick=()=>{$('#deliveryDetailHost').innerHTML='';};
+    $('#deliveryDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
+  }
+
   async function renderDeliveries(){
+    const role=bootData.context?.role;
+
+    if(role==='customer_user'){
+      const data=await rpc('customer_operations_home');
+      const rows=(data.deliveries||[]).map(d=>
+        '<tr>'+
+          '<td><strong>'+esc(d.delivery_number||'未採番')+'</strong></td>'+
+          '<td>'+esc(statusText(d.status))+'</td>'+
+          '<td>'+esc(dateText(d.scheduled_at))+'</td>'+
+          '<td>'+esc(dateText(d.delivered_at))+'</td>'+
+          '<td><button class="linkBtn customerDeliveryDetail" type="button" data-id="'+esc(d.id)+'">詳細</button></td>'+
+        '</tr>'
+      );
+
+      $('#home').innerHTML=
+        pageIntro('納品','納品予定と完了状況を確認できます。')+
+        '<div id="deliveryDetailHost"></div>'+
+        dataTable(['納品番号','状態','予定日','納品日','操作'],rows);
+
+      document.querySelectorAll('.customerDeliveryDetail').forEach(btn=>{
+        btn.onclick=async()=>{
+          btn.disabled=true;
+          try{ await renderCustomerDeliveryDetail(btn.dataset.id); }
+          catch(err){ toast(err.message||String(err)); }
+          finally{ btn.disabled=false; }
+        };
+      });
+      return;
+    }
+
     const [{data,error},cmap]=await Promise.all([
       supabase.from('deliveries')
         .select('id,customer_id,order_id,delivery_number,status,scheduled_at,delivered_at,created_at')
