@@ -2190,7 +2190,8 @@
             email:$('#inviteEmail').value.trim(),
             displayName:$('#inviteDisplayName').value.trim(),
             companyId:$('#inviteCompany').value,
-            role:$('#inviteRole').value
+            role:$('#inviteRole').value,
+            redirectTo:window.location.origin+window.location.pathname
           }
         });
         if(error) throw error;
