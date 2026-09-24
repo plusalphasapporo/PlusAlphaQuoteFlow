@@ -236,7 +236,7 @@
     'internal_contract_detail','internal_assets_list','internal_customers_list',
     'internal_customer_detail','internal_customer_contacts','support_ticket_workspace',
     'customer_ticket_detail','internal_numbering_settings','internal_accounts_list',
-    'internal_account_companies','internal_audit_workspace','internal_document_profile'
+    'internal_account_companies','internal_audit_workspace','internal_document_profile','internal_demo_seed_status'
   ]);
 
   function errorStatus(err){
@@ -1260,9 +1260,10 @@
     const role=bootData.context?.role;
     if(role!=='internal_admin') throw new Error('管理者のみ利用できます。');
 
-    const [cfg,docProfile]=await Promise.all([
+    const [cfg,docProfile,demoStatus]=await Promise.all([
       rpc('internal_numbering_settings'),
-      rpc('internal_document_profile')
+      rpc('internal_document_profile'),
+      rpc('internal_demo_seed_status')
     ]);
     const quote=cfg?.quote||{};
     const order=cfg?.order||{};
@@ -1303,6 +1304,23 @@
           '<button class="primary" type="submit">発行元情報を保存</button>'+
         '</form>'+
         '<div id="documentProfileMsg" class="notice hidden"></div>'+
+      '</section>'+
+      '<section class="card section">'+
+        '<h2>デモデータ</h2>'+
+        '<p class="sectionDesc">機能確認用のデモデータです。削除しても既存のログイン用デモアカウントと本データは残ります。</p>'+
+        '<div class="grid">'+
+          '<div class="kpi"><div class="label">顧客</div><div class="value">'+esc(demoStatus?.customers||0)+'</div></div>'+
+          '<div class="kpi"><div class="label">見積</div><div class="value">'+esc(demoStatus?.quotes||0)+'</div></div>'+
+          '<div class="kpi"><div class="label">受注</div><div class="value">'+esc(demoStatus?.orders||0)+'</div></div>'+
+          '<div class="kpi"><div class="label">発注</div><div class="value">'+esc(demoStatus?.purchase_orders||0)+'</div></div>'+
+          '<div class="kpi"><div class="label">納品</div><div class="value">'+esc(demoStatus?.deliveries||0)+'</div></div>'+
+          '<div class="kpi"><div class="label">問い合わせ</div><div class="value">'+esc(demoStatus?.support_tickets||0)+'</div></div>'+
+        '</div>'+
+        (demoStatus?.exists
+          ? '<div class="notice">Seed: '+esc(demoStatus.seed_key||'')+'<br>「Q-/ORD-/PO-/DLV-/CNT-/AST-/TKT-DEMO」で始まるデータが中心です。</div>'+
+            '<button id="deleteDemoSeedBtn" class="orange" type="button">デモデータを一括削除</button>'
+          : '<div class="notice">現在、削除対象のデモデータはありません。</div>')+
+        '<div id="demoSeedMsg" class="notice hidden"></div>'+
       '</section>';
 
     $('#numberingForm').onsubmit=async e=>{
@@ -1350,6 +1368,25 @@
         if(btn) btn.disabled=false;
       }
     };
+
+    const deleteDemoBtn=$('#deleteDemoSeedBtn');
+    if(deleteDemoBtn){
+      deleteDemoBtn.onclick=async()=>{
+        const phrase=prompt('デモデータを削除します。確認のため「DELETE DEMO」と入力してください。');
+        if(phrase!=='DELETE DEMO') return;
+        deleteDemoBtn.disabled=true;
+        try{
+          await rpc('delete_demo_seed',{p_seed_key:demoStatus.seed_key});
+          notice('#demoSeedMsg','デモデータを削除しました。ログイン用デモアカウントと既存本データは残っています。',true);
+          toast('デモデータを削除しました');
+          setTimeout(()=>go('settings'),500);
+        }catch(err){
+          notice('#demoSeedMsg',err.message||String(err));
+        }finally{
+          deleteDemoBtn.disabled=false;
+        }
+      };
+    }
 
   }
 
