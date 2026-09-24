@@ -267,7 +267,7 @@
     'internal_customer_detail','internal_customer_contacts','internal_customer_registration_options','support_ticket_workspace',
     'customer_ticket_detail','internal_numbering_settings','internal_accounts_list',
     'internal_account_companies','internal_audit_workspace','internal_document_profile','internal_demo_seed_status',
-    'internal_products_list','internal_lease_rates_list','internal_order_profitability','internal_customer_unified_workspace'
+    'internal_products_list','internal_lease_rates_list','internal_order_profitability','internal_customer_unified_workspace','internal_receiving_workspace'
   ]);
 
   function errorStatus(err){
@@ -1271,16 +1271,16 @@
       content=dataTable(['番号','内容','状態','優先度','受付日'],rows);
     }else if(tab==='properties'){
       const rows=(extra.properties||[]).map(x=>'<tr><td><strong>'+esc(x.property_name||'')+'</strong></td><td>'+esc(x.model_name||'—')+'</td><td>'+esc(x.installation_location||'—')+'</td><td>'+esc(x.quantity||0)+'</td><td>'+esc(x.remaining_count??'—')+'</td><td class="amount">'+esc(money(x.residual_amount_tax_included||0))+'</td></tr>');
-      content='<div class="notice">物件・残債は、見積の旧物件残債と分離した顧客マスタ情報です。</div>'+dataTable(['物件名','型番','設置場所','数量','残回数','税込残債'],rows);
+      content='<div class="unifiedToolbar"><div class="notice" style="flex:1">物件・残債は、見積の旧物件残債と分離した顧客マスタ情報です。</div><button id="addPropertyBtn" class="primary" type="button">＋物件・残債</button></div>'+dataTable(['物件名','型番','設置場所','数量','残回数','税込残債'],rows);
     }else if(tab==='monthly'){
       const rows=(extra.monthly_payments||[]).map(x=>'<tr><td>'+esc(x.category||'—')+'</td><td>'+esc(x.payee||'—')+'</td><td class="amount">'+esc(money(x.monthly_amount||0))+'</td><td class="amount">'+esc(money(x.basic_fee||0))+'</td><td>'+esc(x.start_month?dateText(x.start_month):'—')+'</td></tr>');
-      content=dataTable(['区分','支払先','月額','基本料金','開始月'],rows);
+      content='<div class="unifiedToolbar"><div><h3 style="margin:0">月額支払</h3></div><button id="addMonthlyBtn" class="primary" type="button">＋月額支払</button></div>'+dataTable(['区分','支払先','月額','基本料金','開始月'],rows);
     }else if(tab==='management'){
       const rows=(extra.management_info||[]).map(x=>'<tr><td>'+esc(x.category||'—')+'</td><td>'+esc(x.ip_address||'—')+'</td><td>'+esc(x.display_login_id||'—')+'</td><td>'+esc(x.url||'—')+'</td><td>'+esc(x.installation_location||'—')+'</td><td>'+esc(x.secret_reference_id?'Secret参照あり':'—')+'</td></tr>');
-      content='<div class="notice">平文パスワードは保存しません。秘密値はSecret参照IDのみ保持します。</div>'+dataTable(['区分','IP','表示用ID','URL','設置場所','秘密情報'],rows);
+      content='<div class="unifiedToolbar"><div class="notice" style="flex:1">平文パスワードは保存しません。秘密値はSecret参照IDのみ保持します。</div><button id="addManagementBtn" class="primary" type="button">＋管理情報</button></div>'+dataTable(['区分','IP','表示用ID','URL','設置場所','秘密情報'],rows);
     }else if(tab==='history'){
       const rows=(extra.sales_history||[]).map(x=>'<tr><td>'+esc(dateText(x.occurred_at))+'</td><td>'+esc(x.activity_type||'—')+'</td><td><strong>'+esc(x.subject||'')+'</strong><br><span class="muted">'+esc(x.body||'')+'</span></td><td>'+esc(x.next_action||'—')+'</td></tr>');
-      content=dataTable(['日時','区分','内容','次アクション'],rows);
+      content='<div class="unifiedToolbar"><div><h3 style="margin:0">営業対応履歴</h3></div><button id="addHistoryBtn" class="primary" type="button">＋営業履歴</button></div>'+dataTable(['日時','区分','内容','次アクション'],rows);
     }
 
     host.innerHTML=
@@ -1291,6 +1291,108 @@
       '</section>';
     $('#customerDetailClose').onclick=()=>{host.innerHTML='';};
     bindUnifiedTabs(t=>renderCustomerDetail(customerId,t));
+
+    const addPropertyBtn=$('#addPropertyBtn');
+    if(addPropertyBtn) addPropertyBtn.onclick=()=>openModal({
+      title:'物件・残債を登録',description:'顧客が利用している機器・契約物件とリース残債を登録します。',
+      body:
+        '<div class="modalGrid2">'+
+          '<div class="field"><label>物件名</label><input id="cpName" required></div>'+
+          '<div class="field"><label>型番</label><input id="cpModel"></div>'+
+          '<div class="field"><label>設置場所</label><input id="cpLocation"></div>'+
+          '<div class="field"><label>数量</label><input id="cpQty" type="number" min="0" step="0.01" value="1"></div>'+
+          '<div class="field"><label>開始月</label><input id="cpStart" type="date"></div>'+
+          '<div class="field"><label>終了月</label><input id="cpEnd" type="date"></div>'+
+          '<div class="field"><label>月額税込</label><input id="cpMonthly" type="number" min="0" value="0"></div>'+
+          '<div class="field"><label>残回数</label><input id="cpRemaining" type="number" min="0"></div>'+
+          '<div class="field"><label>税込残債</label><input id="cpResidual" type="number" min="0" value="0"></div>'+
+        '</div>'+
+        '<div class="field"><label>備考</label><textarea id="cpNote" rows="3"></textarea></div>',
+      confirmLabel:'登録',
+      onSubmit:async()=>{
+        await rpc('save_customer_property',{
+          p_id:null,p_customer_id:customerId,p_property_name:$('#cpName').value.trim(),
+          p_model_name:$('#cpModel').value.trim()||null,p_installation_location:$('#cpLocation').value.trim()||null,
+          p_quantity:Number($('#cpQty').value||1),p_lease_start_month:$('#cpStart').value||null,p_lease_end_month:$('#cpEnd').value||null,
+          p_monthly_amount_tax_included:Number($('#cpMonthly').value||0),p_remaining_count:$('#cpRemaining').value?Number($('#cpRemaining').value):null,
+          p_residual_amount_tax_included:Number($('#cpResidual').value||0),p_management_info_id:null,p_monthly_payment_id:null,
+          p_note:$('#cpNote').value.trim()||null
+        });
+        closeModal();toast('物件・残債を登録しました');await renderCustomerDetail(customerId,'properties');
+      }
+    });
+
+    const addMonthlyBtn=$('#addMonthlyBtn');
+    if(addMonthlyBtn) addMonthlyBtn.onclick=()=>openModal({
+      title:'月額支払を登録',description:'保守・リース・カウンター料金など毎月発生する支払を登録します。',
+      body:
+        '<div class="modalGrid2">'+
+          '<div class="field"><label>区分</label><select id="cmCategory"><option value="lease">リース</option><option value="maintenance">保守</option><option value="counter">カウンター</option><option value="other">その他</option></select></div>'+
+          '<div class="field"><label>支払先</label><input id="cmPayee"></div>'+
+          '<div class="field"><label>月額</label><input id="cmMonthly" type="number" min="0" value="0"></div>'+
+          '<div class="field"><label>開始月</label><input id="cmStart" type="date"></div>'+
+          '<div class="field"><label>基本料金</label><input id="cmBasic" type="number" min="0" value="0"></div>'+
+          '<div class="field"><label>モノクロ単価</label><input id="cmMono" type="number" min="0" step="0.01" value="0"></div>'+
+          '<div class="field"><label>カラー単価</label><input id="cmColor" type="number" min="0" step="0.01" value="0"></div>'+
+        '</div>'+
+        '<div class="field"><label>備考</label><textarea id="cmNote" rows="3"></textarea></div>',
+      confirmLabel:'登録',
+      onSubmit:async()=>{
+        await rpc('save_customer_monthly_payment',{
+          p_id:null,p_customer_id:customerId,p_property_id:null,p_category:$('#cmCategory').value,p_payee:$('#cmPayee').value.trim()||null,
+          p_monthly_amount:Number($('#cmMonthly').value||0),p_start_month:$('#cmStart').value||null,p_basic_fee:Number($('#cmBasic').value||0),
+          p_monochrome_unit_price:Number($('#cmMono').value||0),p_color_unit_price:Number($('#cmColor').value||0),p_note:$('#cmNote').value.trim()||null
+        });
+        closeModal();toast('月額支払を登録しました');await renderCustomerDetail(customerId,'monthly');
+      }
+    });
+
+    const addManagementBtn=$('#addManagementBtn');
+    if(addManagementBtn) addManagementBtn.onclick=()=>openModal({
+      title:'管理情報を登録',description:'IP・表示用ログインID・URL・設置場所を管理します。平文パスワードは保存できません。',
+      body:
+        '<div class="modalGrid2">'+
+          '<div class="field"><label>区分</label><input id="cmiCategory" placeholder="例：複合機管理画面"></div>'+
+          '<div class="field"><label>IP</label><input id="cmiIp"></div>'+
+          '<div class="field"><label>表示用ログインID</label><input id="cmiLogin"></div>'+
+          '<div class="field"><label>URL</label><input id="cmiUrl" type="url"></div>'+
+          '<div class="field"><label>設置場所</label><input id="cmiLocation"></div>'+
+          '<div class="field"><label>Secret参照ID</label><input id="cmiSecret" placeholder="秘密値そのものは入力しない"></div>'+
+        '</div>'+
+        '<div class="field"><label>メモ</label><textarea id="cmiNote" rows="3"></textarea></div>',
+      confirmLabel:'登録',
+      onSubmit:async()=>{
+        await rpc('save_customer_management_info',{
+          p_id:null,p_customer_id:customerId,p_category:$('#cmiCategory').value.trim()||null,p_ip_address:$('#cmiIp').value.trim()||null,
+          p_display_login_id:$('#cmiLogin').value.trim()||null,p_url:$('#cmiUrl').value.trim()||null,p_installation_location:$('#cmiLocation').value.trim()||null,
+          p_secret_reference_id:$('#cmiSecret').value.trim()||null,p_note:$('#cmiNote').value.trim()||null
+        });
+        closeModal();toast('管理情報を登録しました');await renderCustomerDetail(customerId,'management');
+      }
+    });
+
+    const addHistoryBtn=$('#addHistoryBtn');
+    if(addHistoryBtn) addHistoryBtn.onclick=()=>openModal({
+      title:'営業対応履歴を登録',description:'顧客との商談・連絡・次アクションを記録します。',
+      body:
+        '<div class="modalGrid2">'+
+          '<div class="field"><label>日時</label><input id="cshAt" type="datetime-local"></div>'+
+          '<div class="field"><label>区分</label><select id="cshType"><option value="call">電話</option><option value="visit">訪問</option><option value="email">メール</option><option value="meeting">商談</option><option value="note">メモ</option></select></div>'+
+        '</div>'+
+        '<div class="field"><label>件名</label><input id="cshSubject"></div>'+
+        '<div class="field"><label>内容</label><textarea id="cshBody" rows="4"></textarea></div>'+
+        '<div class="field"><label>次アクション</label><input id="cshNext"></div>',
+      confirmLabel:'登録',
+      onSubmit:async()=>{
+        const at=$('#cshAt').value;
+        await rpc('save_customer_sales_history',{
+          p_id:null,p_customer_id:customerId,p_occurred_at:at?new Date(at).toISOString():null,p_activity_type:$('#cshType').value,
+          p_subject:$('#cshSubject').value.trim()||null,p_body:$('#cshBody').value.trim()||null,p_next_action:$('#cshNext').value.trim()||null
+        });
+        closeModal();toast('営業履歴を登録しました');await renderCustomerDetail(customerId,'history');
+      }
+    });
+
     host.scrollIntoView({behavior:'smooth',block:'start'});
   }
 
@@ -1397,23 +1499,73 @@
   }
 
   async function renderProcurementWorkspace(tab='purchase'){
-    if(tab==='delivery'){
-      await renderDeliveries();
-    }else{
-      await renderPurchaseOrders();
+    const tabs=[['purchase','発注'],['receiving','入荷・シリアル'],['delivery','納品'],['ledger','機器台帳']];
+
+    if(tab==='receiving'){
+      const items=await rpc('internal_receiving_workspace');
+      const rows=(items||[]).map(x=>
+        '<tr>'+
+          '<td>'+esc(x.purchase_order_number||'未採番')+'</td>'+
+          '<td>'+esc(x.supplier_name||'—')+'</td>'+
+          '<td>'+esc(x.customer_name||'')+'</td>'+
+          '<td><strong>'+esc(x.description||'')+'</strong></td>'+
+          '<td>'+esc(x.received_quantity||0)+' / '+esc(x.quantity||0)+'</td>'+
+          '<td>'+esc((x.serials||[]).length)+'</td>'+
+          '<td>'+esc(dateText(x.expected_delivery_date))+'</td>'+
+          '<td><button class="linkBtn receiveItemBtn" type="button" data-id="'+esc(x.item_id)+'">入荷登録</button></td>'+
+        '</tr>'
+      );
+      $('#home').innerHTML=
+        pageIntro('仕入・納品','受注から発注・入荷・シリアル・納品・機器台帳までを一続きで管理します。')+
+        unifiedTabs(tabs,tab,'procurement')+
+        '<section class="card section"><h2>入荷・シリアル</h2><p class="sectionDesc">入荷数量、シリアル番号、保証期限を発注明細単位で登録します。</p>'+
+        dataTable(['発注番号','仕入先','顧客','明細','入荷数量','シリアル','納期','操作'],rows)+'</section>';
+      bindUnifiedTabs(t=>renderProcurementWorkspace(t));
+      document.querySelectorAll('.receiveItemBtn').forEach(btn=>{
+        btn.onclick=()=>{
+          const item=(items||[]).find(x=>x.item_id===btn.dataset.id);
+          if(!item) return;
+          const serialText=(item.serials||[]).map(s=>s.serial_number+(s.warranty_until?' | '+s.warranty_until:'')).join('\n');
+          openModal({
+            title:'入荷・シリアル登録',
+            description:(item.purchase_order_number||'')+' / '+(item.description||''),
+            body:
+              '<div class="modalGrid2">'+
+                '<div class="field"><label>発注数量</label><input value="'+esc(item.quantity||0)+'" disabled></div>'+
+                '<div class="field"><label>入荷数量</label><input id="recvQty" type="number" min="0" max="'+esc(item.quantity||0)+'" step="0.01" value="'+esc(item.received_quantity||0)+'"></div>'+
+              '</div>'+
+              '<div class="field"><label>シリアル番号・保証期限</label><textarea id="recvSerials" rows="8" placeholder="1行1台。例：SN123456 | 2029-03-31">'+esc(serialText)+'</textarea><p class="muted">保証期限は「シリアル | YYYY-MM-DD」の形式で入力できます。</p></div>',
+            confirmLabel:'入荷を保存',
+            onSubmit:async()=>{
+              const serials=$('#recvSerials').value.split('\n').map(x=>x.trim()).filter(Boolean).map(line=>{
+                const parts=line.split('|').map(x=>x.trim());
+                return {serial_number:parts[0],warranty_until:parts[1]||null};
+              });
+              await rpc('receive_purchase_item',{p_purchase_order_item_id:item.item_id,p_received_quantity:Number($('#recvQty').value||0),p_serials:serials});
+              closeModal();toast('入荷情報を保存しました');await renderProcurementWorkspace('receiving');
+            }
+          });
+        };
+      });
+      return;
     }
+
+    if(tab==='ledger'){
+      $('#home').innerHTML=
+        pageIntro('仕入・納品','納品完了したシリアル単位の機器をOA機器台帳で確認します。')+
+        unifiedTabs(tabs,tab,'procurement')+
+        '<section class="card section"><h2>OA機器台帳連携</h2><p class="sectionDesc">全数入荷済みの受注を納品完了すると、未登録シリアルを機器台帳へ自動登録します。</p><button id="openAssetLedgerBtn" class="primary" type="button">機器台帳を開く</button></section>';
+      bindUnifiedTabs(t=>renderProcurementWorkspace(t));
+      $('#openAssetLedgerBtn').onclick=()=>go('assets');
+      return;
+    }
+
+    if(tab==='delivery') await renderDeliveries();
+    else await renderPurchaseOrders();
     const host=$('#home'); const nodes=[...host.childNodes];
     host.innerHTML=pageIntro('仕入・納品','発注・入荷・シリアル・納品を1つの業務フローで管理します。')+
-      unifiedTabs([['purchase','発注'],['receiving','入荷・シリアル'],['delivery','納品'],['ledger','機器台帳'] ],tab,'procurement')+
-      '<div id="procurementInner"></div>';
-    if(tab==='receiving'){
-      $('#procurementInner').innerHTML='<section class="card section"><h2>入荷・シリアル</h2><p class="sectionDesc">発注明細ごとの入荷数量、シリアル番号、保証期限を管理します。入荷登録機能は次の復元工程で発注明細へ統合します。</p></section>';
-    }else if(tab==='ledger'){
-      $('#procurementInner').innerHTML='<section class="card section"><h2>OA機器台帳</h2><p class="sectionDesc">納品完了したシリアル単位の機器を台帳へ連携します。</p><button id="openAssetLedgerBtn" class="primary" type="button">機器台帳を開く</button></section>';
-      $('#openAssetLedgerBtn').onclick=()=>go('assets');
-    }else{
-      nodes.forEach(n=>$('#procurementInner').appendChild(n));
-    }
+      unifiedTabs(tabs,tab,'procurement')+'<div id="procurementInner"></div>';
+    nodes.forEach(n=>$('#procurementInner').appendChild(n));
     bindUnifiedTabs(t=>renderProcurementWorkspace(t));
   }
 
