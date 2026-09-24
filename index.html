@@ -1109,11 +1109,45 @@
     const home=$('#home');
 
     if(role==='internal_admin'||role==='internal_staff'){
-      const [ops,q,unreadHandoffs]=await Promise.all([
+      const [ops,q,unreadHandoffs,supportWorkspace,deadlineStates]=await Promise.all([
         rpc('internal_operations_dashboard'),
         rpc('internal_handoff_queue'),
-        rpc('internal_unread_handoff_notifications')
+        rpc('internal_unread_handoff_notifications'),
+        rpc('internal_support_cases_list'),
+        rpc('support_deadline_states')
       ]);
+      const internalDeadlineMap={};
+      (deadlineStates||[]).forEach(x=>internalDeadlineMap[x.ticket_id]=x);
+      const internalSupportTickets=(supportWorkspace?.tickets||[]).map(t=>({
+        ...t,
+        deadline_state:internalDeadlineMap[t.id]?.deadline_state||'unset',
+        first_response_due_at:internalDeadlineMap[t.id]?.first_response_due_at||null,
+        resolution_due_at:internalDeadlineMap[t.id]?.resolution_due_at||null
+      }));
+      const internalDeadlineRank={overdue:0,due_today:1,unset:2,scheduled:3,completed:4};
+      const internalDeadlineTickets=internalSupportTickets
+        .filter(t=>t.status!=='closed'&&['overdue','due_today','unset'].includes(t.deadline_state))
+        .sort((a,b)=>{
+          const rank=(internalDeadlineRank[a.deadline_state]??9)-(internalDeadlineRank[b.deadline_state]??9);
+          if(rank!==0) return rank;
+          const ad=timeValue(a.first_response_due_at||a.resolution_due_at)||Number.MAX_SAFE_INTEGER;
+          const bd=timeValue(b.first_response_due_at||b.resolution_due_at)||Number.MAX_SAFE_INTEGER;
+          return ad-bd;
+        });
+      const internalOverdue=internalDeadlineTickets.filter(t=>t.deadline_state==='overdue');
+      const internalDueToday=internalDeadlineTickets.filter(t=>t.deadline_state==='due_today');
+      const internalUnset=internalDeadlineTickets.filter(t=>t.deadline_state==='unset');
+      const internalDeadlineRows=internalDeadlineTickets.slice(0,10).map(t=>
+        '<tr>'+
+          '<td>'+supportDeadlineBadge(t.deadline_state)+'</td>'+
+          '<td><strong>'+esc(t.ticket_number||'—')+'</strong><br><span class="muted">'+esc(t.subject||'')+'</span></td>'+
+          '<td>'+supportRequestTypeBadge(t.request_type)+'</td>'+
+          '<td>'+esc(t.customer_name||'—')+'</td>'+
+          '<td>'+esc(dateTimeText(t.first_response_due_at))+'</td>'+
+          '<td>'+esc(dateTimeText(t.resolution_due_at))+'</td>'+
+          '<td><button class="linkBtn internalDeadlineOpen" type="button" data-id="'+esc(t.id)+'">案件カルテ</button></td>'+
+        '</tr>'
+      );
 
       const actionRows=(ops.action_queue||[]).map(x=>
         '<tr>'+
@@ -1172,7 +1206,9 @@
           ['本日入荷',ops.kpis?.receiving_due_today],
           ['本日納品',ops.kpis?.deliveries_today],
           ['納品超過',ops.kpis?.deliveries_overdue],
-          ['新着引継ぎ',unreadHandoffs?.count||0]
+          ['新着引継ぎ',unreadHandoffs?.count||0],
+          ['期限超過',internalOverdue.length],
+          ['本日期限',internalDueToday.length]
         ])+
         ((unreadHandoffs?.items||[]).length
           ? '<section class="card section"><div class="row between"><div><h2>サポート会社からの新着引継ぎ</h2><p class="sectionDesc">まだあなたが確認していない引継ぎです。内容確認後、そのまま受理できます。</p></div><span class="hold">'+esc(unreadHandoffs.count||0)+'件未読</span></div>'+
@@ -1192,6 +1228,10 @@
             )+
           '</section>'
           : '')+
+        '<section class="card section">'+
+          '<div class="row between"><div><h2>サポート期限管理</h2><p class="sectionDesc">期限超過・本日期限・期限未設定をまとめて確認します。</p></div><div class="row"><span class="hold">超過 '+esc(internalOverdue.length)+'</span><span class="pill warn">本日 '+esc(internalDueToday.length)+'</span><span class="pill">未設定 '+esc(internalUnset.length)+'</span></div></div>'+
+          dataTable(['期限状態','案件','種別','顧客','初動期限','完了目標','操作'],internalDeadlineRows)+
+        '</section>'+
         '<section class="card section">'+
           '<div class="row between"><div><h2>今日の優先対応</h2><p class="sectionDesc">期限超過 → 本日予定 → 承認・受注・発注 → 問い合わせの順で並びます。</p></div><span class="pill">'+esc(ops.business_date||'')+'</span></div>'+
           dataTable(['優先','対応内容','顧客','詳細','期限・状態','操作'],actionRows)+
@@ -1260,6 +1300,14 @@
         await go('support');
         await renderTicketDetail(btn.dataset.id);
       });
+      document.querySelectorAll('.internalDeadlineOpen').forEach(btn=>btn.onclick=async()=>{
+        btn.disabled=true;
+        try{
+          await go('support');
+          await renderTicketDetail(btn.dataset.id);
+        }catch(err){toast(err.message||String(err));}
+        finally{btn.disabled=false;}
+      });
 
       $('.dashGoProc').onclick=()=>renderProcurementWorkspace('receiving');
       $('.dashGoDelivery').onclick=()=>renderProcurementWorkspace('delivery');
@@ -1299,18 +1347,24 @@
     }
 
     if(role==='support_staff'){
-      const [h,workspace,workflowStates,unread,handoffUpdates]=await Promise.all([
+      const [h,workspace,workflowStates,unread,handoffUpdates,deadlineStates]=await Promise.all([
         rpc('support_home'),
         rpc('internal_support_cases_list'),
         rpc('support_workflow_states'),
         rpc('support_unread_notifications'),
-        rpc('support_unread_handoff_updates')
+        rpc('support_unread_handoff_updates'),
+        rpc('support_deadline_states')
       ]);
       const stageMap={};
       (workflowStates||[]).forEach(x=>stageMap[x.ticket_id]=x.support_stage);
+      const deadlineMap={};
+      (deadlineStates||[]).forEach(x=>deadlineMap[x.ticket_id]=x);
       const tickets=(workspace?.tickets||[]).map(x=>({
         ...x,
-        support_stage:stageMap[x.id]||((x.status==='closed')?'completed':'unhandled')
+        support_stage:stageMap[x.id]||((x.status==='closed')?'completed':'unhandled'),
+        deadline_state:deadlineMap[x.id]?.deadline_state||'unset',
+        first_response_due_at:deadlineMap[x.id]?.first_response_due_at||null,
+        resolution_due_at:deadlineMap[x.id]?.resolution_due_at||null
       }));
       const priorityRank={urgent:0,high:1,normal:2,low:3};
       const queueSort=(a,b)=>{
@@ -1330,6 +1384,30 @@
       const handoffWaiting=tickets.filter(t=>t.status!=='closed'&&t.support_stage==='internal_handoff_waiting').sort(queueSort);
       const internalWorking=tickets.filter(t=>t.status!=='closed'&&t.support_stage==='internal_in_progress').sort(queueSort);
       const supportReview=tickets.filter(t=>t.status!=='closed'&&t.support_stage==='support_review_waiting').sort(queueSort);
+      const deadlineRank={overdue:0,due_today:1,unset:2,scheduled:3,completed:4};
+      const deadlineAttention=tickets
+        .filter(t=>t.status!=='closed'&&['overdue','due_today','unset'].includes(t.deadline_state))
+        .sort((a,b)=>{
+          const rank=(deadlineRank[a.deadline_state]??9)-(deadlineRank[b.deadline_state]??9);
+          if(rank!==0) return rank;
+          const ad=timeValue(a.first_response_due_at||a.resolution_due_at)||Number.MAX_SAFE_INTEGER;
+          const bd=timeValue(b.first_response_due_at||b.resolution_due_at)||Number.MAX_SAFE_INTEGER;
+          return ad-bd;
+        });
+      const overdueTickets=deadlineAttention.filter(t=>t.deadline_state==='overdue');
+      const dueTodayTickets=deadlineAttention.filter(t=>t.deadline_state==='due_today');
+      const unsetDeadlineTickets=deadlineAttention.filter(t=>t.deadline_state==='unset');
+      const deadlineRows=deadlineAttention.slice(0,10).map(t=>
+        '<tr>'+
+          '<td>'+supportDeadlineBadge(t.deadline_state)+'</td>'+
+          '<td><strong>'+esc(t.ticket_number||'—')+'</strong><br><span class="muted">'+esc(t.subject||'')+'</span></td>'+
+          '<td>'+supportRequestTypeBadge(t.request_type)+'</td>'+
+          '<td>'+esc(t.customer_name||'—')+'</td>'+
+          '<td>'+esc(dateTimeText(t.first_response_due_at))+'</td>'+
+          '<td>'+esc(dateTimeText(t.resolution_due_at))+'</td>'+
+          '<td><button class="linkBtn supportDeadlineOpen" type="button" data-id="'+esc(t.id)+'">開く</button></td>'+
+        '</tr>'
+      );
 
       const queueItems=(items,emptyText)=>items.length
         ? items.slice(0,5).map(t=>
@@ -1380,8 +1458,14 @@
           ['TeamViewer待ち',remoteWaiting.length],
           ['自社引継ぎ待ち',handoffWaiting.length],
           ['自社対応中',internalWorking.length],
-          ['確認待ち',supportReview.length]
+          ['確認待ち',supportReview.length],
+          ['期限超過',overdueTickets.length],
+          ['本日期限',dueTodayTickets.length]
         ])+
+        '<section class="card section">'+
+          '<div class="row between"><div><h2>期限アラート</h2><p class="sectionDesc">期限超過 → 本日期限 → 期限未設定の順で表示します。期限未設定は自社へ確認して設定できます。</p></div><div class="row"><span class="hold">超過 '+esc(overdueTickets.length)+'</span><span class="pill warn">本日 '+esc(dueTodayTickets.length)+'</span><span class="pill">未設定 '+esc(unsetDeadlineTickets.length)+'</span></div></div>'+
+          dataTable(['期限状態','案件','種別','顧客','初動期限','完了目標','操作'],deadlineRows)+
+        '</section>'+
         '<section class="card section">'+
           '<div class="row between"><div><h2>今やるべき対応</h2><p class="sectionDesc">未対応障害 → 本日の設定依頼 → TeamViewer待ち → 自社引継ぎ待ちの順で確認します。</p></div><div class="row"><button id="supportNewFromHome" class="primary" type="button">＋ 問い合わせ受付</button><button id="supportCasesFromHome" class="ghost" type="button">全案件</button></div></div>'+
           '<div class="supportPriorityGrid">'+
@@ -1404,14 +1488,22 @@
         '</section>'+
         '<section class="card section"><div class="row between"><div><h2>最近の担当案件</h2><p class="sectionDesc">直近の案件を確認できます。</p></div></div>'+
           dataTable(
-            ['番号','種別','工程','顧客','件名','優先度','操作'],
+            ['番号','種別','工程','期限','顧客','件名','優先度','操作'],
             tickets.slice().sort((a,b)=>timeValue(b.updated_at)-timeValue(a.updated_at)).slice(0,10).map(t=>
-              '<tr><td>'+esc(t.ticket_number||'—')+'</td><td>'+supportRequestTypeBadge(t.request_type)+'</td><td>'+supportStageBadge(t.support_stage)+'</td><td>'+esc(t.customer_name||'')+'</td><td>'+esc(t.subject||'')+'</td><td>'+esc(t.priority||'normal')+'</td><td><button class="linkBtn supportPriorityOpen" type="button" data-id="'+esc(t.id)+'">開く</button></td></tr>'
+              '<tr><td>'+esc(t.ticket_number||'—')+'</td><td>'+supportRequestTypeBadge(t.request_type)+'</td><td>'+supportStageBadge(t.support_stage)+'</td><td>'+supportDeadlineBadge(t.deadline_state)+'</td><td>'+esc(t.customer_name||'')+'</td><td>'+esc(t.subject||'')+'</td><td>'+esc(t.priority||'normal')+'</td><td><button class="linkBtn supportPriorityOpen" type="button" data-id="'+esc(t.id)+'">開く</button></td></tr>'
             )
           )+
         '</section>';
       $('#supportNewFromHome').onclick=()=>go('support_new');
       $('#supportCasesFromHome').onclick=()=>go('support_cases');
+      document.querySelectorAll('.supportDeadlineOpen').forEach(btn=>btn.onclick=async()=>{
+        btn.disabled=true;
+        try{
+          await go('support_cases');
+          await renderTicketDetail(btn.dataset.id);
+        }catch(err){toast(err.message||String(err));}
+        finally{btn.disabled=false;}
+      });
       document.querySelectorAll('.supportHandoffUpdateOpen').forEach(btn=>btn.onclick=async()=>{
         btn.disabled=true;
         try{
