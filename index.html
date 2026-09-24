@@ -61,6 +61,13 @@
     .quoteDetailHead{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap}
     .linkBtn{background:transparent;color:var(--blue);padding:4px 0;border-radius:0}
     #toast{position:fixed;right:18px;bottom:18px;background:#0f172a;color:#fff;padding:11px 14px;border-radius:10px;display:none;z-index:40;box-shadow:0 12px 30px rgba(15,23,42,.25)}
+    .connectionBar{display:none;position:sticky;top:68px;z-index:19;padding:9px 16px;text-align:center;font-size:13px;font-weight:800;border-bottom:1px solid transparent}
+    .connectionBar.show{display:block}
+    .connectionBar.offline{background:#fff7ed;color:#9a3412;border-color:#fed7aa}
+    .connectionBar.degraded{background:#fef2f2;color:#991b1b;border-color:#fecaca}
+    .connectionBar.reconnecting{background:#eff6ff;color:#1e40af;border-color:#bfdbfe}
+    .pageError{background:#fff;border:1px solid #fecaca;border-radius:16px;padding:20px}
+    .pageError h3{margin:0 0 8px;color:#991b1b}.pageError p{margin:6px 0;color:#475569}
     @media(max-width:980px){
       .appShell{grid-template-columns:1fr}.side{position:static}.sideTitle{display:none}
       #navMenu{display:flex;gap:6px;overflow:auto}.navBtn{width:auto;white-space:nowrap}
@@ -82,6 +89,7 @@
     <button id="logoutBtn" class="ghost hidden">ログアウト</button>
   </div>
 </header>
+<div id="connectionBanner" class="connectionBar" role="status" aria-live="polite"></div>
 
 <main class="wrap">
   <section id="loginView" class="card login">
@@ -213,11 +221,145 @@
   const toast = (m) => { const e=$('#toast'); e.textContent=m; e.style.display='block'; clearTimeout(window.__toastTimer); window.__toastTimer=setTimeout(()=>e.style.display='none',2500); };
   const show = (id) => ['loginView','mfaView','passwordRecoveryView','passwordSetupView','appView'].forEach(x => $('#'+x).classList.toggle('hidden',x!==id));
   const notice = (id,msg,ok=false) => { const e=$(id); e.textContent=msg; e.className='notice '+(ok?'ok':'error'); e.classList.remove('hidden'); };
-  const rpc = async (name,args={}) => { const {data,error}=await supabase.rpc(name,args); if(error) throw error; return data; };
+  const sleep = (ms) => new Promise(resolve=>setTimeout(resolve,ms));
+
+  const READ_ONLY_RPCS = new Set([
+    'app_health','current_auth_onboarding_state','current_app_bootstrap',
+    'internal_command_center','internal_handoff_queue','internal_business_dashboard',
+    'support_home','customer_portal_home','customer_operations_home',
+    'customer_order_detail','customer_delivery_detail','customer_quote_detail',
+    'internal_quote_detail','internal_order_detail','internal_purchase_orders',
+    'internal_purchase_order_detail','internal_delivery_detail','internal_asset_detail',
+    'internal_contract_detail','internal_assets_list','internal_customers_list',
+    'internal_customer_detail','internal_customer_contacts','support_ticket_workspace',
+    'customer_ticket_detail','internal_numbering_settings','internal_accounts_list',
+    'internal_account_companies','internal_audit_workspace'
+  ]);
+
+  function errorStatus(err){
+    return Number(err?.status||err?.statusCode||err?.context?.status||0);
+  }
+
+  function errorText(err){
+    return String(err?.message||err?.error_description||err?.details||err||'不明なエラー');
+  }
+
+  function isOfflineError(err){
+    const m=errorText(err).toLowerCase();
+    const st=errorStatus(err);
+    return !navigator.onLine || st===0 || m.includes('failed to fetch') || m.includes('networkerror') || m.includes('network request failed') || m.includes('load failed');
+  }
+
+  function isTransientError(err){
+    const st=errorStatus(err);
+    const m=errorText(err).toLowerCase();
+    return isOfflineError(err) || st===408 || st===425 || st===429 || st===500 || st===502 || st===503 || st===504 ||
+      m.includes('timeout') || m.includes('temporarily unavailable');
+  }
+
+  function isAuthError(err){
+    const st=errorStatus(err);
+    const m=errorText(err).toLowerCase();
+    return st===401 || m.includes('invalid refresh token') || m.includes('refresh_token_not_found') ||
+      m.includes('jwt expired') || m.includes('session not found') || m.includes('invalid jwt');
+  }
+
+  function isMfaError(err){
+    const m=errorText(err).toLowerCase();
+    return m.includes('aal2_required') || m.includes('aal2 required') || m.includes('mfa');
+  }
+
+  function friendlyError(err,{write=false}={}){
+    const m=errorText(err);
+    if(isOfflineError(err)){
+      return write
+        ? '通信が途切れました。保存できた可能性があるため、自動再送はしていません。通信復旧後に一覧を確認してから再操作してください。'
+        : 'ネットワークに接続できません。通信状況を確認して「再試行」を押してください。';
+    }
+    if(isAuthError(err)) return 'ログインセッションの有効期限が切れました。もう一度ログインしてください。';
+    if(isMfaError(err)) return 'MFA認証が必要です。Authenticatorで認証してください。';
+    if(errorStatus(err)===429) return 'アクセスが集中しています。少し時間をおいてから再試行してください。';
+    if(errorStatus(err)>=500) return 'サーバー側で一時的なエラーが発生しました。再試行してください。';
+    return m;
+  }
+
+  function setConnectionState(state,message){
+    const bar=$('#connectionBanner');
+    if(!bar) return;
+    if(state==='online'){
+      bar.className='connectionBar';
+      bar.textContent='';
+      return;
+    }
+    bar.className='connectionBar show '+state;
+    bar.textContent=message;
+  }
+
+  async function refreshAuthOnce(){
+    if(!navigator.onLine) return false;
+    try{
+      const {data,error}=await supabase.auth.refreshSession();
+      return !error && !!data?.session;
+    }catch(_){
+      return false;
+    }
+  }
+
+  async function rpc(name,args={},options={}){
+    const readOnly=options.readOnly ?? READ_ONLY_RPCS.has(name);
+    const maxAttempts=readOnly ? 3 : 1;
+    let authRetried=false;
+    let lastError=null;
+
+    for(let attempt=1; attempt<=maxAttempts; attempt++){
+      try{
+        const request=supabase.rpc(name,args);
+        const result=readOnly
+          ? await Promise.race([
+              request,
+              new Promise((_,reject)=>setTimeout(()=>reject(new Error('REQUEST_TIMEOUT')),15000))
+            ])
+          : await request;
+
+        const {data,error}=result;
+        if(error) throw error;
+        if(navigator.onLine) setConnectionState('online','');
+        return data;
+      }catch(err){
+        lastError=err;
+
+        if(isMfaError(err)) throw new Error('AAL2_REQUIRED');
+
+        if(isAuthError(err) && !authRetried){
+          authRetried=true;
+          const refreshed=await refreshAuthOnce();
+          if(refreshed){
+            attempt--;
+            continue;
+          }
+          if(navigator.onLine) throw new Error('SESSION_EXPIRED');
+        }
+
+        if(readOnly && isTransientError(err) && attempt<maxAttempts){
+          setConnectionState('reconnecting','通信が不安定です。自動で再接続しています…');
+          await sleep(attempt===1?500:1200);
+          continue;
+        }
+
+        const wrapped=new Error(friendlyError(err,{write:!readOnly}));
+        wrapped.original=err;
+        wrapped.kind=isOfflineError(err)?'network':isAuthError(err)?'auth':'app';
+        throw wrapped;
+      }
+    }
+    throw lastError||new Error('処理に失敗しました。');
+  }
 
   let bootData=null;
   let mfaState={};
   let currentPage='home';
+  let manualLogout=false;
+  let healthTimer=null;
 
   const pageSets = {
     internal_admin: [
@@ -2581,7 +2723,30 @@
       if(page==='assets') return await renderAssets();
       return await renderHome();
     }catch(e){
-      $('#home').innerHTML='<div class="notice error">読み込みに失敗しました: '+esc(e.message||String(e))+'</div>';
+      const raw=String(e.message||e);
+      if(raw.includes('AAL2_REQUIRED')){
+        return prepareMfa();
+      }
+      if(raw.includes('SESSION_EXPIRED')){
+        bootData=null;
+        show('loginView');
+        $('#logoutBtn').classList.add('hidden');
+        $('#userBadge').classList.add('hidden');
+        notice('#loginMsg','ログインセッションの有効期限が切れました。もう一度ログインしてください。');
+        return;
+      }
+
+      const offline=!navigator.onLine || e.kind==='network';
+      $('#home').innerHTML=
+        '<div class="pageError">'+
+          '<h3>'+(offline?'通信できません':'読み込みに失敗しました')+'</h3>'+
+          '<p>'+esc(friendlyError(e))+'</p>'+
+          '<div class="row" style="margin-top:14px">'+
+            '<button id="pageRetryBtn" class="primary" type="button">再試行</button>'+
+            (offline?'<span class="muted">入力済みの内容は、再送信する前に保存状況を確認してください。</span>':'')+
+          '</div>'+
+        '</div>';
+      $('#pageRetryBtn').onclick=()=>go(page);
     }
   }
 
@@ -2623,6 +2788,30 @@
       return;
     }
 
+    if(navigator.onLine){
+      try{
+        const {data:userData,error:userError}=await supabase.auth.getUser();
+        if(userError || !userData?.user){
+          if(isAuthError(userError||new Error('session not found'))){
+            await supabase.auth.signOut({scope:'local'}).catch(()=>{});
+            bootData=null;
+            show('loginView');
+            $('#logoutBtn').classList.add('hidden');
+            $('#userBadge').classList.add('hidden');
+            $('#trustDevice').checked=trustedDevice();
+            notice('#loginMsg','セッションが終了しました。もう一度ログインしてください。');
+            return;
+          }
+        }
+      }catch(err){
+        if(isOfflineError(err)){
+          setConnectionState('offline','現在オフラインです。接続が戻ると自動で再接続します。');
+        }
+      }
+    }else{
+      setConnectionState('offline','現在オフラインです。接続が戻ると自動で再接続します。');
+    }
+
     $('#logoutBtn').classList.remove('hidden');
     $('#userBadge').textContent=session.user.email||'ログイン中';
     $('#userBadge').classList.remove('hidden');
@@ -2634,8 +2823,19 @@
         return;
       }
     }catch(e){
+      const m=String(e.message||e);
+      if(m.includes('SESSION_EXPIRED')){
+        show('loginView');
+        notice('#loginMsg','セッションが終了しました。もう一度ログインしてください。');
+        return;
+      }
+      if(e.kind==='network' || !navigator.onLine){
+        show('loginView');
+        notice('#loginMsg','現在ネットワークに接続できません。接続が戻ると自動で再接続します。');
+        return;
+      }
       show('loginView');
-      notice('#loginMsg',e.message||String(e));
+      notice('#loginMsg',friendlyError(e));
       return;
     }
 
@@ -2654,8 +2854,18 @@
     }catch(e){
       const m=String(e.message||e);
       if(m.toLowerCase().includes('aal2')) return prepareMfa();
+      if(m.includes('SESSION_EXPIRED')){
+        show('loginView');
+        notice('#loginMsg','セッションが終了しました。もう一度ログインしてください。');
+        return;
+      }
+      if(e.kind==='network' || !navigator.onLine){
+        show('loginView');
+        notice('#loginMsg','現在ネットワークに接続できません。接続が戻ると自動で再接続します。');
+        return;
+      }
       show('loginView');
-      notice('#loginMsg',m);
+      notice('#loginMsg',friendlyError(e));
       return;
     }
 
@@ -2789,30 +2999,92 @@
   };
 
   $('#logoutBtn').onclick=async()=>{
-    await supabase.auth.signOut({scope:'local'});
-    localStorage.removeItem(TRUST_DEVICE_KEY);
-    localStorage.removeItem(AUTH_STORAGE_KEY);
-    sessionStorage.removeItem(AUTH_STORAGE_KEY);
-    bootData=null;
-    currentPage='home';
-    await boot();
+    manualLogout=true;
+    try{
+      await supabase.auth.signOut({scope:'local'});
+    }finally{
+      localStorage.removeItem(TRUST_DEVICE_KEY);
+      localStorage.removeItem(AUTH_STORAGE_KEY);
+      sessionStorage.removeItem(AUTH_STORAGE_KEY);
+      bootData=null;
+      currentPage='home';
+      await boot();
+      manualLogout=false;
+    }
   };
 
-  try{
-    const h=await rpc('app_health');
-    $('#dbBadge').textContent=h?.ok?'DB接続 OK':'DB応答あり';
-    $('#dbBadge').className='pill good';
-  }catch(e){
-    $('#dbBadge').textContent='DB接続エラー';
-    $('#dbBadge').className='pill bad';
+  async function checkHealth(){
+    if(!navigator.onLine){
+      $('#dbBadge').textContent='オフライン';
+      $('#dbBadge').className='pill warn';
+      setConnectionState('offline','現在オフラインです。接続が戻ると自動で再接続します。');
+      return false;
+    }
+    try{
+      const h=await rpc('app_health',{}, {readOnly:true});
+      $('#dbBadge').textContent=h?.ok?'DB接続 OK':'DB応答あり';
+      $('#dbBadge').className='pill good';
+      setConnectionState('online','');
+      return true;
+    }catch(e){
+      $('#dbBadge').textContent='接続不安定';
+      $('#dbBadge').className='pill bad';
+      setConnectionState('degraded','サーバーへの接続が不安定です。データ更新操作は結果を確認してから再実行してください。');
+      return false;
+    }
   }
+
+  window.addEventListener('offline',()=>{
+    $('#dbBadge').textContent='オフライン';
+    $('#dbBadge').className='pill warn';
+    setConnectionState('offline','現在オフラインです。入力内容を送信せず、接続が戻るまでお待ちください。');
+  });
+
+  window.addEventListener('online',async()=>{
+    setConnectionState('reconnecting','ネットワークが復旧しました。接続を確認しています…');
+    const ok=await checkHealth();
+    if(ok){
+      if(bootData && !$('#appView').classList.contains('hidden')){
+        await go(currentPage);
+      }else{
+        await boot();
+      }
+    }
+  });
+
+  window.addEventListener('unhandledrejection',(event)=>{
+    const err=event.reason;
+    if(isOfflineError(err)){
+      setConnectionState('degraded','通信エラーが発生しました。接続状況を確認してください。');
+    }
+  });
 
   supabase.auth.onAuthStateChange((event)=>{
     if(event==='PASSWORD_RECOVERY'){
       setTimeout(()=>show('passwordRecoveryView'),0);
+      return;
+    }
+    if(event==='SIGNED_OUT'){
+      setTimeout(()=>{
+        bootData=null;
+        currentPage='home';
+        if(!manualLogout){
+          show('loginView');
+          $('#logoutBtn').classList.add('hidden');
+          $('#userBadge').classList.add('hidden');
+          $('#trustDevice').checked=trustedDevice();
+          notice('#loginMsg','セッションが終了しました。もう一度ログインしてください。');
+        }
+      },0);
+    }
+    if(event==='TOKEN_REFRESHED'){
+      setTimeout(()=>checkHealth(),0);
     }
   });
 
+  await checkHealth();
+  clearInterval(healthTimer);
+  healthTimer=setInterval(checkHealth,60000);
   await boot();
 </script>
 </body>
