@@ -939,9 +939,14 @@
             '<div id="quoteEditMsg" class="notice hidden"></div>'
           : '<div class="quoteTotals"><span>小計 <strong>'+esc(money(q.subtotal))+'</strong></span><span>税 <strong>'+esc(money(q.tax_amount))+'</strong></span><span>合計 <strong>'+esc(money(q.total_amount))+'</strong></span></div>'+
             dataTable(['明細','数量','単価','金額'],readOnlyRows)+
-            (internal && q.status==='finalized'
-              ? '<div class="row" style="margin-top:14px"><button id="quoteToOrderBtn" class="orange" type="button">この見積から受注を作成</button><span class="muted">同じ見積から重複受注は作成されません。</span></div><div id="quoteActionMsg" class="notice hidden"></div>'
-              : '')
+            (internal && q.status==='accepted'
+              ? '<div class="notice ok">顧客承諾済みです。受注へ進められます。</div>'+
+                '<div class="row" style="margin-top:14px"><button id="quoteToOrderBtn" class="orange" type="button">受注を作成して開く</button><span class="muted">同じ見積から重複受注は作成されません。</span></div><div id="quoteActionMsg" class="notice hidden"></div>'
+              : q.status==='finalized'
+                ? '<div class="notice">顧客の回答待ちです。承諾後に受注を作成できます。</div>'
+                : q.status==='rejected'
+                  ? '<div class="notice error">顧客が辞退した見積です。受注には進めません。</div>'
+                  : '')
         )+
       '</section>';
 
@@ -988,14 +993,16 @@
           btn.disabled=false;
         }
       };
-    }else if(internal && q.status==='finalized' && $('#quoteToOrderBtn')){
+    }else if(internal && q.status==='accepted' && $('#quoteToOrderBtn')){
       $('#quoteToOrderBtn').onclick=async()=>{
         const btn=$('#quoteToOrderBtn');
         btn.disabled=true;
         try{
           const order=await rpc('convert_quote_to_order',{p_quote_id:q.id});
-          notice('#quoteActionMsg','受注を作成しました。受注番号 '+String(order?.order_number||''),true);
-          toast(order?.already_exists?'既存の受注を表示しました':'受注を作成しました');
+          notice('#quoteActionMsg',(order?.already_exists?'既存の受注があります。':'受注を作成しました。')+' 受注番号 '+String(order?.order_number||''),true);
+          toast(order?.already_exists?'既存の受注を開きます':'受注を作成しました');
+          await go('orders');
+          if(order?.id) await renderOrderDetail(order.id);
         }catch(err){
           const msg=String(err.message||err);
           notice('#quoteActionMsg',msg.includes('numbering configuration required')?'採番設定が未設定です。管理者の「設定」から受注番号の形式を登録してください。':msg);
