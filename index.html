@@ -48,7 +48,17 @@
     .remotePanel{border:1px solid #fed7aa;background:#fff7ed;border-radius:14px;padding:14px;margin-top:14px}
     .remotePanel h4{margin:0 0 5px}.remotePanel .hint{font-size:12px;color:#9a3412}
     .supportQuickActions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
-    @media(max-width:980px){.supportFlow{grid-template-columns:1fr 1fr}.supportWorkGrid{grid-template-columns:1fr}}
+    .supportPriorityGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:14px 0}
+    .supportPriorityCard{border:1px solid var(--line);border-radius:16px;background:#fff;padding:15px;min-height:180px}
+    .supportPriorityCard.urgent{border-color:#fecaca;background:#fffafa}
+    .supportPriorityCard.remote{border-color:#fed7aa;background:#fffbeb}
+    .supportPriorityCard.handoff{border-color:#bfdbfe;background:#f8fbff}
+    .supportPriorityHead{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px}
+    .supportPriorityHead h3{margin:0;font-size:16px}.supportPriorityHead p{margin:4px 0 0;font-size:12px;color:var(--muted)}
+    .supportPriorityCount{min-width:34px;height:34px;border-radius:999px;display:grid;place-items:center;background:#0f172a;color:#fff;font-weight:900}
+    .supportQueueItem{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
+    .supportQueueItem:first-of-type{border-top:0}.supportQueueItem strong{font-size:13px}.supportQueueItem small{display:block;color:var(--muted);margin-top:3px;line-height:1.4}
+    @media(max-width:980px){.supportFlow{grid-template-columns:1fr 1fr}.supportWorkGrid{grid-template-columns:1fr}.supportPriorityGrid{grid-template-columns:1fr}}
     @media(max-width:640px){.supportFlow{grid-template-columns:1fr}}
     body[data-role="customer_user"] header{background:#14532d}
     body[data-role="customer_user"] .side{background:linear-gradient(180deg,#14532d,#052e16);border-color:#166534}
@@ -1115,11 +1125,63 @@
     }
 
     if(role==='support_staff'){
-      const h=await rpc('support_home');
+      const [h,workspace,workflowStates]=await Promise.all([
+        rpc('support_home'),
+        rpc('internal_support_cases_list'),
+        rpc('support_workflow_states')
+      ]);
+      const stageMap={};
+      (workflowStates||[]).forEach(x=>stageMap[x.ticket_id]=x.support_stage);
+      const tickets=(workspace?.tickets||[]).map(x=>({
+        ...x,
+        support_stage:stageMap[x.id]||((x.status==='closed')?'completed':'unhandled')
+      }));
+      const priorityRank={urgent:0,high:1,normal:2,low:3};
+      const queueSort=(a,b)=>{
+        const p=(priorityRank[a.priority]??9)-(priorityRank[b.priority]??9);
+        if(p!==0) return p;
+        return timeValue(a.created_at)-timeValue(b.created_at);
+      };
+      const now=new Date();
+      const todayKey=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0');
+      const unhandledIncidents=tickets.filter(t=>t.status!=='closed'&&t.request_type==='incident'&&t.support_stage==='unhandled').sort(queueSort);
+      const todaySettings=tickets.filter(t=>{
+        if(t.status==='closed'||t.request_type!=='setting_request') return false;
+        const preferred=String(t.request_details?.preferred_at||'');
+        return preferred.startsWith(todayKey);
+      }).sort(queueSort);
+      const remoteWaiting=tickets.filter(t=>t.status!=='closed'&&t.support_stage==='teamviewer_waiting').sort(queueSort);
+      const handoffWaiting=tickets.filter(t=>t.status!=='closed'&&t.support_stage==='internal_handoff_waiting').sort(queueSort);
+
+      const queueItems=(items,emptyText)=>items.length
+        ? items.slice(0,5).map(t=>
+            '<div class="supportQueueItem">'+
+              '<div><strong>'+esc(t.ticket_number||'—')+' '+esc(t.subject||'')+'</strong>'+
+                '<small>'+esc(t.customer_name||'—')+' / '+supportRequestTypeLabel(t.request_type)+' / '+(t.priority==='urgent'?'緊急':t.priority==='high'?'高':'通常')+
+                (t.attachment_count? ' / 写真 '+esc(t.attachment_count)+'件':'')+'</small></div>'+
+              '<button class="linkBtn supportPriorityOpen" type="button" data-id="'+esc(t.id)+'">開く</button>'+
+            '</div>'
+          ).join('')
+        : '<div class="empty" style="padding:16px">'+esc(emptyText)+'</div>';
+
       home.innerHTML=
-        pageIntro('サポートダッシュボード','電話・チャット受付から遠隔対応、自社引継ぎまでを同じ流れで処理します。')+
-        '<section class="card section"><div class="row between"><div><h2>標準対応フロー</h2><p class="sectionDesc">案件を開いたら左から順番に進めます。</p></div><button id="supportNewFromHome" class="primary" type="button">＋ 問い合わせ受付</button></div>'+
-          supportStageControl+
+        pageIntro('サポートダッシュボード','優先対応を上から処理し、電話・チャット受付から遠隔対応、自社引継ぎまで一画面で確認します。')+
+        kpis([
+          ['未対応の障害',unhandledIncidents.length],
+          ['本日の設定依頼',todaySettings.length],
+          ['TeamViewer待ち',remoteWaiting.length],
+          ['自社引継ぎ待ち',handoffWaiting.length]
+        ])+
+        '<section class="card section">'+
+          '<div class="row between"><div><h2>今やるべき対応</h2><p class="sectionDesc">未対応障害 → 本日の設定依頼 → TeamViewer待ち → 自社引継ぎ待ちの順で確認します。</p></div><div class="row"><button id="supportNewFromHome" class="primary" type="button">＋ 問い合わせ受付</button><button id="supportCasesFromHome" class="ghost" type="button">全案件</button></div></div>'+
+          '<div class="supportPriorityGrid">'+
+            '<article class="supportPriorityCard urgent"><div class="supportPriorityHead"><div><h3>1. 未対応の障害</h3><p>最優先で内容・写真を確認して対応開始</p></div><span class="supportPriorityCount">'+esc(unhandledIncidents.length)+'</span></div>'+queueItems(unhandledIncidents,'未対応の障害はありません。')+'</article>'+
+            '<article class="supportPriorityCard"><div class="supportPriorityHead"><div><h3>2. 本日の設定依頼</h3><p>希望日時が本日の設定作業</p></div><span class="supportPriorityCount">'+esc(todaySettings.length)+'</span></div>'+queueItems(todaySettings,'本日予定の設定依頼はありません。')+'</article>'+
+            '<article class="supportPriorityCard remote"><div class="supportPriorityHead"><div><h3>3. TeamViewer待ち</h3><p>ID・時間確認後、そのまま遠隔対応へ</p></div><span class="supportPriorityCount">'+esc(remoteWaiting.length)+'</span></div>'+queueItems(remoteWaiting,'TeamViewer待ちはありません。')+'</article>'+
+            '<article class="supportPriorityCard handoff"><div class="supportPriorityHead"><div><h3>4. 自社引継ぎ待ち</h3><p>サポート会社で解決できず、自社対応待ち</p></div><span class="supportPriorityCount">'+esc(handoffWaiting.length)+'</span></div>'+queueItems(handoffWaiting,'自社引継ぎ待ちはありません。')+'</article>'+
+          '</div>'+
+        '</section>'+
+        '<section class="card section"><div class="row between"><div><h2>標準対応フロー</h2><p class="sectionDesc">案件カルテではこの順番で対応します。</p></div></div>'+
           '<div class="supportFlow">'+
             '<div class="supportStep active"><span class="supportStepNum">1</span><strong>受付</strong><small>CallConnect / 顧客チャット / 自社チャット</small></div>'+
             '<div class="supportStep"><span class="supportStepNum">2</span><strong>内容・写真確認</strong><small>症状、写真、対象機器、過去履歴</small></div>'+
@@ -1128,17 +1190,24 @@
             '<div class="supportStep"><span class="supportStepNum">5</span><strong>完了 / 引継ぎ</strong><small>解決できなければ自社担当者へ</small></div>'+
           '</div>'+
         '</section>'+
-        kpis([
-          ['対応中',h.kpis?.open_tickets],
-          ['障害対応中',h.kpis?.incidents_open],
-          ['設定依頼中',h.kpis?.settings_open],
-          ['緊急',h.kpis?.urgent_open]
-        ])+
-        '<section class="card section"><div class="row between"><div><h2>担当案件</h2><p class="sectionDesc">クリックして対応フローを続けます。</p></div><button id="supportCasesFromHome" class="ghost" type="button">担当案件を開く</button></div>'+
-        ((h.recent_tickets||[]).length?'<div class="tableWrap"><table><thead><tr><th>番号</th><th>種別</th><th>顧客</th><th>件名</th><th>状態</th></tr></thead><tbody>'+(h.recent_tickets||[]).map(t=>'<tr><td>'+esc(t.ticket_number||'—')+'</td><td>'+supportRequestTypeBadge(t.request_type)+'</td><td>'+esc(t.customer_name||'')+'</td><td>'+esc(t.subject||'')+'</td><td>'+esc(statusText(t.status))+'</td></tr>').join('')+'</tbody></table></div>':'<p class="muted">担当案件はありません。</p>')+
+        '<section class="card section"><div class="row between"><div><h2>最近の担当案件</h2><p class="sectionDesc">直近の案件を確認できます。</p></div></div>'+
+          dataTable(
+            ['番号','種別','工程','顧客','件名','優先度','操作'],
+            tickets.slice().sort((a,b)=>timeValue(b.updated_at)-timeValue(a.updated_at)).slice(0,10).map(t=>
+              '<tr><td>'+esc(t.ticket_number||'—')+'</td><td>'+supportRequestTypeBadge(t.request_type)+'</td><td>'+supportStageBadge(t.support_stage)+'</td><td>'+esc(t.customer_name||'')+'</td><td>'+esc(t.subject||'')+'</td><td>'+esc(t.priority||'normal')+'</td><td><button class="linkBtn supportPriorityOpen" type="button" data-id="'+esc(t.id)+'">開く</button></td></tr>'
+            )
+          )+
         '</section>';
       $('#supportNewFromHome').onclick=()=>go('support_new');
       $('#supportCasesFromHome').onclick=()=>go('support_cases');
+      document.querySelectorAll('.supportPriorityOpen').forEach(btn=>btn.onclick=async()=>{
+        btn.disabled=true;
+        try{
+          await go('support_cases');
+          await renderTicketDetail(btn.dataset.id);
+        }catch(err){toast(err.message||String(err));}
+        finally{btn.disabled=false;}
+      });
       return;
     }
 
