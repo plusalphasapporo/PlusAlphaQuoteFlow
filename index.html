@@ -5605,53 +5605,193 @@
     const detail=await rpc('internal_asset_detail',{p_asset_id:assetId});
     const a=detail.asset||{};
     const c=detail.customer||{};
-    const ticketRows=(detail.tickets||[]).map(t=>'<tr><td>'+esc(t.ticket_number||'—')+'</td><td>'+esc(t.subject||'')+'</td><td>'+esc(statusText(t.status))+'</td><td>'+esc(t.priority||'normal')+'</td></tr>');
-    const contractRows=(detail.customer_contracts||[]).map(ct=>'<tr><td>'+esc(ct.contract_number||'—')+'</td><td>'+esc(statusText(ct.status))+'</td><td>'+esc(dateText(ct.start_date))+'</td><td>'+esc(dateText(ct.end_date))+'</td></tr>');
+    const tickets=detail.tickets||[];
+    const contracts=detail.customer_contracts||[];
+    const summary=detail.summary||{};
+    const sourceDelivery=detail.source_delivery||null;
+    const sourcePurchase=detail.source_purchase||null;
+    const openTickets=tickets.filter(t=>t.status!=='closed');
+    const closedTickets=tickets.filter(t=>t.status==='closed');
+
+    const contractOptions=contracts.map(ct=>
+      '<option value="'+esc(ct.id)+'" '+(ct.id===a.contract_id?'selected':'')+'>'+
+        esc(ct.contract_number||'未採番')+' / '+esc(statusText(ct.status))+
+        (ct.end_date?' / ～'+esc(dateText(ct.end_date)):'')+
+      '</option>'
+    ).join('');
+
+    const openTicketRows=openTickets.map(t=>
+      '<tr>'+
+        '<td><strong>'+esc(t.ticket_number||'—')+'</strong></td>'+
+        '<td>'+esc(t.subject||'')+'</td>'+
+        '<td>'+esc(statusText(t.status))+'</td>'+
+        '<td>'+esc(t.priority||'normal')+'</td>'+
+        '<td>'+esc(t.assigned_internal_user_name||'未設定')+'</td>'+
+        '<td>'+esc(dateText(t.updated_at||t.created_at))+'</td>'+
+        '<td><button class="linkBtn assetTicketOpen" type="button" data-id="'+esc(t.id)+'">詳細</button></td>'+
+      '</tr>'
+    );
+
+    const closedTicketRows=closedTickets.map(t=>
+      '<tr>'+
+        '<td><strong>'+esc(t.ticket_number||'—')+'</strong></td>'+
+        '<td>'+esc(t.subject||'')+'</td>'+
+        '<td>'+esc(t.priority||'normal')+'</td>'+
+        '<td>'+esc(dateText(t.created_at))+'</td>'+
+        '<td>'+esc(dateText(t.closed_at||t.updated_at))+'</td>'+
+        '<td><button class="linkBtn assetTicketOpen" type="button" data-id="'+esc(t.id)+'">履歴</button></td>'+
+      '</tr>'
+    );
+
     $('#assetDetailHost').innerHTML=
       '<section class="card section">'+
-        '<div class="quoteDetailHead"><div><h2>機器詳細</h2><p class="sectionDesc">'+esc(a.asset_number||'未採番')+' / '+esc(c.name||'')+'</p></div><button id="assetDetailCloseBtn" class="ghost" type="button">閉じる</button></div>'+
-        '<form id="assetDetailForm">'+
-          '<div class="modalGrid2">'+
-            '<div class="field"><label>機器番号</label><input id="assetDetailNumber" value="'+esc(a.asset_number||'')+'"></div>'+
-            '<div class="field"><label>機種</label><input id="assetDetailModel" value="'+esc(a.model_name||'')+'"></div>'+
-            '<div class="field"><label>シリアル番号</label><input id="assetDetailSerial" value="'+esc(a.serial_number||'')+'"></div>'+
-            '<div class="field"><label>商品コード</label><input value="'+esc(a.product_code||'—')+'" disabled></div>'+
-            '<div class="field"><label>保証期限</label><input id="assetDetailWarranty" type="date" value="'+esc(a.warranty_until||'')+'"></div>'+
-            '<div class="field"><label>設置日時</label><input id="assetDetailInstalled" type="datetime-local"></div>'+
-            '<div class="field"><label>設置場所</label><input id="assetDetailLocation" value="'+esc(a.installation_location||'')+'"></div>'+
-            '<div class="field"><label>納品元</label><input value="'+esc(a.source_delivery_number||'手動登録')+'" disabled></div>'+
-            '<div class="field"><label>状態</label><input value="'+esc(statusText(a.status))+'" disabled></div>'+
+        '<div class="quoteDetailHead">'+
+          '<div><h2>機器カルテ</h2><p class="sectionDesc">'+esc(a.asset_number||'未採番')+' / '+esc(c.name||'')+'</p></div>'+
+          '<div class="row">'+
+            '<button id="assetNewTicketBtn" class="primary" type="button">＋ この機器で問い合わせ</button>'+
+            '<button id="assetDetailCloseBtn" class="ghost" type="button">閉じる</button>'+
           '</div>'+
-          '<div class="field"><label>社内メモ</label><textarea id="assetDetailNote" rows="3">'+esc(a.internal_note||'')+'</textarea></div>'+
-          '<button class="primary" type="submit">機器情報を保存</button>'+
-        '</form>'+
-        '<div id="assetDetailMsg" class="notice hidden"></div>'+
-        '<h3>関連する問い合わせ</h3>'+dataTable(['番号','件名','状態','優先度'],ticketRows)+
-        '<h3>顧客の契約・保守</h3>'+dataTable(['契約番号','状態','開始日','終了日'],contractRows)+
+        '</div>'+
+        kpis([
+          ['状態',statusText(a.status)],
+          ['対応中',summary.open_ticket_count||0],
+          ['過去対応',summary.closed_ticket_count||0],
+          ['保証期限',dateText(a.warranty_until)],
+          ['契約',a.contract_number||'未紐づけ'],
+          ['納品元',a.source_delivery_number||'手動登録']
+        ])+
+        '<div class="modalGrid2">'+
+          '<section class="card section" style="box-shadow:none;margin:0">'+
+            '<h3>基本情報</h3>'+
+            '<form id="assetDetailForm">'+
+              '<div class="modalGrid2">'+
+                '<div class="field"><label>機器番号</label><input id="assetDetailNumber" value="'+esc(a.asset_number||'')+'"></div>'+
+                '<div class="field"><label>機種</label><input id="assetDetailModel" value="'+esc(a.model_name||'')+'"></div>'+
+                '<div class="field"><label>シリアル番号</label><input id="assetDetailSerial" value="'+esc(a.serial_number||'')+'"></div>'+
+                '<div class="field"><label>商品コード</label><input value="'+esc(a.product_code||'—')+'" disabled></div>'+
+                '<div class="field"><label>状態</label><select id="assetDetailStatus"><option value="active" '+(a.status==='active'?'selected':'')+'>有効</option><option value="inactive" '+(a.status==='inactive'?'selected':'')+'>無効</option></select></div>'+
+                '<div class="field"><label>紐づく契約</label><select id="assetDetailContract"><option value="">未紐づけ</option>'+contractOptions+'</select></div>'+
+                '<div class="field"><label>保証期限</label><input id="assetDetailWarranty" type="date" value="'+esc(a.warranty_until||'')+'"></div>'+
+                '<div class="field"><label>設置日時</label><input id="assetDetailInstalled" type="datetime-local"></div>'+
+                '<div class="field" style="grid-column:span 2"><label>設置場所</label><input id="assetDetailLocation" value="'+esc(a.installation_location||'')+'"></div>'+
+              '</div>'+
+              '<div class="field"><label>社内メモ</label><textarea id="assetDetailNote" rows="3">'+esc(a.internal_note||'')+'</textarea></div>'+
+              '<button class="primary" type="submit">機器情報を保存</button>'+
+            '</form>'+
+            '<div id="assetDetailMsg" class="notice hidden"></div>'+
+          '</section>'+
+          '<section class="card section" style="box-shadow:none;margin:0">'+
+            '<h3>顧客・契約</h3>'+
+            '<div class="item"><strong>顧客</strong><p>'+esc(c.customer_code||'—')+' / '+esc(c.name||'')+'</p></div>'+
+            '<div class="item"><strong>連絡先</strong><p>'+esc(c.phone||c.mobile||'未登録')+(c.email?' / '+esc(c.email):'')+'</p></div>'+
+            '<div class="item"><strong>住所</strong><p>'+esc([c.postal_code,c.address1,c.address2].filter(Boolean).join(' ')||'未登録')+'</p></div>'+
+            '<div class="item"><strong>契約</strong><p>'+esc(a.contract_number||'未紐づけ')+(a.contract_id?'<br><button id="assetOpenContract" class="linkBtn" type="button">契約詳細を開く</button>':'')+'</p></div>'+
+          '</section>'+
+        '</div>'+
+        '<div class="modalGrid2">'+
+          '<section class="card section" style="box-shadow:none;margin:0">'+
+            '<h3>納品元</h3>'+
+            (sourceDelivery
+              ? '<div class="item"><strong>'+esc(sourceDelivery.delivery_number||'未採番')+'</strong><p>状態: '+esc(statusText(sourceDelivery.status))+'<br>納品日: '+esc(dateText(sourceDelivery.delivered_at))+'<br>設置場所: '+esc(sourceDelivery.installation_location||'—')+'</p><button id="assetOpenDelivery" class="linkBtn" type="button">納品詳細を開く</button></div>'
+              : '<div class="empty">手動登録のため納品元はありません。</div>')+
+          '</section>'+
+          '<section class="card section" style="box-shadow:none;margin:0">'+
+            '<h3>購入・入荷元</h3>'+
+            (sourcePurchase
+              ? '<div class="item"><strong>'+esc(sourcePurchase.purchase_order_number||'未採番')+'</strong><p>仕入先: '+esc(sourcePurchase.supplier_name||'—')+'<br>入荷日: '+esc(dateText(sourcePurchase.received_at))+'<br>シリアル: '+esc(sourcePurchase.serial_number||'—')+'<br>保証期限: '+esc(dateText(sourcePurchase.warranty_until))+'</p><button id="assetOpenPurchaseOrder" class="linkBtn" type="button">発注詳細を開く</button></div>'
+              : '<div class="empty">購入・入荷元情報はありません。</div>')+
+          '</section>'+
+        '</div>'+
+        '<section class="section">'+
+          '<div class="row between"><div><h3>対応中・修理対応</h3><p class="sectionDesc">この機器に直接紐づく未完了の問い合わせです。</p></div><span class="pill">'+esc(openTickets.length)+'件</span></div>'+
+          dataTable(['番号','件名','状態','優先度','担当','更新','操作'],openTicketRows)+
+        '</section>'+
+        '<section class="section">'+
+          '<div class="row between"><div><h3>過去の対応履歴</h3><p class="sectionDesc">完了した問い合わせを修理・対応履歴として確認します。</p></div><span class="pill">'+esc(closedTickets.length)+'件</span></div>'+
+          dataTable(['番号','件名','優先度','受付','完了','操作'],closedTicketRows)+
+        '</section>'+
       '</section>';
+
     $('#assetDetailCloseBtn').onclick=()=>{$('#assetDetailHost').innerHTML='';};
+
     if(a.installed_at){
       const dt=new Date(a.installed_at);
       $('#assetDetailInstalled').value=new Date(dt.getTime()-dt.getTimezoneOffset()*60000).toISOString().slice(0,16);
     }
+
     $('#assetDetailForm').onsubmit=async e=>{
-      e.preventDefault();const btn=e.submitter;if(btn)btn.disabled=true;
+      e.preventDefault();
+      const btn=e.submitter;
+      if(btn) btn.disabled=true;
       try{
-        await rpc('update_asset_full',{
+        await rpc('update_asset_profile',{
           p_asset_id:a.id,
           p_asset_number:$('#assetDetailNumber').value.trim()||null,
           p_serial_number:$('#assetDetailSerial').value.trim()||null,
           p_model_name:$('#assetDetailModel').value.trim()||null,
+          p_status:$('#assetDetailStatus').value,
+          p_contract_id:$('#assetDetailContract').value||null,
           p_warranty_until:$('#assetDetailWarranty').value||null,
           p_installed_at:$('#assetDetailInstalled').value?new Date($('#assetDetailInstalled').value).toISOString():null,
           p_installation_location:$('#assetDetailLocation').value.trim()||null,
           p_internal_note:$('#assetDetailNote').value.trim()||null
         });
-        notice('#assetDetailMsg','機器情報を更新しました。',true);toast('機器情報を更新しました');
-        setTimeout(()=>go('assets'),350);
-      }catch(err){notice('#assetDetailMsg',err.message||String(err));}
-      finally{if(btn)btn.disabled=false;}
+        notice('#assetDetailMsg','機器情報を更新しました。',true);
+        toast('機器情報を更新しました');
+        await renderAssetDetail(a.id);
+      }catch(err){
+        notice('#assetDetailMsg',err.message||String(err));
+      }finally{
+        if(btn) btn.disabled=false;
+      }
     };
+
+    $('#assetNewTicketBtn').onclick=()=>openModal({
+      title:'この機器で問い合わせを登録',
+      description:(a.asset_number||'未採番')+' / '+(a.model_name||'機種未設定'),
+      body:
+        '<div class="field"><label>優先度</label><select id="assetTicketPriority"><option value="normal">通常</option><option value="high">高</option><option value="urgent">緊急</option><option value="low">低</option></select></div>'+
+        '<div class="field"><label>件名</label><input id="assetTicketSubject" required></div>'+
+        '<div class="field"><label>内容</label><textarea id="assetTicketDescription" rows="5"></textarea></div>',
+      confirmLabel:'問い合わせを登録',
+      onSubmit:async()=>{
+        const result=await rpc('create_support_ticket',{
+          p_customer_id:a.customer_id,
+          p_asset_id:a.id,
+          p_contract_id:a.contract_id||null,
+          p_subject:$('#assetTicketSubject').value.trim(),
+          p_description:$('#assetTicketDescription').value.trim()||null,
+          p_priority:$('#assetTicketPriority').value
+        });
+        closeModal();
+        toast('問い合わせを登録しました'+(result?.ticket_number?' '+result.ticket_number:''));
+        await renderAssetDetail(a.id);
+      }
+    });
+
+    document.querySelectorAll('.assetTicketOpen').forEach(btn=>btn.onclick=async()=>{
+      await go('support');
+      await renderTicketDetail(btn.dataset.id);
+    });
+
+    const contractBtn=$('#assetOpenContract');
+    if(contractBtn) contractBtn.onclick=async()=>{
+      await go('contracts');
+      await renderContractDetail(a.contract_id);
+    };
+
+    const deliveryBtn=$('#assetOpenDelivery');
+    if(deliveryBtn) deliveryBtn.onclick=async()=>{
+      await renderProcurementWorkspace('delivery');
+      await renderDeliveryDetail(sourceDelivery.id);
+    };
+
+    const purchaseBtn=$('#assetOpenPurchaseOrder');
+    if(purchaseBtn) purchaseBtn.onclick=async()=>{
+      await renderProcurementWorkspace('purchase_orders');
+      await renderPurchaseOrderDetail(sourcePurchase.purchase_order_id);
+    };
+
     await appendEntityAuditHistory('#assetDetailHost','asset',a.id);
     $('#assetDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
   }
@@ -5668,12 +5808,23 @@
     const [assets,customers]=await Promise.all([rpc('internal_assets_list'),rpc('internal_customers_list')]);
     const options=(customers||[]).map(c=>'<option value="'+esc(c.id)+'">'+esc(c.customer_code||'—')+' / '+esc(c.name)+'</option>').join('');
     const rows=(assets||[]).map(a=>
-      '<tr><td><strong>'+esc(a.asset_number||'未採番')+'</strong></td><td>'+esc(a.customer?.name||'—')+'</td><td>'+esc(a.model_name||'—')+'</td><td>'+esc(a.serial_number||'—')+'</td><td>'+esc(dateText(a.warranty_until))+'</td><td>'+esc(a.installation_location||'—')+'</td><td>'+esc(a.source_delivery_number||'手動登録')+'</td><td>'+esc(statusText(a.status))+'</td><td>'+esc(a.open_ticket_count||0)+'</td><td><button class="linkBtn assetLedgerOpen" type="button" data-id="'+esc(a.id)+'">詳細</button></td></tr>'
+      '<tr>'+
+        '<td><strong>'+esc(a.asset_number||'未採番')+'</strong></td>'+
+        '<td>'+esc(a.customer?.name||'—')+'</td>'+
+        '<td>'+esc(a.model_name||'—')+'</td>'+
+        '<td>'+esc(a.serial_number||'—')+'</td>'+
+        '<td>'+esc(dateText(a.warranty_until))+'</td>'+
+        '<td>'+(a.contract_number?esc(a.contract_number)+'<br><span class="muted">'+esc(statusText(a.contract_status))+'</span>':'未紐づけ')+'</td>'+
+        '<td>'+esc(a.installation_location||'—')+'</td>'+
+        '<td>'+esc(statusText(a.status))+'</td>'+
+        '<td>'+(Number(a.open_ticket_count||0)>0?'<span class="hold">'+esc(a.open_ticket_count)+'</span>':esc(a.open_ticket_count||0))+'</td>'+
+        '<td><button class="linkBtn assetLedgerOpen" type="button" data-id="'+esc(a.id)+'">カルテ</button></td>'+
+      '</tr>'
     );
     $('#home').innerHTML=
-      pageIntro('機器台帳','納品・設置された機器をシリアル単位で管理します。')+
+      pageIntro('機器台帳','機器番号・シリアル・保証期限・契約・設置場所・対応状況を一元管理します。')+
       '<section class="card section"><div class="unifiedToolbar"><div><h2>機器一覧</h2><p class="sectionDesc">納品から自動登録された機器と手動登録した機器を同じ台帳で管理します。</p></div><button id="assetLedgerCreateBtn" class="primary" type="button">＋機器登録</button></div>'+
-      '<div id="assetDetailHost"></div>'+dataTable(['機器番号','顧客','機種','シリアル','保証期限','設置場所','納品元','状態','対応中','操作'],rows)+'</section>';
+      '<div id="assetDetailHost"></div>'+dataTable(['機器番号','顧客','機種','シリアル','保証期限','契約','設置場所','状態','対応中','操作'],rows)+'</section>';
 
     $('#assetLedgerCreateBtn').onclick=()=>openModal({
       title:'機器を登録',description:'手動でOA機器台帳へ追加します。納品フローからも自動登録されます。',
