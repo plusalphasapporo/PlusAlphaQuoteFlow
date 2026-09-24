@@ -5845,26 +5845,237 @@
     const detail=await rpc('internal_contract_detail',{p_contract_id:contractId});
     const ct=detail.contract||{};
     const c=detail.customer||{};
-    const assetRows=(detail.assets||[]).map(a=>'<tr><td>'+esc(a.asset_number||'—')+'</td><td>'+esc(a.model_name||'—')+'</td><td>'+esc(a.serial_number||'—')+'</td><td>'+esc(statusText(a.status))+'</td></tr>');
+    const linkedAssets=detail.linked_assets||[];
+    const availableAssets=detail.available_assets||[];
+    const tickets=detail.tickets||[];
+    const summary=detail.summary||{};
+    const openTickets=tickets.filter(t=>t.status!=='closed');
+    const closedTickets=tickets.filter(t=>t.status==='closed');
+
+    const today=new Date(); today.setHours(0,0,0,0);
+    const endTime=ct.end_date?new Date(ct.end_date+'T00:00:00').getTime():null;
+    const renewalTime=ct.renewal_due_on?new Date(ct.renewal_due_on+'T00:00:00').getTime():null;
+    let renewalNotice='<div class="notice">契約終了日が未設定です。</div>';
+    if(endTime){
+      if(endTime<today.getTime()){
+        renewalNotice='<div class="notice error"><strong>契約終了日を超過しています。</strong><br>終了日: '+esc(dateText(ct.end_date))+'</div>';
+      }else if(renewalTime!==null && renewalTime<=today.getTime()){
+        renewalNotice='<div class="notice error"><strong>更新確認時期です。</strong><br>更新確認期限: '+esc(dateText(ct.renewal_due_on))+' / 終了日: '+esc(dateText(ct.end_date))+'</div>';
+      }else{
+        renewalNotice='<div class="notice ok"><strong>契約期間内です。</strong><br>更新確認期限: '+esc(dateText(ct.renewal_due_on))+' / 終了日: '+esc(dateText(ct.end_date))+'</div>';
+      }
+    }
+
+    const assetRows=linkedAssets.map(a=>
+      '<tr>'+
+        '<td><strong>'+esc(a.asset_number||'—')+'</strong></td>'+
+        '<td>'+esc(a.model_name||'—')+'</td>'+
+        '<td>'+esc(a.serial_number||'—')+'</td>'+
+        '<td>'+esc(dateText(a.warranty_until))+'</td>'+
+        '<td>'+esc(a.installation_location||'—')+'</td>'+
+        '<td>'+esc(statusText(a.status))+'</td>'+
+        '<td>'+(Number(a.open_ticket_count||0)>0?'<span class="hold">'+esc(a.open_ticket_count)+'</span>':esc(a.open_ticket_count||0))+'</td>'+
+        '<td><button class="linkBtn contractAssetOpen" type="button" data-id="'+esc(a.id)+'">機器カルテ</button> <button class="ghost contractAssetUnlink" type="button" data-id="'+esc(a.id)+'">解除</button></td>'+
+      '</tr>'
+    );
+
+    const availableRows=availableAssets.map(a=>
+      '<tr>'+
+        '<td>'+esc(a.asset_number||'—')+'</td>'+
+        '<td>'+esc(a.model_name||'—')+'</td>'+
+        '<td>'+esc(a.serial_number||'—')+'</td>'+
+        '<td>'+esc(statusText(a.status))+'</td>'+
+        '<td>'+esc(a.contract_number||'未紐づけ')+'</td>'+
+        '<td><button class="linkBtn contractAssetLink" type="button" data-id="'+esc(a.id)+'">この契約へ紐づけ</button></td>'+
+      '</tr>'
+    );
+
+    const openTicketRows=openTickets.map(t=>
+      '<tr>'+
+        '<td><strong>'+esc(t.ticket_number||'—')+'</strong></td>'+
+        '<td>'+esc(t.asset_number||'契約全体')+'</td>'+
+        '<td>'+esc(t.subject||'')+'</td>'+
+        '<td>'+esc(statusText(t.status))+'</td>'+
+        '<td>'+esc(t.priority||'normal')+'</td>'+
+        '<td>'+esc(t.assigned_internal_user_name||'未設定')+'</td>'+
+        '<td><button class="linkBtn contractTicketOpen" type="button" data-id="'+esc(t.id)+'">詳細</button></td>'+
+      '</tr>'
+    );
+
+    const closedTicketRows=closedTickets.map(t=>
+      '<tr>'+
+        '<td><strong>'+esc(t.ticket_number||'—')+'</strong></td>'+
+        '<td>'+esc(t.asset_number||'契約全体')+'</td>'+
+        '<td>'+esc(t.subject||'')+'</td>'+
+        '<td>'+esc(t.priority||'normal')+'</td>'+
+        '<td>'+esc(dateText(t.created_at))+'</td>'+
+        '<td>'+esc(dateText(t.closed_at||t.updated_at))+'</td>'+
+        '<td><button class="linkBtn contractTicketOpen" type="button" data-id="'+esc(t.id)+'">履歴</button></td>'+
+      '</tr>'
+    );
+
     $('#contractDetailHost').innerHTML=
       '<section class="card section">'+
-        '<div class="quoteDetailHead"><div><h2>契約・保守詳細</h2><p class="sectionDesc">'+esc(ct.contract_number||'未採番')+' / '+esc(c.name||'')+'</p></div><button id="contractDetailCloseBtn" class="ghost" type="button">閉じる</button></div>'+
-        '<form id="contractDetailForm">'+
-          '<div class="modalGrid3"><div class="field"><label>契約番号</label><input id="contractDetailNumber" value="'+esc(ct.contract_number||'')+'"></div><div class="field"><label>開始日</label><input id="contractDetailStart" type="date" value="'+esc(ct.start_date||'')+'"></div><div class="field"><label>終了日</label><input id="contractDetailEnd" type="date" value="'+esc(ct.end_date||'')+'"></div></div>'+
-          '<div class="field"><label>社内メモ</label><textarea id="contractDetailNote" rows="3">'+esc(ct.internal_note||'')+'</textarea></div>'+
-          '<button class="primary" type="submit">契約情報を保存</button>'+
-        '</form><div id="contractDetailMsg" class="notice hidden"></div>'+
-        '<h3>顧客の機器</h3>'+dataTable(['機器番号','機種','シリアル','状態'],assetRows)+
+        '<div class="quoteDetailHead">'+
+          '<div><h2>契約・保守カルテ</h2><p class="sectionDesc">'+esc(ct.contract_number||'未採番')+' / '+esc(c.name||'')+'</p></div>'+
+          '<div class="row"><button id="contractNewTicketBtn" class="primary" type="button">＋ この契約で問い合わせ</button><button id="contractDetailCloseBtn" class="ghost" type="button">閉じる</button></div>'+
+        '</div>'+
+        kpis([
+          ['状態',statusText(ct.status)],
+          ['対象機器',summary.linked_asset_count||0],
+          ['稼働機器',summary.active_asset_count||0],
+          ['対応中',summary.open_ticket_count||0],
+          ['過去対応',summary.closed_ticket_count||0],
+          ['終了日',dateText(ct.end_date)]
+        ])+
+        renewalNotice+
+        '<div class="modalGrid2">'+
+          '<section class="card section" style="box-shadow:none;margin:0">'+
+            '<h3>契約情報</h3>'+
+            '<form id="contractDetailForm">'+
+              '<div class="modalGrid2">'+
+                '<div class="field"><label>契約番号</label><input id="contractDetailNumber" value="'+esc(ct.contract_number||'')+'"></div>'+
+                '<div class="field"><label>状態</label><select id="contractDetailStatus"><option value="draft" '+(ct.status==='draft'?'selected':'')+'>下書き</option><option value="active" '+(ct.status==='active'?'selected':'')+'>有効</option><option value="inactive" '+(ct.status==='inactive'?'selected':'')+'>無効</option></select></div>'+
+                '<div class="field"><label>開始日</label><input id="contractDetailStart" type="date" value="'+esc(ct.start_date||'')+'"></div>'+
+                '<div class="field"><label>終了日</label><input id="contractDetailEnd" type="date" value="'+esc(ct.end_date||'')+'"></div>'+
+                '<div class="field"><label>更新確認</label><select id="contractDetailAutoRenew"><option value="false" '+(!ct.auto_renew?'selected':'')+'>自動更新なし</option><option value="true" '+(ct.auto_renew?'selected':'')+'>自動更新あり</option></select></div>'+
+                '<div class="field"><label>更新確認を開始する日数</label><input id="contractDetailNoticeDays" type="number" min="0" max="3650" step="1" value="'+esc(ct.renewal_notice_days??60)+'"><p class="muted">終了日の何日前から更新確認対象とするか</p></div>'+
+              '</div>'+
+              '<div class="field"><label>社内メモ</label><textarea id="contractDetailNote" rows="3">'+esc(ct.internal_note||'')+'</textarea></div>'+
+              '<button class="primary" type="submit">契約情報を保存</button>'+
+            '</form>'+
+            '<div id="contractDetailMsg" class="notice hidden"></div>'+
+          '</section>'+
+          '<section class="card section" style="box-shadow:none;margin:0">'+
+            '<h3>顧客情報</h3>'+
+            '<div class="item"><strong>顧客</strong><p>'+esc(c.customer_code||'—')+' / '+esc(c.name||'')+'</p></div>'+
+            '<div class="item"><strong>連絡先</strong><p>'+esc(c.phone||c.mobile||'未登録')+(c.email?' / '+esc(c.email):'')+'</p></div>'+
+            '<div class="item"><strong>住所</strong><p>'+esc([c.postal_code,c.address1,c.address2].filter(Boolean).join(' ')||'未登録')+'</p></div>'+
+            '<div class="item"><strong>更新確認期限</strong><p>'+esc(dateText(ct.renewal_due_on))+(ct.auto_renew?'<br><span class="muted">自動更新あり</span>':'<br><span class="muted">自動更新なし</span>')+'</p></div>'+
+          '</section>'+
+        '</div>'+
+        '<section class="section">'+
+          '<div class="row between"><div><h3>対象機器</h3><p class="sectionDesc">この契約に直接紐づいている機器です。</p></div><span class="pill">'+esc(linkedAssets.length)+'台</span></div>'+
+          dataTable(['機器番号','機種','シリアル','保証期限','設置場所','状態','対応中','操作'],assetRows)+
+        '</section>'+
+        '<section class="section">'+
+          '<div class="row between"><div><h3>機器を契約へ追加</h3><p class="sectionDesc">同じ顧客の機器だけを紐づけできます。</p></div><span class="pill">'+esc(availableAssets.length)+'台</span></div>'+
+          dataTable(['機器番号','機種','シリアル','状態','現在の契約','操作'],availableRows)+
+        '</section>'+
+        '<section class="section">'+
+          '<div class="row between"><div><h3>対応中の問い合わせ</h3><p class="sectionDesc">契約または対象機器に紐づく未完了案件です。</p></div><span class="pill">'+esc(openTickets.length)+'件</span></div>'+
+          dataTable(['番号','対象機器','件名','状態','優先度','担当','操作'],openTicketRows)+
+        '</section>'+
+        '<section class="section">'+
+          '<div class="row between"><div><h3>過去の対応履歴</h3><p class="sectionDesc">契約または対象機器で完了した問い合わせ履歴です。</p></div><span class="pill">'+esc(closedTickets.length)+'件</span></div>'+
+          dataTable(['番号','対象機器','件名','優先度','受付','完了','操作'],closedTicketRows)+
+        '</section>'+
       '</section>';
+
     $('#contractDetailCloseBtn').onclick=()=>{$('#contractDetailHost').innerHTML='';};
+
     $('#contractDetailForm').onsubmit=async e=>{
-      e.preventDefault();const btn=e.submitter;if(btn)btn.disabled=true;
+      e.preventDefault();
+      const btn=e.submitter;
+      if(btn) btn.disabled=true;
       try{
-        await rpc('update_contract',{p_contract_id:ct.id,p_contract_number:$('#contractDetailNumber').value.trim()||null,p_start_date:$('#contractDetailStart').value||null,p_end_date:$('#contractDetailEnd').value||null,p_internal_note:$('#contractDetailNote').value.trim()||null});
-        notice('#contractDetailMsg','契約情報を更新しました。',true);toast('契約情報を更新しました');setTimeout(()=>go('contracts'),350);
-      }catch(err){notice('#contractDetailMsg',err.message||String(err));}
-      finally{if(btn)btn.disabled=false;}
+        const start=$('#contractDetailStart').value||null;
+        const end=$('#contractDetailEnd').value||null;
+        const noticeDays=Number($('#contractDetailNoticeDays').value||0);
+        if(start&&end&&end<start) throw new Error('終了日は開始日以降にしてください。');
+        if(noticeDays<0||noticeDays>3650) throw new Error('更新確認日数は0〜3650日で入力してください。');
+        await rpc('update_contract_profile',{
+          p_contract_id:ct.id,
+          p_contract_number:$('#contractDetailNumber').value.trim()||null,
+          p_status:$('#contractDetailStatus').value,
+          p_start_date:start,
+          p_end_date:end,
+          p_auto_renew:$('#contractDetailAutoRenew').value==='true',
+          p_renewal_notice_days:noticeDays,
+          p_internal_note:$('#contractDetailNote').value.trim()||null
+        });
+        notice('#contractDetailMsg','契約情報を更新しました。',true);
+        toast('契約情報を更新しました');
+        await renderContractDetail(ct.id);
+      }catch(err){
+        notice('#contractDetailMsg',err.message||String(err));
+      }finally{
+        if(btn) btn.disabled=false;
+      }
     };
+
+    document.querySelectorAll('.contractAssetOpen').forEach(btn=>btn.onclick=async()=>{
+      await go('assets');
+      await renderAssetDetail(btn.dataset.id);
+    });
+
+    document.querySelectorAll('.contractAssetLink').forEach(btn=>btn.onclick=async()=>{
+      btn.disabled=true;
+      try{
+        await rpc('set_contract_asset_link',{
+          p_contract_id:ct.id,
+          p_asset_id:btn.dataset.id,
+          p_link:true
+        });
+        toast('機器を契約へ紐づけました');
+        await renderContractDetail(ct.id);
+      }catch(err){
+        toast(err.message||String(err));
+      }finally{
+        btn.disabled=false;
+      }
+    });
+
+    document.querySelectorAll('.contractAssetUnlink').forEach(btn=>btn.onclick=async()=>{
+      if(!confirm('この機器と契約の紐づけを解除しますか？')) return;
+      btn.disabled=true;
+      try{
+        await rpc('set_contract_asset_link',{
+          p_contract_id:ct.id,
+          p_asset_id:btn.dataset.id,
+          p_link:false
+        });
+        toast('機器の契約紐づけを解除しました');
+        await renderContractDetail(ct.id);
+      }catch(err){
+        toast(err.message||String(err));
+      }finally{
+        btn.disabled=false;
+      }
+    });
+
+    document.querySelectorAll('.contractTicketOpen').forEach(btn=>btn.onclick=async()=>{
+      await go('support');
+      await renderTicketDetail(btn.dataset.id);
+    });
+
+    $('#contractNewTicketBtn').onclick=()=>openModal({
+      title:'この契約で問い合わせを登録',
+      description:(ct.contract_number||'未採番')+' / '+(c.name||''),
+      body:
+        '<div class="field"><label>対象機器</label><select id="contractTicketAsset"><option value="">契約全体</option>'+
+          linkedAssets.map(a=>'<option value="'+esc(a.id)+'">'+esc(a.asset_number||'—')+' / '+esc(a.model_name||'')+'</option>').join('')+
+        '</select></div>'+
+        '<div class="field"><label>優先度</label><select id="contractTicketPriority"><option value="normal">通常</option><option value="high">高</option><option value="urgent">緊急</option><option value="low">低</option></select></div>'+
+        '<div class="field"><label>件名</label><input id="contractTicketSubject" required></div>'+
+        '<div class="field"><label>内容</label><textarea id="contractTicketDescription" rows="5"></textarea></div>',
+      confirmLabel:'問い合わせを登録',
+      onSubmit:async()=>{
+        const result=await rpc('create_support_ticket',{
+          p_customer_id:ct.customer_id,
+          p_asset_id:$('#contractTicketAsset').value||null,
+          p_contract_id:ct.id,
+          p_subject:$('#contractTicketSubject').value.trim(),
+          p_description:$('#contractTicketDescription').value.trim()||null,
+          p_priority:$('#contractTicketPriority').value
+        });
+        closeModal();
+        toast('問い合わせを登録しました'+(result?.ticket_number?' '+result.ticket_number:''));
+        await renderContractDetail(ct.id);
+      }
+    });
+
+    await appendEntityAuditHistory('#contractDetailHost','contract',ct.id);
     $('#contractDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
   }
 
