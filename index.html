@@ -2772,7 +2772,7 @@
     const order=detail.order||null;
     const items=detail.items||[];
     const rows=items.map(i=>
-      '<tr><td>'+esc(i.description||'')+'</td><td>'+esc(i.quantity)+'</td><td class="amount">'+esc(money(i.unit_cost))+'</td><td class="amount">'+esc(money(Number(i.quantity||0)*Number(i.unit_cost||0)))+'</td></tr>'
+      '<tr><td>'+esc(i.product_code||'—')+'</td><td>'+esc(i.description||'')+'</td><td>'+esc(i.quantity)+'</td><td>'+esc(i.unit||'台')+'</td><td>'+esc(dateText(i.expected_delivery_date))+'</td><td class="amount">'+esc(money(i.unit_cost))+'</td><td class="amount">'+esc(money(Number(i.quantity||0)*Number(i.unit_cost||0)))+'</td></tr>'
     );
 
     $('#purchaseOrderDetailHost').innerHTML=
@@ -2784,28 +2784,32 @@
         kpis([
           ['原価合計',money(po.total_cost)],
           ['状態',statusText(po.status)],
-          ['作成日',dateText(po.created_at)],
-          ['受注ID',po.order_id?'紐付けあり':'—']
+          ['発注日',dateText(po.ordered_at)],
+          ['予定納期',dateText(po.expected_delivery_date)]
         ])+
         '<form id="purchaseOrderEditForm">'+
-          '<div class="row">'+
-            '<div class="field" style="flex:1;min-width:180px"><label>発注番号</label><input id="poEditNumber" value="'+esc(po.purchase_order_number||'')+'"></div>'+
-            '<div class="field" style="flex:1;min-width:180px"><label>仕入先</label><input id="poEditSupplier" value="'+esc(po.supplier_name||'')+'"></div>'+
+          '<div class="modalGrid2">'+
+            '<div class="field"><label>発注番号</label><input id="poEditNumber" value="'+esc(po.purchase_order_number||'')+'"></div>'+
+            '<div class="field"><label>仕入先</label><input id="poEditSupplier" value="'+esc(po.supplier_name||'')+'"></div>'+
+            '<div class="field"><label>発注日</label><input id="poEditOrderedAt" type="datetime-local"></div>'+
+            '<div class="field"><label>予定納期</label><input id="poEditExpectedDate" type="date" value="'+esc(po.expected_delivery_date||'')+'"></div>'+
           '</div>'+
           '<div class="field"><label>社内メモ</label><textarea id="poEditNote" rows="2">'+esc(po.internal_note||'')+'</textarea></div>'+
           '<div id="poEditItems" class="quoteItems">'+items.map(i=>
             '<div class="quoteItemRow" data-po-edit-row>'+
+              '<input class="poe-product-id" type="hidden" value="'+esc(i.product_id||'')+'">'+
               '<div class="field descField"><label>明細名</label><input class="poe-desc" value="'+esc(i.description||'')+'" required></div>'+
               '<div class="field"><label>数量</label><input class="poe-qty" type="number" min="0" step="0.01" value="'+esc(i.quantity)+'" required></div>'+
+              '<div class="field"><label>単位</label><input class="poe-unit-name" value="'+esc(i.unit||'台')+'"></div>'+
               '<div class="field"><label>単価原価</label><input class="poe-unit" type="number" min="0" step="1" value="'+esc(i.unit_cost)+'" required></div>'+
-              '<div></div>'+
+              '<div class="field"><label>明細納期</label><input class="poe-expected" type="date" value="'+esc(i.expected_delivery_date||'')+'"></div>'+
               '<button class="removePOEditItem" type="button">×</button>'+
             '</div>'
           ).join('')+'</div>'+
           '<div class="row"><button id="addPOEditItem" class="ghost" type="button">＋ 明細追加</button><button class="primary" type="submit">変更を保存</button></div>'+
         '</form>'+
         '<div id="purchaseOrderEditMsg" class="notice hidden"></div>'+
-        '<section class="section"><h3>明細</h3>'+dataTable(['明細','数量','単価原価','金額'],rows)+'</section>'+
+        '<section class="section"><h3>明細</h3>'+dataTable(['商品コード','明細','数量','単位','納期','単価原価','金額'],rows)+'</section>'+
       '</section>';
 
     $('#purchaseOrderDetailClose').onclick=()=>{$('#purchaseOrderDetailHost').innerHTML='';};
@@ -2830,10 +2834,12 @@
 
     function poEditRow(item={}){
       return '<div class="quoteItemRow" data-po-edit-row>'+
+        '<input class="poe-product-id" type="hidden" value="'+esc(item.product_id||'')+'">'+
         '<div class="field descField"><label>明細名</label><input class="poe-desc" value="'+esc(item.description||'')+'" required></div>'+
         '<div class="field"><label>数量</label><input class="poe-qty" type="number" min="0" step="0.01" value="'+esc(item.quantity??1)+'" required></div>'+
+        '<div class="field"><label>単位</label><input class="poe-unit-name" value="'+esc(item.unit||'台')+'"></div>'+
         '<div class="field"><label>単価原価</label><input class="poe-unit" type="number" min="0" step="1" value="'+esc(item.unit_cost??0)+'" required></div>'+
-        '<div></div>'+
+        '<div class="field"><label>明細納期</label><input class="poe-expected" type="date" value="'+esc(item.expected_delivery_date||'')+'"></div>'+
         '<button class="removePOEditItem" type="button">×</button>'+
       '</div>';
     }
@@ -2852,6 +2858,11 @@
     };
     bindPOEditRemove();
 
+    if(po.ordered_at){
+      const dt=new Date(po.ordered_at);
+      $('#poEditOrderedAt').value=new Date(dt.getTime()-dt.getTimezoneOffset()*60000).toISOString().slice(0,16);
+    }
+
     $('#purchaseOrderEditForm').onsubmit=async e=>{
       e.preventDefault();
       const btn=e.submitter;
@@ -2862,12 +2873,21 @@
           const quantity=Number(row.querySelector('.poe-qty').value||0);
           const unit_cost=Number(row.querySelector('.poe-unit').value||0);
           if(!description) throw new Error((index+1)+'行目の明細名を入力してください。');
-          return {description,quantity,unit_cost};
+          return {
+            product_id:row.querySelector('.poe-product-id')?.value||null,
+            description,
+            quantity,
+            unit:row.querySelector('.poe-unit-name')?.value.trim()||'台',
+            unit_cost,
+            expected_delivery_date:row.querySelector('.poe-expected')?.value||null
+          };
         });
-        await rpc('update_purchase_order',{
+        await rpc('update_purchase_order_full',{
           p_purchase_order_id:po.id,
           p_purchase_order_number:$('#poEditNumber').value.trim()||null,
           p_supplier_name:$('#poEditSupplier').value.trim()||null,
+          p_ordered_at:$('#poEditOrderedAt').value?new Date($('#poEditOrderedAt').value).toISOString():null,
+          p_expected_delivery_date:$('#poEditExpectedDate').value||null,
           p_internal_note:$('#poEditNote').value.trim()||null,
           p_items:editItems
         });
