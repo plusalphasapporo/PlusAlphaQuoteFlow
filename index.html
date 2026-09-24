@@ -4435,9 +4435,42 @@
     const customer=detail.customer||{};
     const order=detail.order||null;
     const items=detail.items||[];
-    const rows=items.map(i=>
-      '<tr><td>'+esc(i.product_code||'—')+'</td><td>'+esc(i.description||'')+'</td><td>'+esc(i.quantity)+'</td><td>'+esc(i.unit||'台')+'</td><td>'+esc(dateText(i.expected_delivery_date))+'</td><td class="amount">'+esc(money(i.unit_cost))+'</td><td class="amount">'+esc(money(Number(i.quantity||0)*Number(i.unit_cost||0)))+'</td></tr>'
-    );
+    const summary=detail.summary||{};
+    const receivingStarted=!!summary.receiving_started;
+
+    const receivingRows=items.map(i=>{
+      const serials=(i.serials||[]).map(s=>
+        '<div>'+esc(s.serial_number||'—')+
+          (s.warranty_until?' / 保証 '+esc(dateText(s.warranty_until)):'')+
+          (s.asset_number?' / <span class="pill good">台帳 '+esc(s.asset_number)+'</span>':'')+
+        '</div>'
+      ).join('');
+      return '<tr>'+
+        '<td>'+esc(i.product_code||'—')+'</td>'+
+        '<td><strong>'+esc(i.description||'')+'</strong>'+(i.track_serials?'<br><span class="pill">シリアル管理</span>':'')+'</td>'+
+        '<td>'+esc(i.received_quantity||0)+' / '+esc(i.quantity||0)+' '+esc(i.unit||'台')+'</td>'+
+        '<td>'+esc(i.remaining_quantity||0)+'</td>'+
+        '<td>'+esc(dateText(i.expected_delivery_date))+'</td>'+
+        '<td>'+(serials||'<span class="muted">—</span>')+'</td>'+
+        '<td><button class="linkBtn poReceiveItem" type="button" data-id="'+esc(i.id)+'">入荷・シリアル</button></td>'+
+      '</tr>';
+    });
+
+    const editItemsHtml=receivingStarted
+      ? '<div class="notice">入荷開始済みのため、明細の数量・原価・商品は固定されています。発注番号・仕入先・発注日・予定納期・社内メモは引き続き変更できます。</div>'
+      : '<div id="poEditItems" class="quoteItems">'+items.map(i=>
+          '<div class="quoteItemRow" data-po-edit-row>'+
+            '<input class="poe-product-id" type="hidden" value="'+esc(i.product_id||'')+'">'+
+            '<input class="poe-track-serials" type="hidden" value="'+(i.track_serials?'true':'false')+'">'+
+            '<div class="field descField"><label>明細名</label><input class="poe-desc" value="'+esc(i.description||'')+'" required></div>'+
+            '<div class="field"><label>数量</label><input class="poe-qty" type="number" min="0.01" step="0.01" value="'+esc(i.quantity)+'" required></div>'+
+            '<div class="field"><label>単位</label><input class="poe-unit-name" value="'+esc(i.unit||'台')+'"></div>'+
+            '<div class="field"><label>単価原価</label><input class="poe-unit" type="number" min="0" step="1" value="'+esc(i.unit_cost)+'" required></div>'+
+            '<div class="field"><label>明細納期</label><input class="poe-expected" type="date" value="'+esc(i.expected_delivery_date||'')+'"></div>'+
+            '<button class="removePOEditItem" type="button">×</button>'+
+          '</div>'
+        ).join('')+'</div>'+
+        '<div class="row"><button id="addPOEditItem" class="ghost" type="button">＋ 明細追加</button></div>';
 
     $('#purchaseOrderDetailHost').innerHTML=
       '<section class="card section">'+
@@ -4448,33 +4481,33 @@
         kpis([
           ['原価合計',money(po.total_cost)],
           ['状態',statusText(po.status)],
-          ['発注日',dateText(po.ordered_at)],
+          ['入荷済み',String(summary.received_quantity||0)],
+          ['未入荷',String(summary.remaining_quantity||0)],
+          ['シリアル',String(summary.serial_count||0)],
           ['予定納期',dateText(po.expected_delivery_date)]
         ])+
-        '<form id="purchaseOrderEditForm">'+
-          '<div class="modalGrid2">'+
-            '<div class="field"><label>発注番号</label><input id="poEditNumber" value="'+esc(po.purchase_order_number||'')+'"></div>'+
-            '<div class="field"><label>仕入先</label><input id="poEditSupplier" value="'+esc(po.supplier_name||'')+'"></div>'+
-            '<div class="field"><label>発注日</label><input id="poEditOrderedAt" type="datetime-local"></div>'+
-            '<div class="field"><label>予定納期</label><input id="poEditExpectedDate" type="date" value="'+esc(po.expected_delivery_date||'')+'"></div>'+
+        '<section class="formSection">'+
+          '<div class="formSectionHead"><span class="sectionNo">01</span><h3>発注情報</h3></div>'+
+          '<form id="purchaseOrderEditForm">'+
+            '<div class="modalGrid2">'+
+              '<div class="field"><label>発注番号</label><input id="poEditNumber" value="'+esc(po.purchase_order_number||'')+'"></div>'+
+              '<div class="field"><label>仕入先</label><input id="poEditSupplier" value="'+esc(po.supplier_name||'')+'"></div>'+
+              '<div class="field"><label>発注日</label><input id="poEditOrderedAt" type="datetime-local"></div>'+
+              '<div class="field"><label>予定納期</label><input id="poEditExpectedDate" type="date" value="'+esc(po.expected_delivery_date||'')+'"></div>'+
+            '</div>'+
+            '<div class="field"><label>社内メモ</label><textarea id="poEditNote" rows="2">'+esc(po.internal_note||'')+'</textarea></div>'+
+            '<div class="formSectionHead"><span class="sectionNo">02</span><h3>発注明細</h3></div>'+
+            editItemsHtml+
+            '<div class="row" style="margin-top:14px"><button class="primary" type="submit">'+(receivingStarted?'発注情報を保存':'発注情報・明細を保存')+'</button></div>'+
+          '</form>'+
+          '<div id="purchaseOrderEditMsg" class="notice hidden"></div>'+
+        '</section>'+
+        '<section class="section">'+
+          '<div class="row between"><div><h3>入荷・シリアル管理</h3><p class="sectionDesc">累計入荷数量とシリアルを明細ごとに登録します。</p></div>'+
+            (summary.fully_received?'<span class="pill good">全数入荷済み</span>':'<span class="pill">入荷処理中</span>')+
           '</div>'+
-          '<div class="field"><label>社内メモ</label><textarea id="poEditNote" rows="2">'+esc(po.internal_note||'')+'</textarea></div>'+
-          '<div id="poEditItems" class="quoteItems">'+items.map(i=>
-            '<div class="quoteItemRow" data-po-edit-row>'+
-              '<input class="poe-product-id" type="hidden" value="'+esc(i.product_id||'')+'">'+
-              '<input class="poe-track-serials" type="hidden" value="'+(i.track_serials?'true':'false')+'">'+
-              '<div class="field descField"><label>明細名</label><input class="poe-desc" value="'+esc(i.description||'')+'" required></div>'+
-              '<div class="field"><label>数量</label><input class="poe-qty" type="number" min="0" step="0.01" value="'+esc(i.quantity)+'" required></div>'+
-              '<div class="field"><label>単位</label><input class="poe-unit-name" value="'+esc(i.unit||'台')+'"></div>'+
-              '<div class="field"><label>単価原価</label><input class="poe-unit" type="number" min="0" step="1" value="'+esc(i.unit_cost)+'" required></div>'+
-              '<div class="field"><label>明細納期</label><input class="poe-expected" type="date" value="'+esc(i.expected_delivery_date||'')+'"></div>'+
-              '<button class="removePOEditItem" type="button">×</button>'+
-            '</div>'
-          ).join('')+'</div>'+
-          '<div class="row"><button id="addPOEditItem" class="ghost" type="button">＋ 明細追加</button><button class="primary" type="submit">変更を保存</button></div>'+
-        '</form>'+
-        '<div id="purchaseOrderEditMsg" class="notice hidden"></div>'+
-        '<section class="section"><h3>明細</h3>'+dataTable(['商品コード','明細','数量','単位','納期','単価原価','金額'],rows)+'</section>'+
+          dataTable(['商品','明細','入荷','未入荷','納期','シリアル・台帳','操作'],receivingRows)+
+        '</section>'+
       '</section>';
 
     $('#purchaseOrderDetailClose').onclick=()=>{$('#purchaseOrderDetailHost').innerHTML='';};
@@ -4495,70 +4528,129 @@
       })),
       totals:{total:po.total_cost}
     });
-    await appendEntityAuditHistory('#purchaseOrderDetailHost','purchase_order',po.id);
-    $('#purchaseOrderDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
-
-    function poEditRow(item={}){
-      return '<div class="quoteItemRow" data-po-edit-row>'+
-        '<input class="poe-product-id" type="hidden" value="'+esc(item.product_id||'')+'">'+
-        '<input class="poe-track-serials" type="hidden" value="'+(item.track_serials?'true':'false')+'">'+
-        '<div class="field descField"><label>明細名</label><input class="poe-desc" value="'+esc(item.description||'')+'" required></div>'+
-        '<div class="field"><label>数量</label><input class="poe-qty" type="number" min="0" step="0.01" value="'+esc(item.quantity??1)+'" required></div>'+
-        '<div class="field"><label>単位</label><input class="poe-unit-name" value="'+esc(item.unit||'台')+'"></div>'+
-        '<div class="field"><label>単価原価</label><input class="poe-unit" type="number" min="0" step="1" value="'+esc(item.unit_cost??0)+'" required></div>'+
-        '<div class="field"><label>明細納期</label><input class="poe-expected" type="date" value="'+esc(item.expected_delivery_date||'')+'"></div>'+
-        '<button class="removePOEditItem" type="button">×</button>'+
-      '</div>';
-    }
-    function bindPOEditRemove(){
-      document.querySelectorAll('.removePOEditItem').forEach(btn=>{
-        btn.onclick=()=>{
-          const rows=document.querySelectorAll('[data-po-edit-row]');
-          if(rows.length<=1) return;
-          btn.closest('[data-po-edit-row]').remove();
-        };
-      });
-    }
-    $('#addPOEditItem').onclick=()=>{
-      $('#poEditItems').insertAdjacentHTML('beforeend',poEditRow());
-      bindPOEditRemove();
-    };
-    bindPOEditRemove();
 
     if(po.ordered_at){
       const dt=new Date(po.ordered_at);
       $('#poEditOrderedAt').value=new Date(dt.getTime()-dt.getTimezoneOffset()*60000).toISOString().slice(0,16);
     }
 
+    function poEditRow(item={}){
+      return '<div class="quoteItemRow" data-po-edit-row>'+
+        '<input class="poe-product-id" type="hidden" value="'+esc(item.product_id||'')+'">'+
+        '<input class="poe-track-serials" type="hidden" value="'+(item.track_serials?'true':'false')+'">'+
+        '<div class="field descField"><label>明細名</label><input class="poe-desc" value="'+esc(item.description||'')+'" required></div>'+
+        '<div class="field"><label>数量</label><input class="poe-qty" type="number" min="0.01" step="0.01" value="'+esc(item.quantity??1)+'" required></div>'+
+        '<div class="field"><label>単位</label><input class="poe-unit-name" value="'+esc(item.unit||'台')+'"></div>'+
+        '<div class="field"><label>単価原価</label><input class="poe-unit" type="number" min="0" step="1" value="'+esc(item.unit_cost??0)+'" required></div>'+
+        '<div class="field"><label>明細納期</label><input class="poe-expected" type="date" value="'+esc(item.expected_delivery_date||'')+'"></div>'+
+        '<button class="removePOEditItem" type="button">×</button>'+
+      '</div>';
+    }
+
+    if(!receivingStarted){
+      const bindPOEditRemove=()=>{
+        document.querySelectorAll('.removePOEditItem').forEach(btn=>{
+          btn.onclick=()=>{
+            const rows=document.querySelectorAll('[data-po-edit-row]');
+            if(rows.length<=1) return;
+            btn.closest('[data-po-edit-row]').remove();
+          };
+        });
+      };
+      $('#addPOEditItem').onclick=()=>{
+        $('#poEditItems').insertAdjacentHTML('beforeend',poEditRow());
+        bindPOEditRemove();
+      };
+      bindPOEditRemove();
+    }
+
+    document.querySelectorAll('.poReceiveItem').forEach(btn=>{
+      btn.onclick=()=>{
+        const item=items.find(x=>x.id===btn.dataset.id);
+        if(!item) return;
+        const serialText=(item.serials||[]).map(s=>s.serial_number+(s.warranty_until?' | '+s.warranty_until:'')).join('\n');
+        openModal({
+          title:'入荷・シリアル登録',
+          description:(po.purchase_order_number||'')+' / '+(item.description||''),
+          body:
+            '<div class="modalGrid2">'+
+              '<div class="field"><label>発注数量</label><input value="'+esc(item.quantity||0)+' '+esc(item.unit||'台')+'" disabled></div>'+
+              '<div class="field"><label>管理方式</label><input value="'+esc(item.track_serials?'シリアル・機器台帳管理':'数量管理')+'" disabled></div>'+
+              '<div class="field"><label>累計入荷数量</label><input id="poRecvQty" type="number" min="0" max="'+esc(item.quantity||0)+'" step="'+(item.track_serials?'1':'0.01')+'" value="'+esc(item.received_quantity||0)+'"></div>'+
+              '<div class="field"><label>未入荷</label><input value="'+esc(item.remaining_quantity||0)+' '+esc(item.unit||'台')+'" disabled></div>'+
+            '</div>'+
+            (item.track_serials?'<div class="notice">シリアル管理品は、累計入荷数量とシリアル件数を一致させてください。</div>':'')+
+            '<div class="field"><label>シリアル番号・保証期限</label><textarea id="poRecvSerials" rows="9" placeholder="1行1台。例：SN123456 | 2029-03-31">'+esc(serialText)+'</textarea><p class="muted">保証期限は「シリアル | YYYY-MM-DD」。既存シリアルも含めた全件を入力します。</p></div>',
+          confirmLabel:'入荷を保存',
+          onSubmit:async()=>{
+            const serials=$('#poRecvSerials').value.split('\n').map(x=>x.trim()).filter(Boolean).map(line=>{
+              const parts=line.split('|').map(x=>x.trim());
+              return {serial_number:parts[0],warranty_until:parts[1]||null};
+            });
+            const qty=Number($('#poRecvQty').value||0);
+            if(qty<0||qty>Number(item.quantity||0)) throw new Error('入荷数量は0〜発注数量の範囲で入力してください。');
+            if(item.track_serials&&serials.length!==qty) throw new Error('シリアル管理品は入荷数量とシリアル件数を一致させてください。');
+            await rpc('receive_purchase_item_full',{
+              p_purchase_order_item_id:item.id,
+              p_received_quantity:qty,
+              p_serials:serials
+            });
+            closeModal();
+            toast('入荷情報を保存しました');
+            await renderPurchaseOrderDetail(po.id);
+          }
+        });
+      };
+    });
+
     $('#purchaseOrderEditForm').onsubmit=async e=>{
       e.preventDefault();
       const btn=e.submitter;
       if(btn) btn.disabled=true;
       try{
-        const editItems=[...document.querySelectorAll('[data-po-edit-row]')].map((row,index)=>{
-          const description=row.querySelector('.poe-desc').value.trim();
-          const quantity=Number(row.querySelector('.poe-qty').value||0);
-          const unit_cost=Number(row.querySelector('.poe-unit').value||0);
-          if(!description) throw new Error((index+1)+'行目の明細名を入力してください。');
-          return {
-            product_id:row.querySelector('.poe-product-id')?.value||null,
-            description,
-            quantity,
-            unit:row.querySelector('.poe-unit-name')?.value.trim()||'台',
-            unit_cost,
-            expected_delivery_date:row.querySelector('.poe-expected')?.value||null,
-            track_serials:row.querySelector('.poe-track-serials')?.value==='true'
-          };
-        });
-        await rpc('update_purchase_order_full',{
-          p_purchase_order_id:po.id,
-          p_purchase_order_number:$('#poEditNumber').value.trim()||null,
-          p_supplier_name:$('#poEditSupplier').value.trim()||null,
-          p_ordered_at:$('#poEditOrderedAt').value?new Date($('#poEditOrderedAt').value).toISOString():null,
-          p_expected_delivery_date:$('#poEditExpectedDate').value||null,
-          p_internal_note:$('#poEditNote').value.trim()||null,
-          p_items:editItems
-        });
+        const orderedAt=$('#poEditOrderedAt').value;
+        const orderedDate=orderedAt?orderedAt.slice(0,10):null;
+        const expectedDate=$('#poEditExpectedDate').value||null;
+        if(orderedDate&&expectedDate&&expectedDate<orderedDate) throw new Error('予定納期は発注日以降にしてください。');
+
+        if(receivingStarted){
+          await rpc('update_purchase_order_header',{
+            p_purchase_order_id:po.id,
+            p_purchase_order_number:$('#poEditNumber').value.trim()||null,
+            p_supplier_name:$('#poEditSupplier').value.trim()||null,
+            p_ordered_at:orderedAt?new Date(orderedAt).toISOString():null,
+            p_expected_delivery_date:expectedDate,
+            p_internal_note:$('#poEditNote').value.trim()||null
+          });
+        }else{
+          const editItems=[...document.querySelectorAll('[data-po-edit-row]')].map((row,index)=>{
+            const description=row.querySelector('.poe-desc').value.trim();
+            const quantity=Number(row.querySelector('.poe-qty').value||0);
+            const unit_cost=Number(row.querySelector('.poe-unit').value||0);
+            const itemDue=row.querySelector('.poe-expected')?.value||null;
+            if(!description) throw new Error((index+1)+'行目の明細名を入力してください。');
+            if(quantity<=0) throw new Error((index+1)+'行目の数量は0より大きい値を入力してください。');
+            if(unit_cost<0) throw new Error((index+1)+'行目の単価原価は0以上で入力してください。');
+            if(orderedDate&&itemDue&&itemDue<orderedDate) throw new Error((index+1)+'行目の明細納期は発注日以降にしてください。');
+            return {
+              product_id:row.querySelector('.poe-product-id')?.value||null,
+              description,quantity,
+              unit:row.querySelector('.poe-unit-name')?.value.trim()||'台',
+              unit_cost,
+              expected_delivery_date:itemDue,
+              track_serials:row.querySelector('.poe-track-serials')?.value==='true'
+            };
+          });
+          await rpc('update_purchase_order_full',{
+            p_purchase_order_id:po.id,
+            p_purchase_order_number:$('#poEditNumber').value.trim()||null,
+            p_supplier_name:$('#poEditSupplier').value.trim()||null,
+            p_ordered_at:orderedAt?new Date(orderedAt).toISOString():null,
+            p_expected_delivery_date:expectedDate,
+            p_internal_note:$('#poEditNote').value.trim()||null,
+            p_items:editItems
+          });
+        }
         notice('#purchaseOrderEditMsg','発注情報を更新しました。',true);
         toast('発注を更新しました');
         await renderPurchaseOrderDetail(po.id);
@@ -4568,6 +4660,9 @@
         if(btn) btn.disabled=false;
       }
     };
+
+    await appendEntityAuditHistory('#purchaseOrderDetailHost','purchase_order',po.id);
+    $('#purchaseOrderDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
   }
 
   async function renderPurchaseOrders(){
@@ -4619,6 +4714,26 @@
     if(!d) throw new Error('納品が見つかりません。');
     const c=detail.customer||{};
     const o=detail.order||null;
+    const readiness=detail.readiness||{};
+    const assets=detail.assets||[];
+
+    const assetRows=assets.map(a=>
+      '<tr>'+
+        '<td><strong>'+esc(a.asset_number||'未採番')+'</strong></td>'+
+        '<td>'+esc(a.model_name||'—')+'</td>'+
+        '<td>'+esc(a.serial_number||'—')+'</td>'+
+        '<td>'+esc(dateText(a.warranty_until))+'</td>'+
+        '<td>'+esc(a.installation_location||'—')+'</td>'+
+        '<td><button class="linkBtn deliveryAssetOpen" type="button" data-id="'+esc(a.id)+'">機器詳細</button></td>'+
+      '</tr>'
+    );
+
+    const completionReady=!!readiness.ready_for_completion;
+    const completionNotice=d.status==='delivered'
+      ? '<div class="notice ok"><strong>納品完了済み</strong><br>機器台帳登録: '+esc(assets.length)+'件</div>'
+      : completionReady
+        ? '<div class="notice ok"><strong>納品完了できます。</strong><br>入荷・シリアル条件を満たしています。完了時にシリアル対象機器を台帳へ自動登録します。</div>'
+        : '<div class="notice error"><strong>納品完了できません。</strong><br>未入荷明細: '+esc(readiness.unreceived_item_count||0)+'件 / シリアル不足明細: '+esc(readiness.serial_incomplete_item_count||0)+'件</div>';
 
     $('#deliveryDetailHost').innerHTML=
       '<section class="card section">'+
@@ -4629,15 +4744,18 @@
         kpis([
           ['状態',statusText(d.status)],
           ['予定日',dateText(d.scheduled_at)],
-          ['納品日',dateText(d.delivered_at)],
-          ['作業担当',d.assigned_user_name||'未指定']
+          ['未入荷明細',readiness.unreceived_item_count||0],
+          ['シリアル不足',readiness.serial_incomplete_item_count||0],
+          ['台帳登録予定',readiness.asset_candidate_count||0],
+          ['登録済み機器',assets.length]
         ])+
+        completionNotice+
         '<form id="deliveryEditForm">'+
           '<section class="formSection">'+
             '<div class="formSectionHead"><span class="sectionNo">01</span><h3>基本情報</h3></div>'+
             '<div class="modalGrid2">'+
               '<div class="field"><label>納品番号</label><input id="deliveryEditNumber" value="'+esc(d.delivery_number||'')+'"></div>'+
-              '<div class="field"><label>納品予定日時</label><input id="deliveryEditScheduled" type="datetime-local"></div>'+
+              '<div class="field"><label>納品予定日時</label><input id="deliveryEditScheduled" type="datetime-local" required></div>'+
               '<div class="field"><label>作業担当</label><select id="deliveryEditAssigned"><option value="">未指定</option>'+
                 (staffOptions||[]).map(s=>'<option value="'+esc(s.user_id)+'" '+(s.user_id===d.assigned_user_id?'selected':'')+'>'+esc(s.display_name||'—')+'</option>').join('')+
               '</select></div>'+
@@ -4669,16 +4787,25 @@
                 '<strong>納品完了：'+esc(dateText(d.delivered_at))+'</strong>'+
                 (d.completion_confirmed?'<br>完了確認：'+esc(d.completion_confirmed_by||'確認済み')+' / '+esc(dateText(d.completion_confirmed_at)):'<br>完了確認：未確認')+
                 (d.completion_note?'<br>'+esc(d.completion_note):'')+
-              '</div><button id="deliveryReopenBtn" class="ghost" type="button">予定に戻す</button>'
+              '</div>'+
+              (assets.length
+                ? '<div class="notice">この納品から機器台帳が作成済みのため、予定状態へ戻すことはできません。</div>'
+                : '<button id="deliveryReopenBtn" class="ghost" type="button">予定に戻す</button>')
             : '<div class="modalGrid2">'+
                 '<div class="field"><label>納品完了日時</label><input id="deliveryCompleteAt" type="datetime-local"></div>'+
                 '<div class="field"><label>完了確認者</label><input id="deliveryCompleteBy" placeholder="例：山田様"></div>'+
                 '<div class="field" style="grid-column:span 2"><label>完了メモ</label><textarea id="deliveryCompleteNote" rows="2" placeholder="設置・動作確認・引き渡し内容など"></textarea></div>'+
                 '<label class="row" style="grid-column:span 2"><input id="deliveryCompleteConfirmed" type="checkbox"> 顧客または現地担当者の完了確認を取得済み</label>'+
-                '<div style="grid-column:span 2"><button id="deliveryCompleteBtn" class="green" type="button">納品完了にする</button></div>'+
+                '<div style="grid-column:span 2"><button id="deliveryCompleteBtn" class="green" type="button" '+(completionReady?'':'disabled')+'>納品完了にする</button></div>'+
               '</div>'
           )+
           '<div id="deliveryStatusMsg" class="notice hidden"></div>'+
+        '</section>'+
+        '<section class="section">'+
+          '<div class="row between"><div><h3>機器台帳</h3><p class="sectionDesc">納品完了時にシリアル単位で自動登録された機器です。</p></div>'+
+            (assets.length?'<button id="deliveryOpenAssetLedger" class="ghost" type="button">機器台帳一覧</button>':'')+
+          '</div>'+
+          dataTable(['機器番号','機種','シリアル','保証期限','設置場所','操作'],assetRows)+
         '</section>'+
       '</section>';
 
@@ -4703,8 +4830,6 @@
       items:[{description:d.notes||'納品',quantity:1,unitLabel:'',amountLabel:''}],
       note:d.completion_note||d.notes||''
     });
-    await appendEntityAuditHistory('#deliveryDetailHost','delivery',d.id);
-    $('#deliveryDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
 
     if(d.scheduled_at){
       const dt=new Date(d.scheduled_at);
@@ -4718,23 +4843,34 @@
       if(d.delivery_contact_name) $('#deliveryCompleteBy').value=d.delivery_contact_name;
     }
 
+    document.querySelectorAll('.deliveryAssetOpen').forEach(btn=>{
+      btn.onclick=async()=>{
+        await go('assets');
+        await renderAssetDetail(btn.dataset.id);
+      };
+    });
+    const assetLedgerBtn=$('#deliveryOpenAssetLedger');
+    if(assetLedgerBtn) assetLedgerBtn.onclick=()=>go('assets');
+
     const completeBtn=$('#deliveryCompleteBtn');
     if(completeBtn){
       completeBtn.onclick=async()=>{
         completeBtn.disabled=true;
         try{
+          if(!completionReady) throw new Error('未入荷またはシリアル不足があるため納品完了できません。');
           const value=$('#deliveryCompleteAt').value;
           const confirmed=$('#deliveryCompleteConfirmed').checked;
           const confirmedBy=$('#deliveryCompleteBy').value.trim();
-          if(confirmed && !confirmedBy) throw new Error('完了確認者を入力してください。');
-          await rpc('complete_delivery_full',{
+          if(!value) throw new Error('納品完了日時を入力してください。');
+          if(confirmed&&!confirmedBy) throw new Error('完了確認者を入力してください。');
+          const result=await rpc('complete_delivery_full',{
             p_delivery_id:d.id,
-            p_delivered_at:value ? new Date(value).toISOString() : null,
+            p_delivered_at:new Date(value).toISOString(),
             p_completion_confirmed:confirmed,
             p_completion_confirmed_by:confirmedBy||null,
             p_completion_note:$('#deliveryCompleteNote').value.trim()||null
           });
-          notice('#deliveryStatusMsg','納品完了として記録しました。',true);
+          notice('#deliveryStatusMsg','納品完了として記録しました。機器台帳 '+String(result?.assets_created||0)+'件を作成しました。',true);
           toast('納品完了にしました');
           await renderDeliveryDetail(d.id);
         }catch(err){
@@ -4767,10 +4903,12 @@
       const btn=e.submitter;
       if(btn) btn.disabled=true;
       try{
+        const scheduled=$('#deliveryEditScheduled').value;
+        if(!scheduled) throw new Error('納品予定日時を入力してください。');
         await rpc('update_delivery_full',{
           p_delivery_id:d.id,
           p_delivery_number:$('#deliveryEditNumber').value.trim()||null,
-          p_scheduled_at:$('#deliveryEditScheduled').value ? new Date($('#deliveryEditScheduled').value).toISOString() : null,
+          p_scheduled_at:new Date(scheduled).toISOString(),
           p_delivery_postal_code:$('#deliveryEditPostal').value.trim()||null,
           p_delivery_address1:$('#deliveryEditAddress1').value.trim()||null,
           p_delivery_address2:$('#deliveryEditAddress2').value.trim()||null,
@@ -4790,6 +4928,9 @@
         if(btn) btn.disabled=false;
       }
     };
+
+    await appendEntityAuditHistory('#deliveryDetailHost','delivery',d.id);
+    $('#deliveryDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
   }
 
   async function renderCustomerDeliveryDetail(id){
