@@ -94,6 +94,7 @@
       <label class="row" style="margin:10px 0 14px"><input id="trustDevice" type="checkbox"> この端末を信頼する</label>
       <p class="muted" style="margin-top:-6px">信頼済み端末ではログイン状態を保持します。共有端末ではチェックを外してください。</p>
       <button class="primary" style="width:100%" type="submit">ログイン</button>
+      <button id="forgotPasswordBtn" class="ghost" style="width:100%;margin-top:8px" type="button">パスワードを忘れた方</button>
     </form>
   </section>
 
@@ -110,6 +111,18 @@
     </div>
     <div class="field"><label>6桁コード</label><input id="mfaCode" inputmode="numeric" autocomplete="one-time-code"></div>
     <button id="verifyBtn" class="primary" type="button">認証する</button>
+  </section>
+
+  <section id="passwordRecoveryView" class="card login hidden">
+    <h1>パスワード再設定</h1>
+    <p class="muted">新しいパスワードを設定してください。設定後、必要に応じてMFA認証・再登録へ進みます。</p>
+    <div id="passwordRecoveryMsg" class="notice hidden"></div>
+    <form id="passwordRecoveryForm">
+      <div class="field"><label>新しいパスワード</label><input id="recoveryPassword" type="password" autocomplete="new-password" minlength="12" required></div>
+      <div class="field"><label>新しいパスワード（確認）</label><input id="recoveryPasswordConfirm" type="password" autocomplete="new-password" minlength="12" required></div>
+      <p class="muted">12文字以上で、英大文字・英小文字・数字・記号をそれぞれ1文字以上使用してください。</p>
+      <button class="primary" style="width:100%" type="submit">新しいパスワードを設定</button>
+    </form>
   </section>
 
   <section id="passwordSetupView" class="card login hidden">
@@ -198,7 +211,7 @@
   const dateText = (v) => v ? new Intl.DateTimeFormat('ja-JP',{year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(v)) : '—';
   const statusText = (v) => ({draft:'下書き',finalized:'確定済み',sent:'送付済み',accepted:'承認済み',rejected:'却下',open:'未対応',in_progress:'対応中',resolved:'解決',closed:'完了',active:'有効',inactive:'無効',planned:'予定',delivered:'納品済み'}[v] || v || '—');
   const toast = (m) => { const e=$('#toast'); e.textContent=m; e.style.display='block'; clearTimeout(window.__toastTimer); window.__toastTimer=setTimeout(()=>e.style.display='none',2500); };
-  const show = (id) => ['loginView','mfaView','passwordSetupView','appView'].forEach(x => $('#'+x).classList.toggle('hidden',x!==id));
+  const show = (id) => ['loginView','mfaView','passwordRecoveryView','passwordSetupView','appView'].forEach(x => $('#'+x).classList.toggle('hidden',x!==id));
   const notice = (id,msg,ok=false) => { const e=$(id); e.textContent=msg; e.className='notice '+(ok?'ok':'error'); e.classList.remove('hidden'); };
   const rpc = async (name,args={}) => { const {data,error}=await supabase.rpc(name,args); if(error) throw error; return data; };
 
@@ -2227,8 +2240,11 @@
                 ' / セッション: '+esc(a.session_count||0)+
                 ' / 最終ログイン: '+esc(dateText(a.last_sign_in_at))+
               '</div>'+
-              (a.is_current_user?'<p class="muted">自分自身の権限変更・利用停止はできません。</p>':'')+
-              '<button class="primary" type="submit">変更を保存</button>'+
+              (a.is_current_user?'<p class="muted">自分自身の権限変更・利用停止・MFAリセットはできません。</p>':'')+
+              '<div class="row">'+
+                '<button class="primary" type="submit">変更を保存</button>'+
+                (!a.is_current_user && Number(a.mfa_count||0)>0?'<button id="accountMfaResetBtn" class="orange" type="button">MFAをリセット</button>':'')+
+              '</div>'+
             '</form>'+
             '<div id="accountEditMsg" class="notice hidden"></div>'+
           '</section>';
@@ -2264,6 +2280,27 @@
             if(save) save.disabled=false;
           }
         };
+
+        const resetBtn=$('#accountMfaResetBtn');
+        if(resetBtn){
+          resetBtn.onclick=async()=>{
+            resetBtn.disabled=true;
+            try{
+              const {data,error}=await supabase.functions.invoke('admin-user',{
+                body:{action:'reset_mfa',userId:a.user_id}
+              });
+              if(error) throw error;
+              if(data?.error) throw new Error(data.message||data.error);
+              notice('#accountEditMsg','MFAをリセットしました。対象ユーザーは次回ログイン時にAuthenticatorの再登録が必要です。',true);
+              toast('MFAをリセットしました');
+              setTimeout(()=>go('accounts'),700);
+            }catch(err){
+              notice('#accountEditMsg',err.message||String(err));
+            }finally{
+              resetBtn.disabled=false;
+            }
+          };
+        }
       };
     });
   }
@@ -2499,6 +2536,50 @@
     await go('home');
   }
 
+  $('#forgotPasswordBtn').onclick=async()=>{
+    const email=$('#email').value.trim();
+    if(!email) return notice('#loginMsg','メールアドレスを入力してから「パスワードを忘れた方」を押してください。');
+    const btn=$('#forgotPasswordBtn');
+    btn.disabled=true;
+    try{
+      const {error}=await supabase.auth.resetPasswordForEmail(email,{
+        redirectTo:window.location.origin+window.location.pathname
+      });
+      if(error) throw error;
+      notice('#loginMsg','パスワード再設定メールを送信しました。メール内のリンクから再設定してください。',true);
+    }catch(err){
+      notice('#loginMsg',err.message||String(err));
+    }finally{
+      btn.disabled=false;
+    }
+  };
+
+  $('#passwordRecoveryForm').onsubmit=async e=>{
+    e.preventDefault();
+    const btn=e.submitter;
+    if(btn) btn.disabled=true;
+    try{
+      const password=$('#recoveryPassword').value;
+      const confirm=$('#recoveryPasswordConfirm').value;
+      if(password!==confirm) throw new Error('パスワードが一致しません。');
+      if(password.length<12) throw new Error('パスワードは12文字以上にしてください。');
+      if(!/[A-Z]/.test(password)) throw new Error('英大文字を1文字以上含めてください。');
+      if(!/[a-z]/.test(password)) throw new Error('英小文字を1文字以上含めてください。');
+      if(!/[0-9]/.test(password)) throw new Error('数字を1文字以上含めてください。');
+      if(!/[^A-Za-z0-9]/.test(password)) throw new Error('記号を1文字以上含めてください。');
+
+      const {error}=await supabase.auth.updateUser({password});
+      if(error) throw error;
+      $('#passwordRecoveryForm').reset();
+      notice('#passwordRecoveryMsg','パスワードを変更しました。続けてMFA認証へ進みます。',true);
+      setTimeout(()=>prepareMfa(),500);
+    }catch(err){
+      notice('#passwordRecoveryMsg',err.message||String(err));
+    }finally{
+      if(btn) btn.disabled=false;
+    }
+  };
+
   $('#initialPasswordForm').onsubmit=async e=>{
     e.preventDefault();
     const btn=e.submitter;
@@ -2594,6 +2675,12 @@
     $('#dbBadge').textContent='DB接続エラー';
     $('#dbBadge').className='pill bad';
   }
+
+  supabase.auth.onAuthStateChange((event)=>{
+    if(event==='PASSWORD_RECOVERY'){
+      setTimeout(()=>show('passwordRecoveryView'),0);
+    }
+  });
 
   await boot();
 </script>
