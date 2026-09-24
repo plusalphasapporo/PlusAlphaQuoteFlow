@@ -1096,11 +1096,30 @@
         const unread=await refreshCallConnectUnread();
         const item=(unread.items||[])[0];
         if(item && item.id!==lastCallConnectPopupId){
-          lastCallConnectPopupId=item.id;
-          await showCallConnectIncomingPopup(item);
+          try{
+            await showCallConnectIncomingPopup(item);
+            lastCallConnectPopupId=item.id;
+          }catch(err){
+            mountAppModal(
+              '<div class="appModalHead"><div><h2>CallConnect 着信</h2><p>顧客カルテ表示でエラーが発生したため簡易表示しています。</p></div><button id="callconnectFallbackClose" class="ghost" type="button">×</button></div>'+
+              '<div class="appModalBody">'+
+                '<div class="notice ok"><strong>'+esc(item.matched_customer_name||item.contact_company||item.contact_name||'顧客未照合')+'</strong><br>電話 '+esc(item.contact_number||'—')+'</div>'+
+                '<div class="modalGrid2">'+
+                  '<div class="item"><strong>顧客照合</strong><p>'+esc(item.matched_customer_id?'一致':'未照合')+'</p></div>'+
+                  '<div class="item"><strong>案件</strong><p>'+esc(item.support_ticket_id?'作成済み':'未作成')+'</p></div>'+
+                '</div>'+
+              '</div>'+
+              '<div class="appModalFoot"><button id="callconnectFallbackOpen" class="primary" type="button">CallConnectを開く</button></div>'
+            );
+            $('#callconnectFallbackClose').onclick=closeAppModal;
+            $('#callconnectFallbackOpen').onclick=async()=>{closeAppModal();await go('support_callconnect');};
+            lastCallConnectPopupId=item.id;
+          }
           await setupGlobalHeader();
         }
-      }catch(_){}
+      }catch(err){
+        console.error('CallConnect notification check failed',err);
+      }
     };
 
     await checkUnread();
@@ -1116,11 +1135,15 @@
         const unread=await refreshCallConnectUnread();
         const item=(unread.items||[]).find(x=>x.id===payload.new?.id);
         if(!item) return;
-        lastCallConnectPopupId=item.id;
         const type={201:'着信',401:'不在着信',402:'営業時間外着信'}[item.record_status]||'入電';
         const who=item.contact_company||item.contact_name||item.contact_number||'電話番号未取得';
         toast('CallConnect '+type+'：'+who);
-        await showCallConnectIncomingPopup(item);
+        try{
+          await showCallConnectIncomingPopup(item);
+          lastCallConnectPopupId=item.id;
+        }catch(err){
+          console.error('CallConnect popup failed',err);
+        }
         if(currentPage==='support_callconnect') await renderSupportCallConnect();
         await setupGlobalHeader();
       })
