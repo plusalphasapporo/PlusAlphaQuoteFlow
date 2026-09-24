@@ -1607,15 +1607,21 @@
   async function renderProductsTab(){
     const products=await rpc('internal_products_list');
     const rows=(products||[]).map(p=>
-      '<tr><td>'+esc(p.product_code||'—')+'</td><td><strong>'+esc(p.name||'')+'</strong></td><td>'+esc(p.manufacturer||'—')+'</td><td>'+esc(p.supplier_name||'—')+'</td><td>'+esc(p.unit||'台')+'</td><td class="amount">'+esc(money(p.sale_price))+'</td><td class="amount">'+esc(money(p.cost_price))+'</td><td>'+esc(p.procurement_target?'仕入対象':'対象外')+'</td></tr>'
+      '<tr><td>'+esc(p.product_code||'—')+'</td><td><strong>'+esc(p.name||'')+'</strong></td><td>'+esc(p.manufacturer||'—')+'</td><td>'+esc(p.supplier_name||'—')+'</td><td>'+esc(p.unit||'台')+'</td><td class="amount">'+esc(money(p.sale_price))+'</td><td class="amount">'+esc(money(p.cost_price))+'</td><td>'+esc(p.procurement_target?'仕入対象':'対象外')+'</td><td>'+(p.track_serials?'<span class="pill good">台帳管理</span>':'—')+'</td><td><button class="linkBtn productEditBtn" type="button" data-id="'+esc(p.id)+'">編集</button></td></tr>'
     );
     $('#home').innerHTML=
       pageIntro('見積・リース','商品マスタ・見積・リース料率・受注粗利を1画面で管理します。')+
       unifiedTabs([['quotes','見積'],['products','商品マスタ'],['lease_rates','リース料率'],['profit','受注粗利'],['order_ops','受注後処理'],['sales_settings','販売設定']],'products','sales')+
       '<section class="card section"><div class="unifiedToolbar"><div><h2>商品マスタ</h2><p class="sectionDesc">商品コード、メーカー、仕入先、売価、原価、仕入対象を管理します。</p></div><button id="newProductBtn" class="primary" type="button">＋商品登録</button></div>'+
-      dataTable(['商品コード','商品名','メーカー','仕入先','単位','売価','原価','仕入'],rows)+'</section>';
+      dataTable(['商品コード','商品名','メーカー','仕入先','単位','売価','原価','仕入','シリアル管理','操作'],rows)+'</section>';
     bindUnifiedTabs(t=>renderSalesWorkspace(t));
     $('#newProductBtn').onclick=()=>openProductModal();
+    document.querySelectorAll('.productEditBtn').forEach(btn=>{
+      btn.onclick=()=>{
+        const p=(products||[]).find(x=>x.id===btn.dataset.id);
+        if(p) openProductModal(p);
+      };
+    });
   }
 
   async function openProductModal(product=null){
@@ -1636,16 +1642,18 @@
           '<div class="field"><label>仕入価格</label><input id="pmCost" type="number" min="0" value="'+esc(p.cost_price||0)+'"></div>'+
         '</div>'+
         '<label class="row"><input id="pmProcure" type="checkbox" '+(p.procurement_target!==false?'checked':'')+'> 仕入対象</label>'+
+        '<label class="row"><input id="pmTrackSerials" type="checkbox" '+(p.track_serials?'checked':'')+'> シリアル番号を1台ごとに管理し、納品時に機器台帳へ自動登録</label>'+
         '<label class="row"><input id="pmActive" type="checkbox" '+(p.is_active!==false?'checked':'')+'> 有効</label>'+
         '<div class="field"><label>タグ（カンマ区切り）</label><input id="pmTags" value="'+esc((p.tags||[]).join(', '))+'"></div>'+
         '<div class="field"><label>社内メモ</label><textarea id="pmNote" rows="3">'+esc(p.internal_note||'')+'</textarea></div>',
       confirmLabel:'保存',
       onSubmit:async()=>{
-        await rpc('save_product',{
+        await rpc('save_product_full',{
           p_id:p.id||null,p_product_code:$('#pmCode').value.trim()||null,p_name:$('#pmName').value.trim(),
           p_manufacturer:$('#pmMaker').value.trim()||null,p_supplier_name:$('#pmSupplier').value.trim()||null,
           p_unit:$('#pmUnit').value.trim()||'台',p_sale_price:Number($('#pmSale').value||0),p_cost_price:Number($('#pmCost').value||0),
-          p_procurement_target:$('#pmProcure').checked,p_lead_time_days:$('#pmLead').value?Number($('#pmLead').value):null,
+          p_procurement_target:$('#pmProcure').checked,p_track_serials:$('#pmTrackSerials').checked,
+          p_lead_time_days:$('#pmLead').value?Number($('#pmLead').value):null,
           p_tags:$('#pmTags').value.split(',').map(x=>x.trim()).filter(Boolean),p_is_active:$('#pmActive').checked,
           p_internal_note:$('#pmNote').value.trim()||null
         });
@@ -1815,8 +1823,8 @@
           '<td>'+esc(x.supplier_name||'—')+'</td>'+
           '<td>'+esc(x.customer_name||'')+'</td>'+
           '<td><strong>'+esc(x.description||'')+'</strong></td>'+
-          '<td>'+esc(x.received_quantity||0)+' / '+esc(x.quantity||0)+'</td>'+
-          '<td>'+esc((x.serials||[]).length)+'</td>'+
+          '<td>'+esc(x.received_quantity||0)+' / '+esc(x.quantity||0)+(Number(x.received_quantity||0)>=Number(x.quantity||0)?' <span class="pill good">完了</span>':'')+'</td>'+
+          '<td>'+esc((x.serials||[]).length)+(x.track_serials?' / '+esc(x.received_quantity||0)+' 必須':'')+'</td>'+
           '<td>'+esc(dateText(x.expected_delivery_date))+'</td>'+
           '<td><button class="linkBtn receiveItemBtn" type="button" data-id="'+esc(x.item_id)+'">入荷登録</button></td>'+
         '</tr>'
@@ -1824,7 +1832,7 @@
       $('#home').innerHTML=
         pageIntro('仕入・納品','受注から発注・入荷・シリアル・納品・機器台帳までを一続きで管理します。')+
         unifiedTabs(tabs,tab,'procurement')+
-        '<section class="card section"><h2>入荷・シリアル</h2><p class="sectionDesc">入荷数量、シリアル番号、保証期限を発注明細単位で登録します。</p>'+
+        '<section class="card section"><h2>入荷・シリアル</h2><p class="sectionDesc">シリアル管理対象の商品は、累計入荷数量とシリアル件数が一致しないと保存できません。納品完了するとシリアル単位で機器台帳へ自動登録します。</p>'+
         dataTable(['発注番号','仕入先','顧客','明細','入荷数量','シリアル','納期','操作'],rows)+'</section>';
       bindUnifiedTabs(t=>renderProcurementWorkspace(t));
       document.querySelectorAll('.receiveItemBtn').forEach(btn=>{
@@ -1837,17 +1845,24 @@
             description:(item.purchase_order_number||'')+' / '+(item.description||''),
             body:
               '<div class="modalGrid2">'+
-                '<div class="field"><label>発注数量</label><input value="'+esc(item.quantity||0)+'" disabled></div>'+
-                '<div class="field"><label>入荷数量</label><input id="recvQty" type="number" min="0" max="'+esc(item.quantity||0)+'" step="0.01" value="'+esc(item.received_quantity||0)+'"></div>'+
+                '<div class="field"><label>商品</label><input value="'+esc((item.product_code?item.product_code+' / ':'')+(item.product_name||item.description||''))+'" disabled></div>'+
+                '<div class="field"><label>管理方式</label><input value="'+esc(item.track_serials?'シリアル・機器台帳管理':'数量管理')+'" disabled></div>'+
+                '<div class="field"><label>発注数量</label><input value="'+esc(item.quantity||0)+' '+esc(item.unit||'台')+'" disabled></div>'+
+                '<div class="field"><label>累計入荷数量</label><input id="recvQty" type="number" min="0" max="'+esc(item.quantity||0)+'" step="'+(item.track_serials?'1':'0.01')+'" value="'+esc(item.received_quantity||0)+'"></div>'+
+                '<div class="field"><label>未入荷</label><input value="'+esc(item.remaining_quantity||0)+' '+esc(item.unit||'台')+'" disabled></div>'+
+                '<div class="field"><label>登録済みシリアル</label><input value="'+esc((item.serials||[]).length)+'件" disabled></div>'+
               '</div>'+
-              '<div class="field"><label>シリアル番号・保証期限</label><textarea id="recvSerials" rows="8" placeholder="1行1台。例：SN123456 | 2029-03-31">'+esc(serialText)+'</textarea><p class="muted">保証期限は「シリアル | YYYY-MM-DD」の形式で入力できます。</p></div>',
+              (item.track_serials?'<div class="notice">この商品はシリアル管理対象です。累計入荷数量とシリアル件数を同じ数にしてください。</div>':'')+
+              '<div class="field"><label>シリアル番号・保証期限</label><textarea id="recvSerials" rows="10" placeholder="1行1台。例：SN123456 | 2029-03-31">'+esc(serialText)+'</textarea><p class="muted">既存行も含めた現在の全シリアルを入力します。保証期限は「シリアル | YYYY-MM-DD」。</p></div>',
             confirmLabel:'入荷を保存',
             onSubmit:async()=>{
               const serials=$('#recvSerials').value.split('\n').map(x=>x.trim()).filter(Boolean).map(line=>{
                 const parts=line.split('|').map(x=>x.trim());
                 return {serial_number:parts[0],warranty_until:parts[1]||null};
               });
-              await rpc('receive_purchase_item',{p_purchase_order_item_id:item.item_id,p_received_quantity:Number($('#recvQty').value||0),p_serials:serials});
+              const qty=Number($('#recvQty').value||0);
+              if(item.track_serials && serials.length!==qty) throw new Error('シリアル管理対象は、入荷数量とシリアル件数を一致させてください。');
+              await rpc('receive_purchase_item_full',{p_purchase_order_item_id:item.item_id,p_received_quantity:qty,p_serials:serials});
               closeModal();toast('入荷情報を保存しました');await renderProcurementWorkspace('receiving');
             }
           });
@@ -2558,6 +2573,7 @@
     function poItemRow(item={}){
       return '<div class="quoteItemRow" data-po-item-row>'+
         '<input class="poi-product-id" type="hidden" value="'+esc(item.product_id||'')+'">'+
+        '<input class="poi-track-serials" type="hidden" value="'+(item.track_serials?'true':'false')+'">'+
         '<div class="field descField"><label>明細名</label><input class="poi-desc" required value="'+esc(item.description||'')+'"></div>'+
         '<div class="field"><label>数量</label><input class="poi-qty" type="number" min="0" step="0.01" value="'+esc(item.quantity??1)+'" required></div>'+
         '<div class="field"><label>単位</label><input class="poi-unit-name" value="'+esc(item.unit||'台')+'"></div>'+
@@ -2588,7 +2604,8 @@
         description:p.name,
         quantity:1,
         unit:p.unit||'台',
-        unit_cost:p.cost_price||0
+        unit_cost:p.cost_price||0,
+        track_serials:!!p.track_serials
       }));
       bindPORemove();
     };
@@ -2631,7 +2648,8 @@
             quantity,
             unit:row.querySelector('.poi-unit-name')?.value.trim()||'台',
             unit_cost,
-            expected_delivery_date:row.querySelector('.poi-expected')?.value||null
+            expected_delivery_date:row.querySelector('.poi-expected')?.value||null,
+            track_serials:row.querySelector('.poi-track-serials')?.value==='true'
           };
         });
         await rpc('create_purchase_order_full',{
@@ -2815,6 +2833,7 @@
           '<div id="poEditItems" class="quoteItems">'+items.map(i=>
             '<div class="quoteItemRow" data-po-edit-row>'+
               '<input class="poe-product-id" type="hidden" value="'+esc(i.product_id||'')+'">'+
+              '<input class="poe-track-serials" type="hidden" value="'+(i.track_serials?'true':'false')+'">'+
               '<div class="field descField"><label>明細名</label><input class="poe-desc" value="'+esc(i.description||'')+'" required></div>'+
               '<div class="field"><label>数量</label><input class="poe-qty" type="number" min="0" step="0.01" value="'+esc(i.quantity)+'" required></div>'+
               '<div class="field"><label>単位</label><input class="poe-unit-name" value="'+esc(i.unit||'台')+'"></div>'+
@@ -2852,6 +2871,7 @@
     function poEditRow(item={}){
       return '<div class="quoteItemRow" data-po-edit-row>'+
         '<input class="poe-product-id" type="hidden" value="'+esc(item.product_id||'')+'">'+
+        '<input class="poe-track-serials" type="hidden" value="'+(item.track_serials?'true':'false')+'">'+
         '<div class="field descField"><label>明細名</label><input class="poe-desc" value="'+esc(item.description||'')+'" required></div>'+
         '<div class="field"><label>数量</label><input class="poe-qty" type="number" min="0" step="0.01" value="'+esc(item.quantity??1)+'" required></div>'+
         '<div class="field"><label>単位</label><input class="poe-unit-name" value="'+esc(item.unit||'台')+'"></div>'+
@@ -2896,7 +2916,8 @@
             quantity,
             unit:row.querySelector('.poe-unit-name')?.value.trim()||'台',
             unit_cost,
-            expected_delivery_date:row.querySelector('.poe-expected')?.value||null
+            expected_delivery_date:row.querySelector('.poe-expected')?.value||null,
+            track_serials:row.querySelector('.poe-track-serials')?.value==='true'
           };
         });
         await rpc('update_purchase_order_full',{
@@ -3709,6 +3730,11 @@
             '<div class="field"><label>機器番号</label><input id="assetDetailNumber" value="'+esc(a.asset_number||'')+'"></div>'+
             '<div class="field"><label>機種</label><input id="assetDetailModel" value="'+esc(a.model_name||'')+'"></div>'+
             '<div class="field"><label>シリアル番号</label><input id="assetDetailSerial" value="'+esc(a.serial_number||'')+'"></div>'+
+            '<div class="field"><label>商品コード</label><input value="'+esc(a.product_code||'—')+'" disabled></div>'+
+            '<div class="field"><label>保証期限</label><input id="assetDetailWarranty" type="date" value="'+esc(a.warranty_until||'')+'"></div>'+
+            '<div class="field"><label>設置日時</label><input id="assetDetailInstalled" type="datetime-local"></div>'+
+            '<div class="field"><label>設置場所</label><input id="assetDetailLocation" value="'+esc(a.installation_location||'')+'"></div>'+
+            '<div class="field"><label>納品元</label><input value="'+esc(a.source_delivery_number||'手動登録')+'" disabled></div>'+
             '<div class="field"><label>状態</label><input value="'+esc(statusText(a.status))+'" disabled></div>'+
           '</div>'+
           '<div class="field"><label>社内メモ</label><textarea id="assetDetailNote" rows="3">'+esc(a.internal_note||'')+'</textarea></div>'+
@@ -3719,12 +3745,21 @@
         '<h3>顧客の契約・保守</h3>'+dataTable(['契約番号','状態','開始日','終了日'],contractRows)+
       '</section>';
     $('#assetDetailCloseBtn').onclick=()=>{$('#assetDetailHost').innerHTML='';};
+    if(a.installed_at){
+      const dt=new Date(a.installed_at);
+      $('#assetDetailInstalled').value=new Date(dt.getTime()-dt.getTimezoneOffset()*60000).toISOString().slice(0,16);
+    }
     $('#assetDetailForm').onsubmit=async e=>{
       e.preventDefault();const btn=e.submitter;if(btn)btn.disabled=true;
       try{
-        await rpc('update_asset',{
-          p_asset_id:a.id,p_asset_number:$('#assetDetailNumber').value.trim()||null,
-          p_serial_number:$('#assetDetailSerial').value.trim()||null,p_model_name:$('#assetDetailModel').value.trim()||null,
+        await rpc('update_asset_full',{
+          p_asset_id:a.id,
+          p_asset_number:$('#assetDetailNumber').value.trim()||null,
+          p_serial_number:$('#assetDetailSerial').value.trim()||null,
+          p_model_name:$('#assetDetailModel').value.trim()||null,
+          p_warranty_until:$('#assetDetailWarranty').value||null,
+          p_installed_at:$('#assetDetailInstalled').value?new Date($('#assetDetailInstalled').value).toISOString():null,
+          p_installation_location:$('#assetDetailLocation').value.trim()||null,
           p_internal_note:$('#assetDetailNote').value.trim()||null
         });
         notice('#assetDetailMsg','機器情報を更新しました。',true);toast('機器情報を更新しました');
@@ -3747,12 +3782,12 @@
     const [assets,customers]=await Promise.all([rpc('internal_assets_list'),rpc('internal_customers_list')]);
     const options=(customers||[]).map(c=>'<option value="'+esc(c.id)+'">'+esc(c.customer_code||'—')+' / '+esc(c.name)+'</option>').join('');
     const rows=(assets||[]).map(a=>
-      '<tr><td><strong>'+esc(a.asset_number||'未採番')+'</strong></td><td>'+esc(a.customer?.name||'—')+'</td><td>'+esc(a.model_name||'—')+'</td><td>'+esc(a.serial_number||'—')+'</td><td>'+esc(statusText(a.status))+'</td><td>'+esc(a.open_ticket_count||0)+'</td><td><button class="linkBtn assetLedgerOpen" type="button" data-id="'+esc(a.id)+'">詳細</button></td></tr>'
+      '<tr><td><strong>'+esc(a.asset_number||'未採番')+'</strong></td><td>'+esc(a.customer?.name||'—')+'</td><td>'+esc(a.model_name||'—')+'</td><td>'+esc(a.serial_number||'—')+'</td><td>'+esc(dateText(a.warranty_until))+'</td><td>'+esc(a.installation_location||'—')+'</td><td>'+esc(a.source_delivery_number||'手動登録')+'</td><td>'+esc(statusText(a.status))+'</td><td>'+esc(a.open_ticket_count||0)+'</td><td><button class="linkBtn assetLedgerOpen" type="button" data-id="'+esc(a.id)+'">詳細</button></td></tr>'
     );
     $('#home').innerHTML=
       pageIntro('機器台帳','納品・設置された機器をシリアル単位で管理します。')+
       '<section class="card section"><div class="unifiedToolbar"><div><h2>機器一覧</h2><p class="sectionDesc">納品から自動登録された機器と手動登録した機器を同じ台帳で管理します。</p></div><button id="assetLedgerCreateBtn" class="primary" type="button">＋機器登録</button></div>'+
-      '<div id="assetDetailHost"></div>'+dataTable(['機器番号','顧客','機種','シリアル','状態','対応中','操作'],rows)+'</section>';
+      '<div id="assetDetailHost"></div>'+dataTable(['機器番号','顧客','機種','シリアル','保証期限','設置場所','納品元','状態','対応中','操作'],rows)+'</section>';
 
     $('#assetLedgerCreateBtn').onclick=()=>openModal({
       title:'機器を登録',description:'手動でOA機器台帳へ追加します。納品フローからも自動登録されます。',
