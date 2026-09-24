@@ -458,9 +458,88 @@
     }
   }
 
+  async function renderCustomerQuoteDetail(quoteId){
+    const detail=await rpc('customer_quote_detail',{p_quote_id:quoteId});
+    if(!detail?.quote) throw new Error('見積が見つかりません。');
+    const q=detail.quote;
+    const items=detail.items||[];
+    const host=$('#quoteDetailHost');
+    const rows=items.map(i=>
+      '<tr><td>'+esc(i.description)+'</td><td>'+esc(i.quantity)+'</td><td class="amount">'+esc(money(i.unit_price))+'</td><td class="amount">'+esc(money(Number(i.quantity||0)*Number(i.unit_price||0)))+'</td></tr>'
+    );
+
+    const canRespond=q.status==='finalized';
+    const resultNote=q.status==='accepted'
+      ? '<div class="notice ok">この見積は承諾済みです。'+(q.accepted_at?' '+esc(dateText(q.accepted_at)):'')+'</div>'
+      : q.status==='rejected'
+        ? '<div class="notice error">この見積は辞退済みです。'+(q.decline_reason?'<br>理由: '+esc(q.decline_reason):'')+'</div>'
+        : '';
+
+    host.innerHTML=
+      '<section class="card section">'+
+        '<div class="quoteDetailHead">'+
+          '<div><h2>見積詳細</h2><p class="sectionDesc">'+esc(q.quote_number||'')+' / '+esc(statusText(q.status))+'</p></div>'+
+          '<button id="quoteDetailClose" class="ghost" type="button">閉じる</button>'+
+        '</div>'+
+        '<div class="quoteTotals"><span>小計 <strong>'+esc(money(q.subtotal))+'</strong></span><span>税 <strong>'+esc(money(q.tax_amount))+'</strong></span><span>合計 <strong>'+esc(money(q.total_amount))+'</strong></span></div>'+
+        '<p class="sectionDesc">有効期限: '+esc(dateText(q.valid_until))+'</p>'+
+        dataTable(['明細','数量','単価','金額'],rows)+
+        resultNote+
+        (canRespond
+          ? '<div class="row" style="margin-top:16px"><button id="quoteAcceptBtn" class="green" type="button">この見積を承諾</button><button id="quoteRejectToggle" class="ghost" type="button">辞退する</button></div>'+
+            '<div id="quoteRejectBox" class="hidden" style="margin-top:12px">'+
+              '<div class="field"><label>辞退理由（任意）</label><textarea id="quoteDeclineReason" rows="3" placeholder="例：予算都合、時期未定など"></textarea></div>'+
+              '<button id="quoteRejectBtn" class="orange" type="button">辞退を確定</button>'+
+            '</div>'+
+            '<div id="quoteResponseMsg" class="notice hidden"></div>'
+          : '')+
+      '</section>';
+
+    $('#quoteDetailClose').onclick=()=>{ host.innerHTML=''; };
+    host.scrollIntoView({behavior:'smooth',block:'start'});
+
+    if(canRespond){
+      $('#quoteAcceptBtn').onclick=async()=>{
+        const btn=$('#quoteAcceptBtn');
+        btn.disabled=true;
+        try{
+          const r=await rpc('respond_to_quote',{p_quote_id:q.id,p_decision:'accept',p_decline_reason:null});
+          notice('#quoteResponseMsg','見積を承諾しました。',true);
+          toast('見積を承諾しました');
+          setTimeout(()=>go('quotes'),450);
+        }catch(err){
+          notice('#quoteResponseMsg',err.message||String(err));
+        }finally{
+          btn.disabled=false;
+        }
+      };
+
+      $('#quoteRejectToggle').onclick=()=>$('#quoteRejectBox').classList.toggle('hidden');
+      $('#quoteRejectBtn').onclick=async()=>{
+        const btn=$('#quoteRejectBtn');
+        btn.disabled=true;
+        try{
+          await rpc('respond_to_quote',{
+            p_quote_id:q.id,
+            p_decision:'reject',
+            p_decline_reason:$('#quoteDeclineReason').value.trim()||null
+          });
+          notice('#quoteResponseMsg','見積を辞退しました。',true);
+          toast('見積を辞退しました');
+          setTimeout(()=>go('quotes'),450);
+        }catch(err){
+          notice('#quoteResponseMsg',err.message||String(err));
+        }finally{
+          btn.disabled=false;
+        }
+      };
+    }
+  }
+
   async function renderQuotes(){
     const role=bootData.context?.role;
     const internal=role==='internal_admin'||role==='internal_staff';
+    const customer=role==='customer_user';
     const [{data,error},cmap]=await Promise.all([
       supabase.from('quotes').select('id,customer_id,quote_number,status,subtotal,tax_amount,total_amount,valid_until,created_at').order('created_at',{ascending:false}),
       customerMap()
@@ -499,7 +578,7 @@
         '<td class="amount">'+esc(money(q.total_amount))+'</td>'+
         '<td>'+esc(dateText(q.valid_until))+'</td>'+
         '<td>'+esc(dateText(q.created_at))+'</td>'+
-        (internal?'<td><button class="linkBtn quoteEdit" type="button" data-id="'+esc(q.id)+'">詳細・編集</button></td>':'')+
+        (internal?'<td><button class="linkBtn quoteEdit" type="button" data-id="'+esc(q.id)+'">詳細・編集</button></td>':customer?'<td><button class="linkBtn quoteCustomerDetail" type="button" data-id="'+esc(q.id)+'">詳細</button></td>':'')+
       '</tr>';
     });
 
@@ -508,7 +587,7 @@
       createBox+
       '<div id="quoteDetailHost"></div>'+
       '<section class="section">'+dataTable(
-        internal?['見積番号','顧客','状態','合計','有効期限','作成日','操作']:['見積番号','顧客','状態','合計','有効期限','作成日'],
+        (internal||customer)?['見積番号','顧客','状態','合計','有効期限','作成日','操作']:['見積番号','顧客','状態','合計','有効期限','作成日'],
         rows
       )+'</section>';
 
@@ -543,6 +622,21 @@
           btn.disabled=true;
           try{
             await renderQuoteEditor(btn.dataset.id,cmap);
+          }catch(err){
+            toast(err.message||String(err));
+          }finally{
+            btn.disabled=false;
+          }
+        };
+      });
+    }
+
+    if(customer){
+      document.querySelectorAll('.quoteCustomerDetail').forEach(btn=>{
+        btn.onclick=async()=>{
+          btn.disabled=true;
+          try{
+            await renderCustomerQuoteDetail(btn.dataset.id);
           }catch(err){
             toast(err.message||String(err));
           }finally{
