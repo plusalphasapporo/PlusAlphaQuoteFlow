@@ -2444,7 +2444,10 @@
   }
 
   async function renderOrderDetail(orderId){
-    const detail=await rpc('internal_order_detail',{p_order_id:orderId});
+    const [detail,products]=await Promise.all([
+      rpc('internal_order_detail',{p_order_id:orderId}),
+      rpc('internal_products_list')
+    ]);
     const o=detail?.order;
     if(!o) throw new Error('受注が見つかりません。');
     const customer=detail.customer||{};
@@ -2482,21 +2485,39 @@
           ['受注日',dateText(o.ordered_at)],
           ['元見積',quote?.quote_number||'—']
         ])+
-        (o.internal_note?'<div class="notice">社内メモ: '+esc(o.internal_note)+'</div>':'')+
+        '<section class="card section" style="box-shadow:none">'+
+          '<h3>受注基本情報</h3>'+
+          '<form id="orderBasicForm">'+
+            '<div class="modalGrid2">'+
+              '<div class="field"><label>受注日</label><input id="orderBasicDate" type="datetime-local"></div>'+
+              '<div class="field"><label>受注番号</label><input value="'+esc(o.order_number||'未採番')+'" readonly></div>'+
+            '</div>'+
+            '<div class="field"><label>社内メモ</label><textarea id="orderBasicNote" rows="3">'+esc(o.internal_note||'')+'</textarea></div>'+
+            '<button class="primary" type="submit">受注情報を保存</button>'+
+          '</form><div id="orderBasicMsg" class="notice hidden"></div>'+
+        '</section>'+
         '<section class="card section" style="box-shadow:none">'+
           '<h3>発注を作成</h3>'+
           '<form id="orderCreatePOForm">'+
-            '<div class="row">'+
-              '<div class="field" style="flex:1;min-width:180px"><label>発注番号（任意）</label><input id="orderPONumber"></div>'+
-              '<div class="field" style="flex:1;min-width:180px"><label>仕入先</label><input id="orderPOSupplier"></div>'+
+            '<div class="modalGrid2">'+
+              '<div class="field"><label>発注番号（任意）</label><input id="orderPONumber"></div>'+
+              '<div class="field"><label>仕入先</label><input id="orderPOSupplier"></div>'+
+              '<div class="field"><label>発注日</label><input id="orderPOOrderedAt" type="datetime-local"></div>'+
+              '<div class="field"><label>発注予定納期</label><input id="orderPOExpectedDate" type="date"></div>'+
             '</div>'+
             '<div class="field"><label>社内メモ</label><textarea id="orderPONote" rows="2"></textarea></div>'+
+            '<div class="field"><label>商品マスタから追加</label><select id="orderPOProductPicker"><option value="">商品を選択してください</option>'+
+              (products||[]).filter(p=>p.is_active!==false && p.procurement_target!==false).map(p=>'<option value="'+esc(p.id)+'">'+esc(p.product_code||'—')+' / '+esc(p.name)+' / 原価 '+esc(money(p.cost_price))+'</option>').join('')+
+            '</select></div>'+
+            '<div class="row" style="margin-bottom:10px"><button id="orderPOAddProduct" class="ghost" type="button">商品を発注明細へ追加</button></div>'+
             '<div id="orderPOItems" class="quoteItems">'+
               '<div class="quoteItemRow" data-po-item-row>'+
+                '<input class="poi-product-id" type="hidden">'+
                 '<div class="field descField"><label>明細名</label><input class="poi-desc" required></div>'+
                 '<div class="field"><label>数量</label><input class="poi-qty" type="number" min="0" step="0.01" value="1" required></div>'+
+                '<div class="field"><label>単位</label><input class="poi-unit-name" value="台"></div>'+
                 '<div class="field"><label>単価原価</label><input class="poi-unit" type="number" min="0" step="1" value="0" required></div>'+
-                '<div></div>'+
+                '<div class="field"><label>明細納期</label><input class="poi-expected" type="date"></div>'+
                 '<button class="removePOItem" type="button" title="明細を削除">×</button>'+
               '</div>'+
             '</div>'+
@@ -2524,12 +2545,14 @@
     $('#orderDetailClose').onclick=()=>{$('#orderDetailHost').innerHTML='';};
     $('#orderDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
 
-    function poItemRow(){
+    function poItemRow(item={}){
       return '<div class="quoteItemRow" data-po-item-row>'+
-        '<div class="field descField"><label>明細名</label><input class="poi-desc" required></div>'+
-        '<div class="field"><label>数量</label><input class="poi-qty" type="number" min="0" step="0.01" value="1" required></div>'+
-        '<div class="field"><label>単価原価</label><input class="poi-unit" type="number" min="0" step="1" value="0" required></div>'+
-        '<div></div>'+
+        '<input class="poi-product-id" type="hidden" value="'+esc(item.product_id||'')+'">'+
+        '<div class="field descField"><label>明細名</label><input class="poi-desc" required value="'+esc(item.description||'')+'"></div>'+
+        '<div class="field"><label>数量</label><input class="poi-qty" type="number" min="0" step="0.01" value="'+esc(item.quantity??1)+'" required></div>'+
+        '<div class="field"><label>単位</label><input class="poi-unit-name" value="'+esc(item.unit||'台')+'"></div>'+
+        '<div class="field"><label>単価原価</label><input class="poi-unit" type="number" min="0" step="1" value="'+esc(item.unit_cost??0)+'" required></div>'+
+        '<div class="field"><label>明細納期</label><input class="poi-expected" type="date" value="'+esc(item.expected_delivery_date||'')+'"></div>'+
         '<button class="removePOItem" type="button" title="明細を削除">×</button>'+
       '</div>';
     }
@@ -2546,7 +2569,41 @@
       $('#orderPOItems').insertAdjacentHTML('beforeend',poItemRow());
       bindPORemove();
     };
+    const addProductBtn=$('#orderPOAddProduct');
+    if(addProductBtn) addProductBtn.onclick=()=>{
+      const p=(products||[]).find(x=>x.id===$('#orderPOProductPicker').value);
+      if(!p) return;
+      $('#orderPOItems').insertAdjacentHTML('beforeend',poItemRow({
+        product_id:p.id,
+        description:p.name,
+        quantity:1,
+        unit:p.unit||'台',
+        unit_cost:p.cost_price||0
+      }));
+      bindPORemove();
+    };
     bindPORemove();
+
+    const orderBasicDate=$('#orderBasicDate');
+    if(orderBasicDate && o.ordered_at){
+      const dt=new Date(o.ordered_at);
+      orderBasicDate.value=new Date(dt.getTime()-dt.getTimezoneOffset()*60000).toISOString().slice(0,16);
+    }
+    $('#orderBasicForm').onsubmit=async e=>{
+      e.preventDefault();
+      const btn=e.submitter;if(btn)btn.disabled=true;
+      try{
+        await rpc('update_order_basic',{
+          p_order_id:o.id,
+          p_ordered_at:$('#orderBasicDate').value?new Date($('#orderBasicDate').value).toISOString():null,
+          p_internal_note:$('#orderBasicNote').value.trim()||null
+        });
+        notice('#orderBasicMsg','受注情報を更新しました。',true);
+        toast('受注情報を更新しました');
+        await renderOrderDetail(o.id);
+      }catch(err){notice('#orderBasicMsg',err.message||String(err));}
+      finally{if(btn)btn.disabled=false;}
+    };
 
     $('#orderCreatePOForm').onsubmit=async e=>{
       e.preventDefault();
@@ -2558,12 +2615,21 @@
           const quantity=Number(row.querySelector('.poi-qty').value||0);
           const unit_cost=Number(row.querySelector('.poi-unit').value||0);
           if(!description) throw new Error((index+1)+'行目の明細名を入力してください。');
-          return {description,quantity,unit_cost};
+          return {
+            product_id:row.querySelector('.poi-product-id')?.value||null,
+            description,
+            quantity,
+            unit:row.querySelector('.poi-unit-name')?.value.trim()||'台',
+            unit_cost,
+            expected_delivery_date:row.querySelector('.poi-expected')?.value||null
+          };
         });
-        await rpc('create_purchase_order',{
+        await rpc('create_purchase_order_full',{
           p_order_id:o.id,
           p_purchase_order_number:$('#orderPONumber').value.trim()||null,
           p_supplier_name:$('#orderPOSupplier').value.trim()||null,
+          p_ordered_at:$('#orderPOOrderedAt').value?new Date($('#orderPOOrderedAt').value).toISOString():null,
+          p_expected_delivery_date:$('#orderPOExpectedDate').value||null,
           p_internal_note:$('#orderPONote').value.trim()||null,
           p_items:items
         });
