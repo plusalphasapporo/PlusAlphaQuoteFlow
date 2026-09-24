@@ -292,7 +292,7 @@
     'internal_contract_detail','internal_assets_list','internal_customers_list',
     'internal_customer_detail','internal_customer_contacts','internal_customer_registration_options','support_ticket_workspace',
     'customer_ticket_detail','internal_numbering_settings','internal_accounts_list',
-    'internal_account_companies','internal_audit_workspace','internal_document_profile','internal_demo_seed_status','internal_company_settings',
+    'internal_account_companies','internal_audit_workspace','internal_document_profile','internal_demo_seed_status','internal_company_settings','internal_entity_audit_history',
     'internal_products_list','internal_lease_rates_list','internal_order_profitability','internal_customer_unified_workspace','internal_receiving_workspace','internal_order_operation','role_knowledge_articles',
     'support_customer_directory','support_asset_directory','support_handoff_history','support_customer_context',
     'internal_case_directory','internal_handoff_history','internal_knowledge_articles'
@@ -556,6 +556,140 @@
     if(!v) return 0;
     const t=new Date(v).getTime();
     return Number.isFinite(t)?t:0;
+  }
+
+
+  const AUDIT_ACTION_LABELS={
+    'customer.created':'顧客作成',
+    'customer.updated':'顧客更新',
+    'contact.created':'担当者作成',
+    'contact.updated':'担当者更新',
+    'quote.created':'見積作成',
+    'quote.updated':'見積更新',
+    'quote.finalized':'見積確定',
+    'quote.submitted_for_approval':'見積承認申請',
+    'quote.admin_approved':'見積管理者承認',
+    'quote.returned_for_revision':'見積差し戻し',
+    'quote.accepted':'見積承諾',
+    'quote.rejected':'見積辞退',
+    'order.created':'受注作成',
+    'order.updated':'受注更新',
+    'purchase_order.created':'発注作成',
+    'purchase_order.created_full':'発注作成',
+    'purchase_order.updated':'発注更新',
+    'purchase_order.updated_full':'発注更新',
+    'delivery.created':'納品作成',
+    'delivery.created_full':'納品作成',
+    'delivery.updated':'納品更新',
+    'delivery.updated_full':'納品更新',
+    'delivery.completed':'納品完了',
+    'delivery.completion_confirmed':'納品完了確認',
+    'delivery.reopened':'納品予定へ戻す',
+    'asset.created':'機器作成',
+    'asset.updated':'機器更新',
+    'asset.updated_full':'機器更新'
+  };
+
+  const AUDIT_FIELD_LABELS={
+    name:'名称',customer_code:'顧客コード',trade_name:'屋号',phone:'電話',mobile:'携帯',
+    email:'メール',postal_code:'郵便番号',address1:'住所1',address2:'住所2',
+    manual_hold:'手動ホールド',status:'状態',project_name:'案件名',quote_number:'見積番号',
+    total_amount:'合計金額',ordered_at:'受注日',order_number:'受注番号',
+    purchase_order_number:'発注番号',supplier_name:'仕入先',expected_delivery_date:'予定納期',
+    total_cost:'原価合計',delivery_number:'納品番号',scheduled_at:'納品予定日時',
+    delivered_at:'納品日時',delivery_address1:'納品先住所',delivery_contact_name:'納品先担当者',
+    installation_location:'設置場所',assigned_user_id:'作業担当',completion_confirmed:'完了確認',
+    completion_confirmed_by:'完了確認者',asset_number:'機器番号',serial_number:'シリアル番号',
+    model_name:'機種',warranty_until:'保証期限',installed_at:'設置日時',internal_note:'社内メモ',
+    item_count:'明細数'
+  };
+
+  function auditActionLabel(action){
+    return AUDIT_ACTION_LABELS[action]||action||'操作';
+  }
+
+  function auditRoleLabel(role){
+    return {
+      internal_admin:'自社管理者',
+      internal_staff:'自社スタッフ',
+      support_staff:'サポート会社',
+      customer_user:'顧客会社'
+    }[role]||role||'—';
+  }
+
+  function auditValue(v){
+    if(v===null||v===undefined||v==='') return '—';
+    if(typeof v==='boolean') return v?'はい':'いいえ';
+    if(Array.isArray(v)) return v.length+'件';
+    if(typeof v==='object') return JSON.stringify(v);
+    return String(v);
+  }
+
+  function auditChangedFields(log){
+    const before=log.before_data&&typeof log.before_data==='object'?log.before_data:{};
+    const after=log.after_data&&typeof log.after_data==='object'?log.after_data:{};
+    const keys=[...new Set([...Object.keys(before),...Object.keys(after)])];
+    return keys.filter(k=>JSON.stringify(before[k])!==JSON.stringify(after[k]));
+  }
+
+  async function appendEntityAuditHistory(hostSelector,targetType,targetId){
+    const host=$(hostSelector);
+    if(!host||!targetId) return;
+    try{
+      const logs=await rpc('internal_entity_audit_history',{
+        p_target_type:targetType,
+        p_target_id:String(targetId),
+        p_limit:50
+      });
+
+      const items=(logs||[]).map((log,index)=>{
+        const changed=auditChangedFields(log);
+        const summary=changed.length
+          ? changed.slice(0,5).map(k=>esc(AUDIT_FIELD_LABELS[k]||k)).join('、')+(changed.length>5?' ほか':'')
+          : '状態・処理を記録';
+        const detailId='entityAuditDetail_'+targetType+'_'+String(targetId).replace(/[^A-Za-z0-9]/g,'')+'_'+index;
+        const before=log.before_data&&Object.keys(log.before_data||{}).length
+          ? '<pre style="white-space:pre-wrap;overflow:auto;background:#f8fafc;padding:10px;border-radius:10px;border:1px solid var(--line)">'+esc(JSON.stringify(log.before_data,null,2))+'</pre>'
+          : '<div class="empty">変更前データなし</div>';
+        const after=log.after_data&&Object.keys(log.after_data||{}).length
+          ? '<pre style="white-space:pre-wrap;overflow:auto;background:#f8fafc;padding:10px;border-radius:10px;border:1px solid var(--line)">'+esc(JSON.stringify(log.after_data,null,2))+'</pre>'
+          : '<div class="empty">変更後データなし</div>';
+        return '<div class="item">'+
+          '<div class="row between" style="align-items:flex-start;gap:12px">'+
+            '<div>'+
+              '<strong>'+esc(auditActionLabel(log.action))+'</strong>'+
+              '<p style="margin:4px 0">'+esc(log.actor_name||'system')+' / '+esc(auditRoleLabel(log.actor_role))+'</p>'+
+              '<p class="muted" style="margin:0">'+esc(dateText(log.created_at))+' ・ '+summary+'</p>'+
+            '</div>'+
+            '<button class="ghost entityAuditToggle" type="button" data-target="'+detailId+'">変更内容</button>'+
+          '</div>'+
+          '<div id="'+detailId+'" class="hidden" style="margin-top:12px">'+
+            '<div class="modalGrid2"><div><h4>変更前</h4>'+before+'</div><div><h4>変更後</h4>'+after+'</div></div>'+
+          '</div>'+
+        '</div>';
+      }).join('');
+
+      host.insertAdjacentHTML('beforeend',
+        '<section class="section entityAuditSection">'+
+          '<div class="row between"><div><h3>操作履歴</h3><p class="sectionDesc">このデータに対する変更・確定・完了などの履歴です。</p></div><span class="pill">'+esc((logs||[]).length)+'件</span></div>'+
+          (items||'<div class="empty">操作履歴はまだありません。</div>')+
+        '</section>'
+      );
+
+      host.querySelectorAll('.entityAuditToggle').forEach(btn=>{
+        btn.onclick=()=>{
+          const el=document.getElementById(btn.dataset.target);
+          if(!el) return;
+          const opening=el.classList.contains('hidden');
+          el.classList.toggle('hidden');
+          btn.textContent=opening?'閉じる':'変更内容';
+        };
+      });
+    }catch(err){
+      host.insertAdjacentHTML('beforeend',
+        '<section class="section entityAuditSection"><h3>操作履歴</h3><div class="notice error">'+esc(err.message||String(err))+'</div></section>'
+      );
+    }
   }
 
 
@@ -1068,6 +1202,7 @@
 
     $('#customerDetailClose').onclick=()=>{$('#customerDetailHost').innerHTML='';};
     $('#customerQuoteCreateBtn').onclick=()=>renderCustomerQuoteCreate(c.id);
+    await appendEntityAuditHistory('#customerDetailHost','customer',c.id);
     $('#customerDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
 
     $('#customerEditForm').onsubmit=async e=>{
@@ -1722,6 +1857,7 @@
       }
     });
 
+    await appendEntityAuditHistory('#quoteDetailHost','quote',q.id);
     host.scrollIntoView({behavior:'smooth',block:'start'});
   }
 
@@ -2841,6 +2977,7 @@
       '</section>';
 
     $('#orderDetailClose').onclick=()=>{$('#orderDetailHost').innerHTML='';};
+    await appendEntityAuditHistory('#orderDetailHost','order',o.id);
     $('#orderDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
 
     function poItemRow(item={}){
@@ -3147,6 +3284,7 @@
       })),
       totals:{total:po.total_cost}
     });
+    await appendEntityAuditHistory('#purchaseOrderDetailHost','purchase_order',po.id);
     $('#purchaseOrderDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
 
     function poEditRow(item={}){
@@ -3354,6 +3492,7 @@
       items:[{description:d.notes||'納品',quantity:1,unitLabel:'',amountLabel:''}],
       note:d.completion_note||d.notes||''
     });
+    await appendEntityAuditHistory('#deliveryDetailHost','delivery',d.id);
     $('#deliveryDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
 
     if(d.scheduled_at){
@@ -4161,6 +4300,7 @@
       }catch(err){notice('#assetDetailMsg',err.message||String(err));}
       finally{if(btn)btn.disabled=false;}
     };
+    await appendEntityAuditHistory('#assetDetailHost','asset',a.id);
     $('#assetDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
   }
 
