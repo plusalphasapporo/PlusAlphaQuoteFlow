@@ -77,6 +77,14 @@
     .supportCallRow:first-child{border-top:0}
     .supportCallTime{font-size:12px;color:var(--muted)}
     .supportCallWho strong{display:block}.supportCallWho small{color:var(--muted)}
+    .supportTicketTopbar{position:sticky;top:82px;z-index:14;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;background:#0f2748;color:#fff;border:1px solid #28476f;border-radius:16px;padding:12px 14px;margin:12px 0 14px;box-shadow:0 12px 30px rgba(15,39,72,.16)}
+    .supportTicketTopbar .summary{min-width:0}.supportTicketTopbar .summary strong{display:block;font-size:16px}.supportTicketTopbar .summary small{display:block;color:#c9d8ec;margin-top:3px}
+    .supportTicketTopbar .supportQuickActions{margin:0}.supportTicketTopbar .ghost{background:#fff}.supportTicketTopbar .green{background:#16a34a}
+    .supportTicketFacts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:10px 0 14px}
+    .supportTicketFact{padding:11px 12px;border:1px solid var(--line);border-radius:12px;background:#f8fafc}
+    .supportTicketFact span{display:block;font-size:11px;color:var(--muted);font-weight:800}.supportTicketFact strong{display:block;margin-top:4px;font-size:14px}
+    @media(max-width:900px){.supportTicketFacts{grid-template-columns:repeat(2,minmax(0,1fr))}.supportTicketTopbar{top:72px}}
+    @media(max-width:640px){.supportTicketFacts{grid-template-columns:1fr}.supportTicketTopbar{position:static}.supportTicketTopbar .supportQuickActions{width:100%}.supportTicketTopbar .supportQuickActions button{flex:1}}
     body[data-role="support_staff"] .workspaceHead{border-color:#dbeafe}
     body[data-role="support_staff"] .pageIntro{margin-top:10px}
     @media(max-width:980px){.supportConsoleHero,.supportDeskGrid{grid-template-columns:1fr}}
@@ -6148,7 +6156,7 @@
         '</div></div></div>'
       : '<div class="notice"><strong>現在の対応工程：</strong> '+supportStageBadge(supportStage||'completed')+'</div>';
     const firstLineAssist=!customer
-      ? '<section class="formSection"><div class="formSectionHead"><span class="sectionNo">'+assistSectionNo+'</span><h3>サポート対応フロー</h3></div>'+
+      ? '<section id="supportAssistWorkspace" class="formSection"><div class="formSectionHead"><span class="sectionNo">'+assistSectionNo+'</span><h3>サポート対応フロー</h3></div>'+
           '<div class="supportFlow">'+
             '<div class="supportStep done"><span class="supportStepNum">1</span><strong>受付</strong><small>'+esc(intakeSource)+'</small></div>'+
             '<div class="supportStep '+(attachments.length?'done':'active')+'"><span class="supportStepNum">2</span><strong>依頼内容・写真確認</strong><small>'+supportRequestTypeLabel(t.request_type)+' / '+esc(attachments.length)+'件の写真・添付</small></div>'+
@@ -6167,7 +6175,7 @@
               '<div id="ticketKnowledgeCandidates"></div>'+
             '</div>'+
             '<div>'+
-              '<section class="remotePanel">'+
+              '<section id="supportRemoteWorkspace" class="remotePanel">'+
                 '<h4>TeamViewer 遠隔対応</h4>'+
                 '<div class="hint">連携状態: '+esc(teamviewerStateText)+'</div>'+
                 '<p class="muted">直接設定・障害対応が必要な場合のみ使用します。顧客の同意を確認してから接続します。</p>'+
@@ -6247,20 +6255,36 @@
     $('#ticketDetailHost').innerHTML=
       '<section class="card section">'+
         '<div class="quoteDetailHead"><div><h2>サポート案件カルテ</h2><p class="sectionDesc">'+esc(t.ticket_number||'—')+' / '+supportRequestTypeLabel(t.request_type)+' / '+esc(t.subject||'')+'</p></div><button id="ticketDetailClose" class="ghost" type="button">閉じる</button></div>'+
-        kpis([
-          ['種別',supportRequestTypeLabel(t.request_type)],
-          ['サポート担当',supportAssigneeLabel(assignmentState)],
-          ['対応工程',supportStageLabel(supportStage||((t.status==='closed')?'completed':'unhandled'))],
-          ['期限',supportDeadlineLabel(deadlineState?.deadline_state)],
-          ['状態',statusText(t.status)],
-          ['優先度',t.priority||'normal'],
-          ['作成日',dateText(t.created_at)],
-          ['更新日',dateText(t.updated_at)],
-          ['受付経路',intakeSource],
-          ['契約',contract?.contract_number||'未指定'],
-          ['機器',asset?.asset_number||'未指定']
-        ])+
-        '<div class="modalGrid2">'+
+        (support
+          ? '<div class="supportTicketTopbar">'+
+              '<div class="summary"><strong>'+esc(cust?.name||'顧客未登録')+' / '+esc(t.subject||'')+'</strong><small>'+esc(t.ticket_number||'—')+' ・ '+esc(supportStageLabel(supportStage||((t.status==='closed')?'completed':'unhandled')))+' ・ '+esc(supportDeadlineLabel(deadlineState?.deadline_state))+'</small></div>'+
+              '<div class="supportQuickActions">'+
+                '<button id="supportTicketCustomerJump" class="ghost" type="button">顧客・機器</button>'+
+                '<button id="supportTicketAiJump" class="ghost" type="button">AI・ナレッジ</button>'+
+                '<button id="supportTicketRemoteJump" class="orange" type="button">TeamViewer</button>'+
+                (t.status!=='closed'?'<button id="supportTicketCompleteQuick" class="green" type="button">完了</button>':'')+
+              '</div>'+
+            '</div>'+
+            '<div class="supportTicketFacts">'+
+              '<div class="supportTicketFact"><span>受付</span><strong>'+esc(intakeSource)+'</strong></div>'+
+              '<div class="supportTicketFact"><span>担当</span><strong>'+esc(supportAssigneeLabel(assignmentState))+'</strong></div>'+
+              '<div class="supportTicketFact"><span>優先度</span><strong>'+esc(t.priority||'normal')+'</strong></div>'+
+              '<div class="supportTicketFact"><span>対象機器</span><strong>'+esc(asset?.asset_number||'未指定')+'</strong></div>'+
+            '</div>'
+          : kpis([
+              ['種別',supportRequestTypeLabel(t.request_type)],
+              ['サポート担当',supportAssigneeLabel(assignmentState)],
+              ['対応工程',supportStageLabel(supportStage||((t.status==='closed')?'completed':'unhandled'))],
+              ['期限',supportDeadlineLabel(deadlineState?.deadline_state)],
+              ['状態',statusText(t.status)],
+              ['優先度',t.priority||'normal'],
+              ['作成日',dateText(t.created_at)],
+              ['更新日',dateText(t.updated_at)],
+              ['受付経路',intakeSource],
+              ['契約',contract?.contract_number||'未指定'],
+              ['機器',asset?.asset_number||'未指定']
+            ]))+
+        '<div id="supportTicketCustomerContext" class="modalGrid2">'+
           '<section class="card section" style="box-shadow:none;margin:0"><h3>案件概要</h3><div class="item"><strong>種別</strong><p>'+supportRequestTypeBadge(t.request_type)+'</p></div><div class="item"><strong>件名</strong><p>'+esc(t.subject||'')+'</p></div>'+supportRequestDetailsHtml(t.request_type,t.request_details||{})+'<div class="item"><strong>補足内容</strong><p style="white-space:pre-wrap">'+esc(displayDescription)+'</p></div><div class="item"><strong>顧客</strong><p>'+esc(cust?.customer_code||'—')+' / '+esc(cust?.name||'—')+'</p></div></section>'+
           '<section class="card section" style="box-shadow:none;margin:0"><h3>連絡・対象情報</h3><div class="item"><strong>主担当者</strong><p>'+esc(primary?.name||'未登録')+'<br><span class="muted">'+esc(primary?.phone||primary?.email||'連絡先未登録')+'</span></p></div><div class="item"><strong>契約</strong><p>'+(contract?esc(contract.contract_number||'—'):'未指定')+'</p></div><div class="item"><strong>機器</strong><p>'+(asset?esc(asset.asset_number||'—')+' / '+esc(asset.model_name||''):'未指定')+'</p></div></section>'+
         '</div>'+
@@ -6278,6 +6302,27 @@
 
     $('#ticketDetailClose').onclick=()=>{$('#ticketDetailHost').innerHTML='';};
     $('#ticketDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
+
+    if(support){
+      const jump=(selector)=>{
+        const el=$(selector);
+        if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
+      };
+      const customerJump=$('#supportTicketCustomerJump');
+      if(customerJump) customerJump.onclick=()=>jump('#supportTicketCustomerContext');
+      const aiJump=$('#supportTicketAiJump');
+      if(aiJump) aiJump.onclick=()=>{
+        jump('#supportAssistWorkspace');
+        setTimeout(()=>$('#ticketKnowledgeSearch')?.focus(),300);
+      };
+      const remoteJump=$('#supportTicketRemoteJump');
+      if(remoteJump) remoteJump.onclick=()=>{
+        jump('#supportRemoteWorkspace');
+        setTimeout(()=>$('#ticketTeamViewerId')?.focus(),300);
+      };
+      const quickComplete=$('#supportTicketCompleteQuick');
+      if(quickComplete) quickComplete.onclick=()=>$('#ticketCloseBtn')?.click();
+    }
 
     const attachmentGallery=$('#ticketAttachmentGallery');
     if(attachmentGallery){
@@ -7736,7 +7781,7 @@
           '<div class="item"><strong>最終CallConnect Record ID</strong><p>'+esc(dash?.last_record_id||'未受信')+'</p></div>'+
         '</div>'+
         (dash?.last_error?'<div class="notice error">最終エラー: '+esc(dash.last_error)+'</div>':'')+
-      '</section>'+)+
+      '</section>')+
       (!supportView&&dash?.api_key_configured&&!dash?.contacts_create_api_url_configured?'<div class="notice error"><strong>着信時の顧客表示はまだ未完成です。</strong><br>CallConnect側に顧客を同期するため、Contacts Create API URLの設定が必要です。Webhookによる通話履歴保存・電話番号照合は動作しています。</div>':'')+
       '<div id="callconnectPageSyncMsg" class="notice hidden"></div>'+
       '<section class="card section"><div class="row between"><div><h2>通話履歴</h2><p class="sectionDesc">電話番号が顧客マスタと一致すると、自動で案件作成します。照合済みは「顧客カルテ」から直接開けます。未照合はここで顧客を指定できます。</p></div><div class="field" style="margin:0;min-width:260px"><label>履歴を検索</label><input id="callconnectHistorySearch" placeholder="電話番号・会社名・担当者"></div></div>'+
