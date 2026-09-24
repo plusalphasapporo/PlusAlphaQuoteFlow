@@ -479,6 +479,8 @@
   let currentPage='home';
   let manualLogout=false;
   let healthTimer=null;
+  let deadlineWatchTimer=null;
+  let lastDeadlineAlertKey='';
   let supportRealtimeChannel=null;
   let internalHandoffRealtimeChannel=null;
 
@@ -922,11 +924,15 @@
   async function refreshSupportUnreadBadge(){
     if(bootData?.context?.role!=='support_staff') return {count:0,items:[]};
     try{
-      const [unread,handoffUpdates]=await Promise.all([
+      const [unread,handoffUpdates,deadlineStates]=await Promise.all([
         rpc('support_unread_notifications'),
-        rpc('support_unread_handoff_updates')
+        rpc('support_unread_handoff_updates'),
+        rpc('support_deadline_states')
       ]);
-      const count=Number(unread?.count||0)+Number(handoffUpdates?.count||0);
+      const deadlineAttention=(deadlineStates||[]).filter(x=>x.deadline_state==='overdue'||x.deadline_state==='due_today');
+      const overdueCount=deadlineAttention.filter(x=>x.deadline_state==='overdue').length;
+      const dueTodayCount=deadlineAttention.filter(x=>x.deadline_state==='due_today').length;
+      const count=Number(unread?.count||0)+Number(handoffUpdates?.count||0)+overdueCount+dueTodayCount;
       if(count>0){
         $('#notificationCount').textContent=count>99?'99+':String(count);
         $('#notificationCount').classList.remove('hidden');
@@ -936,7 +942,10 @@
       return {
         count,
         items:unread?.items||[],
-        handoff_updates:handoffUpdates?.items||[]
+        handoff_updates:handoffUpdates?.items||[],
+        deadline_attention:deadlineAttention,
+        overdue_count:overdueCount,
+        due_today_count:dueTodayCount
       };
     }catch(_){
       return {count:0,items:[]};
@@ -979,21 +988,63 @@
     const role=bootData?.context?.role;
     if(!(role==='internal_admin'||role==='internal_staff')) return {count:0,items:[]};
     try{
-      const [biz,unread]=await Promise.all([
+      const [biz,unread,deadlineStates]=await Promise.all([
         rpc('internal_business_dashboard'),
-        rpc('internal_unread_handoff_notifications')
+        rpc('internal_unread_handoff_notifications'),
+        rpc('support_deadline_states')
       ]);
-      const count=Number(biz?.kpis?.urgent_open_tickets||0)+Number(unread?.count||0);
+      const deadlineAttention=(deadlineStates||[]).filter(x=>x.deadline_state==='overdue'||x.deadline_state==='due_today');
+      const overdueCount=deadlineAttention.filter(x=>x.deadline_state==='overdue').length;
+      const dueTodayCount=deadlineAttention.filter(x=>x.deadline_state==='due_today').length;
+      const count=Number(biz?.kpis?.urgent_open_tickets||0)+Number(unread?.count||0)+overdueCount+dueTodayCount;
       if(count>0){
         $('#notificationCount').textContent=count>99?'99+':String(count);
         $('#notificationCount').classList.remove('hidden');
       }else{
         $('#notificationCount').classList.add('hidden');
       }
-      return unread||{count:0,items:[]};
+      return {
+        ...(unread||{count:0,items:[]}),
+        total_count:count,
+        deadline_attention:deadlineAttention,
+        overdue_count:overdueCount,
+        due_today_count:dueTodayCount
+      };
     }catch(_){
-      return {count:0,items:[]};
+      return {count:0,items:[],total_count:0,deadline_attention:[],overdue_count:0,due_today_count:0};
     }
+  }
+
+  async function startDeadlineWatch(){
+    if(deadlineWatchTimer){
+      clearInterval(deadlineWatchTimer);
+      deadlineWatchTimer=null;
+    }
+    const role=bootData?.context?.role;
+    if(!['internal_admin','internal_staff','support_staff'].includes(role)) return;
+
+    const refresh=async(showToast=false)=>{
+      try{
+        const states=await rpc('support_deadline_states');
+        const overdue=(states||[]).filter(x=>x.deadline_state==='overdue');
+        const dueToday=(states||[]).filter(x=>x.deadline_state==='due_today');
+        const key=overdue.map(x=>x.ticket_id).sort().join(',')+'|'+dueToday.map(x=>x.ticket_id).sort().join(',');
+        if(showToast && lastDeadlineAlertKey && key!==lastDeadlineAlertKey && (overdue.length||dueToday.length)){
+          toast('期限アラート更新：期限超過 '+overdue.length+'件 / 本日期限 '+dueToday.length+'件');
+        }
+        lastDeadlineAlertKey=key;
+        if(role==='support_staff') await refreshSupportUnreadBadge();
+        else await refreshInternalUnreadHandoffBadge();
+        if(currentPage==='home') await renderHome();
+      }catch(_){}
+    };
+
+    await refresh(false);
+    deadlineWatchTimer=setInterval(()=>refresh(true),60000);
+
+    document.addEventListener('visibilitychange',()=>{
+      if(document.visibilityState==='visible') refresh(false);
+    },{once:true});
   }
 
   async function startInternalHandoffRealtime(){
@@ -1029,17 +1080,21 @@
     let count=0;
     try{
       if(role==='internal_admin'||role==='internal_staff'){
-        const [biz,unreadHandoffs]=await Promise.all([
+        const [biz,unreadHandoffs,deadlineStates]=await Promise.all([
           rpc('internal_business_dashboard'),
-          rpc('internal_unread_handoff_notifications')
+          rpc('internal_unread_handoff_notifications'),
+          rpc('support_deadline_states')
         ]);
-        count=Number(biz?.kpis?.urgent_open_tickets||0)+Number(unreadHandoffs?.count||0);
+        const deadlineCount=(deadlineStates||[]).filter(x=>x.deadline_state==='overdue'||x.deadline_state==='due_today').length;
+        count=Number(biz?.kpis?.urgent_open_tickets||0)+Number(unreadHandoffs?.count||0)+deadlineCount;
       }else if(role==='support_staff'){
-        const [unread,handoffUpdates]=await Promise.all([
+        const [unread,handoffUpdates,deadlineStates]=await Promise.all([
           rpc('support_unread_notifications'),
-          rpc('support_unread_handoff_updates')
+          rpc('support_unread_handoff_updates'),
+          rpc('support_deadline_states')
         ]);
-        count=Number(unread?.count||0)+Number(handoffUpdates?.count||0);
+        const deadlineCount=(deadlineStates||[]).filter(x=>x.deadline_state==='overdue'||x.deadline_state==='due_today').length;
+        count=Number(unread?.count||0)+Number(handoffUpdates?.count||0)+deadlineCount;
       }else if(role==='customer_user'){
         const h=await rpc('customer_portal_home');
         count=(h?.recent_tickets||[]).filter(x=>x.status!=='closed').length;
@@ -8116,6 +8171,7 @@
     await setupGlobalHeader();
     await startSupportRealtime();
     await startInternalHandoffRealtime();
+    await startDeadlineWatch();
     await go('home');
   }
 
@@ -8316,6 +8372,11 @@
           try{await supabase.removeChannel(internalHandoffRealtimeChannel);}catch(_){}
           internalHandoffRealtimeChannel=null;
         }
+        if(deadlineWatchTimer){
+          clearInterval(deadlineWatchTimer);
+          deadlineWatchTimer=null;
+        }
+        lastDeadlineAlertKey='';
         bootData=null;
         currentPage='home';
         if(!manualLogout){
