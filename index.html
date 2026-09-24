@@ -309,15 +309,42 @@
   }
 
   async function renderQuotes(){
+    const role=bootData.context?.role;
     const [{data,error},cmap]=await Promise.all([
       supabase.from('quotes').select('id,customer_id,quote_number,status,subtotal,tax_amount,total_amount,valid_until,created_at').order('created_at',{ascending:false}),
       customerMap()
     ]);
     if(error) throw error;
+
+    const customerOptions=Object.entries(cmap)
+      .map(([id,c])=>'<option value="'+esc(id)+'">'+esc(c.name||c.customer_code||id)+'</option>')
+      .join('');
+
+    const createBox=(role==='internal_admin'||role==='internal_staff')
+      ? '<section class="card section">'+
+          '<h2>新規見積</h2>'+
+          '<p class="sectionDesc">まずは1明細で下書きを作成します。作成後の編集は次の工程で追加します。</p>'+
+          '<form id="quoteForm">'+
+            '<div class="field"><label>顧客</label><select id="quoteCustomer" required><option value="">選択してください</option>'+customerOptions+'</select></div>'+
+            '<div class="field"><label>有効期限</label><input id="quoteValidUntil" type="date"></div>'+
+            '<div class="field"><label>明細名</label><input id="quoteDescription" required placeholder="例：システム保守費用"></div>'+
+            '<div class="row">'+
+              '<div class="field" style="flex:1;min-width:140px"><label>数量</label><input id="quoteQty" type="number" min="0" step="0.01" value="1" required></div>'+
+              '<div class="field" style="flex:1;min-width:160px"><label>単価</label><input id="quoteUnitPrice" type="number" min="0" step="1" value="0" required></div>'+
+              '<div class="field" style="flex:1;min-width:160px"><label>原価</label><input id="quoteCostPrice" type="number" min="0" step="1" value="0"></div>'+
+            '</div>'+
+            '<div class="field"><label>消費税額</label><input id="quoteTax" type="number" min="0" step="1" value="0"></div>'+
+            '<div class="field"><label>社内メモ</label><textarea id="quoteNote" rows="3"></textarea></div>'+
+            '<button class="primary" type="submit">下書きを作成</button>'+
+          '</form>'+
+          '<div id="quoteMsg" class="notice hidden"></div>'+
+        '</section>'
+      : '';
+
     const rows=(data||[]).map(q=>{
       const c=cmap[q.customer_id]||{};
       return '<tr>'+
-        '<td><strong>'+esc(q.quote_number||'未採番')+'</strong></td>'+
+        '<td><strong>'+esc(q.quote_number||'下書き')+'</strong></td>'+
         '<td>'+esc(c.name||'—')+'</td>'+
         '<td>'+esc(statusText(q.status))+'</td>'+
         '<td class="amount">'+esc(money(q.total_amount))+'</td>'+
@@ -325,9 +352,41 @@
         '<td>'+esc(dateText(q.created_at))+'</td>'+
       '</tr>';
     });
+
     $('#home').innerHTML=
       pageIntro('見積','権限のある見積だけが表示されます。')+
-      dataTable(['見積番号','顧客','状態','合計','有効期限','作成日'],rows);
+      createBox+
+      '<section class="section">'+dataTable(['見積番号','顧客','状態','合計','有効期限','作成日'],rows)+'</section>';
+
+    if(role==='internal_admin'||role==='internal_staff'){
+      $('#quoteForm').onsubmit=async e=>{
+        e.preventDefault();
+        const submit=e.submitter;
+        if(submit) submit.disabled=true;
+        try{
+          const items=[{
+            description:$('#quoteDescription').value.trim(),
+            quantity:Number($('#quoteQty').value||0),
+            unit_price:Number($('#quoteUnitPrice').value||0),
+            cost_price:Number($('#quoteCostPrice').value||0)
+          }];
+          const created=await rpc('create_draft_quote',{
+            p_customer_id:$('#quoteCustomer').value,
+            p_valid_until:$('#quoteValidUntil').value||null,
+            p_tax_amount:Number($('#quoteTax').value||0),
+            p_internal_note:$('#quoteNote').value.trim()||null,
+            p_items:items
+          });
+          notice('#quoteMsg','見積の下書きを作成しました。合計 '+money(created?.total_amount||0),true);
+          $('#quoteForm').reset();
+          setTimeout(()=>go('quotes'),500);
+        }catch(err){
+          notice('#quoteMsg',err.message||String(err));
+        }finally{
+          if(submit) submit.disabled=false;
+        }
+      };
+    }
   }
 
   async function renderOrders(){
