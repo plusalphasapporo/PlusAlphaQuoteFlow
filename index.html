@@ -1657,21 +1657,21 @@
       '<option value="'+esc(c.id)+'" '+(c.id===preselectedCustomerId?'selected':'')+'>'+esc(c.customer_code||'—')+' / '+esc(c.name||'')+'</option>'
     ).join('');
 
-    const residualRow=()=>(
+    const residualRow=(item={})=>(
       '<div class="residualRow" data-residual-row>'+
         '<div class="modalGrid3">'+
-          '<div class="field"><label>旧物件・残債名</label><input class="qri-name"></div>'+
-          '<div class="field"><label>既存リース会社</label><input class="qri-lessor"></div>'+
-          '<div class="field"><label>契約番号</label><input class="qri-contract"></div>'+
-          '<div class="field"><label>残回数</label><input class="qri-remain" type="number" min="0" step="1"></div>'+
-          '<div class="field"><label>月額（税込）</label><input class="qri-monthly" type="number" min="0" step="1" value="0"></div>'+
-          '<div class="field"><label>税込残債</label><input class="qri-residual" type="number" min="0" step="1" value="0"></div>'+
-          '<div class="field"><label>税込解約金・精算額</label><input class="qri-settlement" type="number" min="0" step="1" value="0"></div>'+
-          '<div class="field"><label>見積反映額</label><input class="qri-reflection" type="number" min="0" step="1" value="0"></div>'+
-          '<div class="field"><label>支払回数</label><input class="qri-paycount" type="number" min="0" step="1"></div>'+
-          '<div class="field"><label>初回支払額</label><input class="qri-first" type="number" min="0" step="1" value="0"></div>'+
-          '<div class="field"><label>2回目以降支払額</label><input class="qri-recurring" type="number" min="0" step="1" value="0"></div>'+
-          '<div class="field"><label>備考</label><input class="qri-note"></div>'+
+          '<div class="field"><label>旧物件・残債名</label><input class="qri-name" value="'+esc(item.old_property_name||'')+'"></div>'+
+          '<div class="field"><label>既存リース会社</label><input class="qri-lessor" value="'+esc(item.lessor_name||'')+'"></div>'+
+          '<div class="field"><label>契約番号</label><input class="qri-contract" value="'+esc(item.contract_number||'')+'"></div>'+
+          '<div class="field"><label>残回数</label><input class="qri-remain" type="number" min="0" step="1" value="'+esc(item.remaining_count??'')+'"></div>'+
+          '<div class="field"><label>月額（税込）</label><input class="qri-monthly" type="number" min="0" step="1" value="'+esc(item.monthly_amount_tax_included??0)+'"></div>'+
+          '<div class="field"><label>税込残債</label><input class="qri-residual" type="number" min="0" step="1" value="'+esc(item.residual_amount_tax_included??0)+'"></div>'+
+          '<div class="field"><label>税込解約金・精算額</label><input class="qri-settlement" type="number" min="0" step="1" value="'+esc(item.settlement_amount_tax_included??0)+'"></div>'+
+          '<div class="field"><label>見積反映額</label><input class="qri-reflection" type="number" min="0" step="1" value="'+esc(item.reflection_amount??0)+'"></div>'+
+          '<div class="field"><label>支払回数</label><input class="qri-paycount" type="number" min="0" step="1" value="'+esc(item.payment_count??'')+'"></div>'+
+          '<div class="field"><label>初回支払額</label><input class="qri-first" type="number" min="0" step="1" value="'+esc(item.first_payment_amount??0)+'"></div>'+
+          '<div class="field"><label>2回目以降支払額</label><input class="qri-recurring" type="number" min="0" step="1" value="'+esc(item.recurring_payment_amount??0)+'"></div>'+
+          '<div class="field"><label>備考</label><input class="qri-note" value="'+esc(item.note||'')+'"></div>'+
         '</div>'+
         '<div class="row" style="justify-content:flex-end"><button class="ghost removeResidual" type="button">この行を削除</button></div>'+
       '</div>'
@@ -1684,6 +1684,9 @@
       '</div>'+
       '<form id="quoteCreateForm" class="appModalForm">'+
         '<div class="appModalBody">'+
+          '<div id="quoteRequiredGuide" class="notice">必須：顧客・見積日・明細1件以上。<span id="quoteRequiredStatus" style="margin-left:8px"></span></div>'+
+          '<div id="quoteDraftNotice" class="notice hidden"></div>'+
+          '<div id="quoteCustomerSummary" class="notice hidden"></div>'+
           '<section class="formSection">'+
             '<div class="formSectionHead"><span class="sectionNo">01</span><h3>基本情報</h3></div>'+
             '<div class="modalGrid3">'+
@@ -1701,11 +1704,10 @@
           '</section>'+
           '<section class="formSection">'+
             '<div class="formSectionHead"><span class="sectionNo">02</span><h3>見積明細</h3></div>'+
-            '<div class="row" style="margin-bottom:10px">'+
-              '<div class="field" style="flex:1;min-width:260px;margin:0"><label>商品マスタから追加</label><select id="quoteProductPicker"><option value="">商品を選択してください</option>'+
-                (products||[]).filter(p=>p.is_active!==false).map(p=>'<option value="'+esc(p.id)+'">'+esc(p.product_code||'—')+' / '+esc(p.name)+' / '+esc(money(p.sale_price))+'</option>').join('')+
-              '</select></div>'+
-              '<div style="align-self:end"><button id="quoteAddProduct" class="primary" type="button">商品を明細へ追加</button></div>'+
+            '<div class="row" style="margin-bottom:10px;gap:10px;align-items:flex-end;flex-wrap:wrap">'+
+              '<div class="field" style="flex:1;min-width:220px;margin:0"><label>商品検索</label><input id="quoteProductSearch" placeholder="商品コード・商品名・メーカー・仕入先"></div>'+
+              '<div class="field" style="flex:2;min-width:300px;margin:0"><label>商品マスタから追加 <span id="quoteProductCount" class="muted"></span></label><select id="quoteProductPicker"><option value="">商品を選択してください</option></select></div>'+
+              '<div><button id="quoteAddProduct" class="primary" type="button">商品を明細へ追加</button></div>'+
             '</div>'+
             '<div class="row between"><span class="muted">商品名／数量／税抜単価／仕入単価。自由入力明細も追加できます。</span><button id="quoteCreateAddItem" class="ghost" type="button">＋ 自由明細</button></div>'+
             '<div id="quoteCreateItems" class="quoteItems">'+quoteItemRow()+'</div>'+
@@ -1723,12 +1725,16 @@
               '<div class="summaryBox"><span>リース対象額</span><strong id="quoteSumLeaseTarget">¥0</strong></div>'+
               '<div class="summaryBox"><span>消費税</span><strong id="quoteSumTax">¥0</strong></div>'+
               '<div class="summaryBox"><span>見積合計</span><strong id="quoteSumTotal">¥0</strong></div>'+
+              '<div class="summaryBox"><span>仕入原価合計</span><strong id="quoteSumCost">¥0</strong></div>'+
+              '<div class="summaryBox"><span>粗利</span><strong id="quoteSumProfit">¥0</strong></div>'+
+              '<div class="summaryBox"><span>粗利率</span><strong id="quoteSumMargin">—</strong></div>'+
             '</div>'+
             '<div class="field" style="margin-top:14px"><label>社内メモ</label><textarea id="quoteCreateNote" rows="4"></textarea></div>'+
           '</section>'+
           '<div id="quoteCreateMsg" class="notice hidden"></div>'+
         '</div>'+
         '<div class="appModalFoot">'+
+          '<button id="quoteCreateDraftClear" class="ghost" type="button">入力内容をクリア</button>'+
           '<button id="quoteCreateCancel" class="ghost" type="button">キャンセル</button>'+
           '<button class="primary" type="submit">見積を登録</button>'+
         '</div>'+
@@ -1778,17 +1784,25 @@
 
     const recalc=()=>{
       let subtotal=0;
+      let cost=0;
       itemsHost.querySelectorAll('[data-quote-item-row]').forEach(row=>{
-        subtotal+=Number(row.querySelector('.qi-qty').value||0)*Number(row.querySelector('.qi-unit').value||0);
+        const qty=Number(row.querySelector('.qi-qty').value||0);
+        subtotal+=qty*Number(row.querySelector('.qi-unit').value||0);
+        cost+=qty*Number(row.querySelector('.qi-cost').value||0);
       });
       const residual=readResidualItems().reduce((sum,x)=>sum+Number(x.reflection_amount||0),0);
       const taxRate=Number($('#quoteCreateTaxRate').value||0);
       const tax=Math.round(subtotal*taxRate/100);
+      const profit=subtotal-cost;
+      const margin=subtotal>0?(profit/subtotal*100):null;
       $('#quoteSumSubtotal').textContent=money(subtotal);
       $('#quoteSumResidual').textContent=money(residual);
       $('#quoteSumLeaseTarget').textContent=money(subtotal+residual);
       $('#quoteSumTax').textContent=money(tax);
       $('#quoteSumTotal').textContent=money(subtotal+tax);
+      $('#quoteSumCost').textContent=money(cost);
+      $('#quoteSumProfit').textContent=money(profit);
+      $('#quoteSumMargin').textContent=margin===null?'—':margin.toFixed(1)+'%';
     };
 
     const loadCustomer=async()=>{
@@ -1809,6 +1823,157 @@
       $('#quoteCreatePhone').value=customer?.phone||'';
       $('#quoteCreateContact').innerHTML='<option value="">指定なし</option>'+
         (contacts||[]).map(x=>'<option value="'+esc(x.name||'')+'">'+esc(x.name||'')+(x.is_primary?'（主担当）':'')+'</option>').join('');
+      const summary=$('#quoteCustomerSummary');
+      if(summary){
+        summary.classList.remove('hidden');
+        summary.classList.toggle('error',!!customer?.manual_hold);
+        summary.classList.toggle('ok',!customer?.manual_hold);
+        summary.innerHTML=
+          '<strong>'+esc(customer?.customer_code||'—')+' / '+esc(customer?.name||'')+'</strong>'+
+          (customer?.manual_hold?'<br>手動ホールド中のため、新規見積は保存できません。':'')+
+          '<br><span class="muted">営業担当: '+esc(customer?.sales_owner_name||'未設定')+
+          ' / 連絡先: '+esc(customer?.phone||customer?.mobile||'未登録')+
+          ' / 担当者: '+esc((contacts||[]).find(x=>x.is_primary)?.name||(contacts||[])[0]?.name||'未登録')+'</span>';
+      }
+    };
+
+
+    const activeProducts=(products||[]).filter(p=>p.is_active!==false);
+    const renderProductOptions=()=>{
+      const q=($('#quoteProductSearch').value||'').trim().toLowerCase();
+      const filtered=activeProducts.filter(p=>!q||[
+        p.product_code,p.name,p.manufacturer,p.supplier_name,(p.tags||[]).join(' ')
+      ].some(v=>String(v||'').toLowerCase().includes(q)));
+      const selected=$('#quoteProductPicker').value;
+      $('#quoteProductPicker').innerHTML='<option value="">商品を選択してください</option>'+
+        filtered.map(p=>'<option value="'+esc(p.id)+'">'+esc(p.product_code||'—')+' / '+esc(p.name)+' / '+esc(money(p.sale_price))+'</option>').join('');
+      if(filtered.some(p=>p.id===selected)) $('#quoteProductPicker').value=selected;
+      $('#quoteProductCount').textContent='('+filtered.length+'件)';
+    };
+    $('#quoteProductSearch').oninput=renderProductOptions;
+    renderProductOptions();
+
+    const draftKey='quoteflow.quoteDraft.'+(bootData?.context?.user_id||'current');
+    let draftTimer=null;
+    let restoringDraft=false;
+
+    const serializeQuoteItemRows=()=>[...itemsHost.querySelectorAll('[data-quote-item-row]')].map(row=>({
+      product_id:row.querySelector('.qi-product-id')?.value||null,
+      description:row.querySelector('.qi-desc')?.value||'',
+      quantity:row.querySelector('.qi-qty')?.value||'',
+      unit:row.querySelector('.qi-unit-name')?.value||'台',
+      unit_price:row.querySelector('.qi-unit')?.value||'',
+      cost_price:row.querySelector('.qi-cost')?.value||'',
+      manufacturer:row.querySelector('.qi-manufacturer')?.value||'',
+      supplier_name:row.querySelector('.qi-supplier')?.value||'',
+      expected_delivery_date:row.querySelector('.qi-expected')?.value||'',
+      procurement_target:row.querySelector('.qi-procure')?.checked!==false
+    }));
+
+    const serializeResidualRows=()=>[...residualHost.querySelectorAll('[data-residual-row]')].map(row=>({
+      old_property_name:row.querySelector('.qri-name')?.value||'',
+      lessor_name:row.querySelector('.qri-lessor')?.value||'',
+      contract_number:row.querySelector('.qri-contract')?.value||'',
+      remaining_count:row.querySelector('.qri-remain')?.value||'',
+      monthly_amount_tax_included:row.querySelector('.qri-monthly')?.value||'',
+      residual_amount_tax_included:row.querySelector('.qri-residual')?.value||'',
+      settlement_amount_tax_included:row.querySelector('.qri-settlement')?.value||'',
+      reflection_amount:row.querySelector('.qri-reflection')?.value||'',
+      payment_count:row.querySelector('.qri-paycount')?.value||'',
+      first_payment_amount:row.querySelector('.qri-first')?.value||'',
+      recurring_payment_amount:row.querySelector('.qri-recurring')?.value||'',
+      note:row.querySelector('.qri-note')?.value||''
+    }));
+
+    const saveQuoteDraft=()=>{
+      if(restoringDraft) return;
+      const data={
+        saved_at:new Date().toISOString(),
+        customer_id:$('#quoteCreateCustomer').value||'',
+        honorific:$('#quoteCreateHonorific').value,
+        quote_date:$('#quoteCreateDate').value,
+        valid_until:$('#quoteCreateValidUntil').value,
+        contact_name:$('#quoteCreateContact').value,
+        project_name:$('#quoteCreateProject').value,
+        lease_months:$('#quoteCreateLeaseMonths').value,
+        tax_rate:$('#quoteCreateTaxRate').value,
+        internal_note:$('#quoteCreateNote').value,
+        items:serializeQuoteItemRows(),
+        residuals:serializeResidualRows()
+      };
+      localStorage.setItem(draftKey,JSON.stringify(data));
+      const n=$('#quoteDraftNotice');
+      if(n){
+        n.classList.remove('hidden');
+        n.classList.add('ok');
+        n.textContent='見積入力をこの端末に自動保存しました。';
+      }
+    };
+
+    const scheduleQuoteDraft=()=>{
+      clearTimeout(draftTimer);
+      draftTimer=setTimeout(saveQuoteDraft,300);
+    };
+
+    const updateQuoteRequired=()=>{
+      const missing=[];
+      if(!$('#quoteCreateCustomer').value) missing.push('顧客');
+      if(!$('#quoteCreateDate').value) missing.push('見積日');
+      const rows=[...itemsHost.querySelectorAll('[data-quote-item-row]')];
+      if(!rows.length||rows.every(r=>!r.querySelector('.qi-desc')?.value.trim())) missing.push('明細');
+      const st=$('#quoteRequiredStatus');
+      if(st) st.textContent=missing.length?'未入力：'+missing.join('・'):'必須項目は入力済みです。';
+    };
+
+    const restoreQuoteDraft=async()=>{
+      let data=null;
+      try{ data=JSON.parse(localStorage.getItem(draftKey)||'null'); }catch(_){}
+      if(!data) return;
+      restoringDraft=true;
+      try{
+        if(data.customer_id && !preselectedCustomerId) $('#quoteCreateCustomer').value=data.customer_id;
+        if(data.honorific) $('#quoteCreateHonorific').value=data.honorific;
+        if(data.quote_date) $('#quoteCreateDate').value=data.quote_date;
+        if(data.valid_until) $('#quoteCreateValidUntil').value=data.valid_until;
+        $('#quoteCreateProject').value=data.project_name||'';
+        $('#quoteCreateLeaseMonths').value=data.lease_months||'';
+        $('#quoteCreateTaxRate').value=data.tax_rate||'10';
+        $('#quoteCreateNote').value=data.internal_note||'';
+
+        if(Array.isArray(data.items)&&data.items.length){
+          itemsHost.innerHTML=data.items.map(x=>quoteItemRow(x)).join('');
+          bindQuoteItems(itemsHost,$('#quoteCreateAddItem'));
+        }
+        if(Array.isArray(data.residuals)&&data.residuals.length){
+          residualHost.innerHTML=data.residuals.map(x=>residualRow({
+            old_property_name:x.old_property_name,
+            lessor_name:x.lessor_name,
+            contract_number:x.contract_number,
+            remaining_count:x.remaining_count,
+            monthly_amount_tax_included:x.monthly_amount_tax_included,
+            residual_amount_tax_included:x.residual_amount_tax_included,
+            settlement_amount_tax_included:x.settlement_amount_tax_included,
+            reflection_amount:x.reflection_amount,
+            payment_count:x.payment_count,
+            first_payment_amount:x.first_payment_amount,
+            recurring_payment_amount:x.recurring_payment_amount,
+            note:x.note
+          })).join('');
+          bindResidualRemove();
+        }
+        if($('#quoteCreateCustomer').value){
+          await loadCustomer();
+          if(data.contact_name) $('#quoteCreateContact').value=data.contact_name;
+        }
+        const n=$('#quoteDraftNotice');
+        if(n){
+          n.classList.remove('hidden');
+          n.classList.add('ok');
+          n.textContent='前回の入力途中の見積を復元しました。';
+        }
+      }finally{
+        restoringDraft=false;
+      }
     };
 
     bindQuoteItems(itemsHost,$('#quoteCreateAddItem'));
@@ -1828,20 +1993,57 @@
       }));
       bindQuoteItems(itemsHost,$('#quoteCreateAddItem'));
       recalc();
+      updateQuoteRequired();
+      scheduleQuoteDraft();
     };
     bindResidualRemove();
     $('#quoteCreateAddResidual').onclick=()=>{
       residualHost.insertAdjacentHTML('beforeend',residualRow());
       bindResidualRemove();
+      scheduleQuoteDraft();
     };
     form.addEventListener('input',e=>{
-      if(e.target.matches('.qi-qty,.qi-unit,.qri-reflection,#quoteCreateTaxRate')) recalc();
+      if(e.target.matches('.qi-qty,.qi-unit,.qi-cost,.qri-reflection,#quoteCreateTaxRate')) recalc();
+      updateQuoteRequired();
+      scheduleQuoteDraft();
     });
-    $('#quoteCreateCustomer').onchange=loadCustomer;
+    form.addEventListener('change',()=>{
+      updateQuoteRequired();
+      scheduleQuoteDraft();
+    });
+    $('#quoteCreateCustomer').onchange=async()=>{
+      await loadCustomer();
+      updateQuoteRequired();
+      scheduleQuoteDraft();
+    };
     $('#quoteCreateClose').onclick=closeAppModal;
     $('#quoteCreateCancel').onclick=closeAppModal;
-    if(preselectedCustomerId) await loadCustomer();
+    $('#quoteCreateDraftClear').onclick=()=>{
+      if(!confirm('入力途中の見積内容をクリアしますか？')) return;
+      localStorage.removeItem(draftKey);
+      form.reset();
+      $('#quoteCreateDate').value=localDateValue();
+      $('#quoteCreateTaxRate').value='10';
+      itemsHost.innerHTML=quoteItemRow();
+      residualHost.innerHTML=residualRow();
+      bindQuoteItems(itemsHost,$('#quoteCreateAddItem'));
+      bindResidualRemove();
+      $('#quoteCreateAddress').value='';
+      $('#quoteCreatePhone').value='';
+      $('#quoteCreateContact').innerHTML='<option value="">指定なし</option>';
+      $('#quoteCustomerSummary').classList.add('hidden');
+      $('#quoteDraftNotice').classList.add('hidden');
+      renderProductOptions();
+      recalc();
+      updateQuoteRequired();
+    };
+    if(preselectedCustomerId){
+      await loadCustomer();
+    }else{
+      await restoreQuoteDraft();
+    }
     recalc();
+    updateQuoteRequired();
 
     form.onsubmit=async e=>{
       e.preventDefault();
@@ -1850,19 +2052,29 @@
       try{
         const customerId=$('#quoteCreateCustomer').value;
         if(!customerId) throw new Error('顧客を選択してください。');
+        const quoteDate=$('#quoteCreateDate').value;
+        const validUntil=$('#quoteCreateValidUntil').value;
+        const leaseMonths=$('#quoteCreateLeaseMonths').value?Number($('#quoteCreateLeaseMonths').value):null;
+        const taxRate=Number($('#quoteCreateTaxRate').value||10);
+        if(!quoteDate) throw new Error('見積日を入力してください。');
+        if(validUntil && validUntil<quoteDate) throw new Error('有効期限は見積日以降の日付を入力してください。');
+        if(leaseMonths!==null && leaseMonths<=0) throw new Error('リース期間は1か月以上で入力してください。');
+        if(taxRate<0||taxRate>100) throw new Error('消費税率は0〜100%で入力してください。');
+        const quoteItems=readQuoteItems(itemsHost);
         await rpc('create_quote_full',{
           p_customer_id:customerId,
-          p_quote_date:$('#quoteCreateDate').value||null,
-          p_valid_until:$('#quoteCreateValidUntil').value||null,
+          p_quote_date:quoteDate,
+          p_valid_until:validUntil||null,
           p_project_name:$('#quoteCreateProject').value.trim()||null,
           p_honorific:$('#quoteCreateHonorific').value,
           p_contact_name:$('#quoteCreateContact').value||null,
-          p_lease_months:$('#quoteCreateLeaseMonths').value?Number($('#quoteCreateLeaseMonths').value):null,
-          p_tax_rate:Number($('#quoteCreateTaxRate').value||10),
+          p_lease_months:leaseMonths,
+          p_tax_rate:taxRate,
           p_internal_note:$('#quoteCreateNote').value.trim()||null,
-          p_items:readQuoteItems(itemsHost),
+          p_items:quoteItems,
           p_residual_items:readResidualItems()
         });
+        localStorage.removeItem(draftKey);
         closeAppModal();
         toast('見積を登録しました');
         await go('sales');
@@ -2880,7 +3092,8 @@
       const unit_price=Number(row.querySelector('.qi-unit').value||0);
       const cost_price=Number(row.querySelector('.qi-cost').value||0);
       if(!description) throw new Error((index+1)+'行目の明細名を入力してください。');
-      if(quantity<0||unit_price<0||cost_price<0) throw new Error('数量・単価・原価は0以上で入力してください。');
+      if(quantity<=0) throw new Error((index+1)+'行目の数量は0より大きい値を入力してください。');
+      if(unit_price<0||cost_price<0) throw new Error('販売単価・仕入原価は0以上で入力してください。');
       return {
         product_id:row.querySelector('.qi-product-id')?.value||null,
         description,
@@ -2903,12 +3116,14 @@
           const rows=container.querySelectorAll('[data-quote-item-row]');
           if(rows.length<=1){ toast('明細は1件以上必要です'); return; }
           btn.closest('[data-quote-item-row]').remove();
+          container.dispatchEvent(new Event('input',{bubbles:true}));
         };
       });
     };
     addButton.onclick=()=>{
       container.insertAdjacentHTML('beforeend',quoteItemRow());
       bindRemove();
+      container.dispatchEvent(new Event('input',{bubbles:true}));
     };
     bindRemove();
   }
