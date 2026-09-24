@@ -322,7 +322,7 @@
     'customer_ticket_detail','internal_numbering_settings','internal_accounts_list',
     'internal_account_companies','internal_audit_workspace','internal_document_profile','internal_demo_seed_status','internal_company_settings','internal_entity_audit_history',
     'internal_products_list','internal_lease_rates_list','internal_order_profitability','internal_customer_unified_workspace','internal_receiving_workspace','internal_order_operation','role_knowledge_articles',
-    'support_customer_directory','support_asset_directory','support_handoff_history','support_customer_context','support_workflow_states','support_ticket_workflow_state','support_unread_notifications','support_unread_handoff_updates','support_deadline_states','support_ticket_deadline_state','support_assignment_states','support_ticket_assignment_state',
+    'support_customer_directory','support_asset_directory','support_handoff_history','support_customer_context','support_workflow_states','support_ticket_workflow_state','support_unread_notifications','support_unread_handoff_updates','support_deadline_states','support_ticket_deadline_state','support_assignment_states','support_ticket_assignment_state','callconnect_dashboard',
     'internal_case_directory','internal_handoff_history','internal_knowledge_articles'
   ]);
 
@@ -518,6 +518,7 @@
     ],
     support_staff: [
       ['home','ホーム'],
+      ['support_callconnect','CallConnect'],
       ['support_new','新規問い合わせ'],
       ['support_cases','担当案件'],
       ['support_customers','顧客検索'],
@@ -7198,6 +7199,70 @@
     $('#knowledgeSearch').oninput=render; render();
   }
 
+  async function renderSupportCallConnect(){
+    const [dash,customers]=await Promise.all([
+      rpc('callconnect_dashboard'),
+      rpc('support_customer_directory')
+    ]);
+    const calls=dash?.calls||[];
+    const statusTextMap={200:'発信通話',201:'着信通話',300:'発信不在',301:'発信キャンセル',400:'着信キャンセル',401:'不在着信',402:'営業時間外着信'};
+    const matchText={matched:'自動一致',matched_manual:'手動一致',unmatched:'未照合',ambiguous:'複数候補'};
+    const rows=calls.map(x=>{
+      const needMatch=x.match_state==='unmatched'||x.match_state==='ambiguous';
+      return '<tr>'+
+        '<td>'+esc(dateTimeText(x.call_ended_at||x.received_at))+'</td>'+
+        '<td>'+esc(statusTextMap[x.record_status]||x.record_status||'—')+'</td>'+
+        '<td><strong>'+esc(x.contact_number||'—')+'</strong><br><span class="muted">'+esc(x.contact_company||x.contact_name||'')+'</span></td>'+
+        '<td>'+esc(x.callconnect_user_name||'—')+'</td>'+
+        '<td>'+esc(x.duration_seconds??0)+'秒</td>'+
+        '<td>'+(needMatch?'<span class="hold">'+esc(matchText[x.match_state]||x.match_state)+'</span>':'<span class="pill good">'+esc(matchText[x.match_state]||x.match_state)+'</span>')+
+          (x.matched_customer_name?'<br><span class="muted">'+esc(x.matched_customer_name)+'</span>':'')+'</td>'+
+        '<td>'+(x.support_ticket_id?'<button class="linkBtn callconnectTicketOpen" type="button" data-id="'+esc(x.support_ticket_id)+'">'+esc(x.ticket_number||'案件')+'</button>':'—')+'</td>'+
+        '<td>'+(needMatch?'<div class="row" style="gap:6px"><select class="callconnectCustomerSelect" data-id="'+esc(x.id)+'"><option value="">顧客を選択</option>'+(customers||[]).map(cu=>'<option value="'+esc(cu.id)+'">'+esc(cu.customer_code||'—')+' / '+esc(cu.name||'')+'</option>').join('')+'</select><button class="primary callconnectMatchBtn" type="button" data-id="'+esc(x.id)+'">紐付け</button></div>':'確認済')+'</td>'+
+      '</tr>';
+    });
+    $('#home').innerHTML=
+      pageIntro('CallConnect連携','CallConnectから受信した通話を自動で顧客照合し、着信案件としてQuoteFlowへ反映します。')+
+      kpis([
+        ['接続状態',dash?.integration_state==='connected'?'接続済み':'設定待ち'],
+        ['受信通話',dash?.total_calls||0],
+        ['未照合',dash?.unmatched_calls||0],
+        ['案件作成済み',dash?.linked_tickets||0]
+      ])+
+      '<section class="card section">'+
+        '<div class="row between"><div><h2>接続状態</h2><p class="sectionDesc">Webhook受信後、自動で「接続済み」に切り替わります。</p></div><span class="pill '+(dash?.integration_state==='connected'?'good':'warn')+'">'+esc(dash?.integration_state==='connected'?'接続済み':'CallConnect設定待ち')+'</span></div>'+
+        '<div class="modalGrid2">'+
+          '<div class="item"><strong>最終受信</strong><p>'+esc(dateTimeText(dash?.last_webhook_at))+'</p></div>'+
+          '<div class="item"><strong>最終CallConnect Record ID</strong><p>'+esc(dash?.last_record_id||'未受信')+'</p></div>'+
+        '</div>'+
+        (dash?.last_error?'<div class="notice error">最終エラー: '+esc(dash.last_error)+'</div>':'')+
+      '</section>'+
+      '<section class="card section"><div class="row between"><div><h2>通話履歴</h2><p class="sectionDesc">電話番号が顧客マスタと一致すると、自動で案件作成します。未照合はここで顧客を指定できます。</p></div></div>'+
+        dataTable(['日時','種別','電話番号','CallConnect担当','通話','顧客照合','案件','操作'],rows)+
+      '</section>';
+
+    document.querySelectorAll('.callconnectTicketOpen').forEach(btn=>btn.onclick=async()=>{
+      await go('support_cases');
+      await renderTicketDetail(btn.dataset.id);
+    });
+    document.querySelectorAll('.callconnectMatchBtn').forEach(btn=>btn.onclick=async()=>{
+      const sel=document.querySelector('.callconnectCustomerSelect[data-id="'+CSS.escape(btn.dataset.id)+'"]');
+      if(!sel?.value) return toast('顧客を選択してください');
+      btn.disabled=true;
+      try{
+        const result=await rpc('link_callconnect_customer',{p_call_id:btn.dataset.id,p_customer_id:sel.value});
+        toast('顧客を紐付けました');
+        if(result?.ticket_id){
+          await go('support_cases');
+          await renderTicketDetail(result.ticket_id);
+        }else{
+          await renderSupportCallConnect();
+        }
+      }catch(err){toast(err.message||String(err));}
+      finally{btn.disabled=false;}
+    });
+  }
+
   async function renderSupportNew(){
     const customers=await rpc('support_customer_directory');
     $('#home').innerHTML=
@@ -8064,6 +8129,7 @@
       if(page==='contracts') return await renderContractsWorkspace();
       if(page==='analysis') return await renderAnalysis();
       if(page==='knowledge_admin') return await renderKnowledgeAdmin();
+      if(page==='support_callconnect') return await renderSupportCallConnect();
       if(page==='support_new') return await renderSupportNew();
       if(page==='support_cases') return await renderSupportCases();
       if(page==='support_customers') return await renderSupportCustomers();
