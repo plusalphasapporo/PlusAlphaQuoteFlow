@@ -148,7 +148,7 @@
   const roleLabel = (r) => ({internal_admin:'自社管理者',internal_staff:'自社スタッフ',support_staff:'サポート会社',customer_user:'顧客会社'}[r] || r || '不明');
   const money = (v) => new Intl.NumberFormat('ja-JP',{style:'currency',currency:'JPY',maximumFractionDigits:0}).format(Number(v || 0));
   const dateText = (v) => v ? new Intl.DateTimeFormat('ja-JP',{year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(v)) : '—';
-  const statusText = (v) => ({draft:'下書き',finalized:'確定済み',sent:'送付済み',accepted:'承認済み',rejected:'却下',open:'未対応',in_progress:'対応中',resolved:'解決',closed:'完了',active:'有効',inactive:'無効'}[v] || v || '—');
+  const statusText = (v) => ({draft:'下書き',finalized:'確定済み',sent:'送付済み',accepted:'承認済み',rejected:'却下',open:'未対応',in_progress:'対応中',resolved:'解決',closed:'完了',active:'有効',inactive:'無効',planned:'予定',delivered:'納品済み'}[v] || v || '—');
   const toast = (m) => { const e=$('#toast'); e.textContent=m; e.style.display='block'; clearTimeout(window.__toastTimer); window.__toastTimer=setTimeout(()=>e.style.display='none',2500); };
   const show = (id) => ['loginView','mfaView','appView'].forEach(x => $('#'+x).classList.toggle('hidden',x!==id));
   const notice = (id,msg,ok=false) => { const e=$(id); e.textContent=msg; e.className='notice '+(ok?'ok':'error'); e.classList.remove('hidden'); };
@@ -164,6 +164,8 @@
       ['customers','顧客'],
       ['quotes','見積'],
       ['orders','受注'],
+      ['purchase_orders','発注'],
+      ['deliveries','納品'],
       ['support','サポート'],
       ['settings','設定']
     ],
@@ -172,6 +174,8 @@
       ['customers','顧客'],
       ['quotes','見積'],
       ['orders','受注'],
+      ['purchase_orders','発注'],
+      ['deliveries','納品'],
       ['support','サポート']
     ],
     support_staff: [
@@ -695,6 +699,54 @@
     };
   }
 
+  async function renderOrderDetail(orderId){
+    const detail=await rpc('internal_order_detail',{p_order_id:orderId});
+    const o=detail?.order;
+    if(!o) throw new Error('受注が見つかりません。');
+    const customer=detail.customer||{};
+    const quote=detail.quote||null;
+
+    const [poRes,deliveryRes]=await Promise.all([
+      supabase.from('purchase_orders')
+        .select('id,purchase_order_number,supplier_name,status,total_cost,created_at')
+        .eq('order_id',orderId)
+        .order('created_at',{ascending:false}),
+      supabase.from('deliveries')
+        .select('id,delivery_number,status,scheduled_at,delivered_at,created_at')
+        .eq('order_id',orderId)
+        .order('created_at',{ascending:false})
+    ]);
+    if(poRes.error) throw poRes.error;
+    if(deliveryRes.error) throw deliveryRes.error;
+
+    const poRows=(poRes.data||[]).map(po=>
+      '<tr><td>'+esc(po.purchase_order_number||'未採番')+'</td><td>'+esc(po.supplier_name||'—')+'</td><td>'+esc(statusText(po.status))+'</td><td class="amount">'+esc(money(po.total_cost))+'</td></tr>'
+    );
+    const deliveryRows=(deliveryRes.data||[]).map(d=>
+      '<tr><td>'+esc(d.delivery_number||'未採番')+'</td><td>'+esc(statusText(d.status))+'</td><td>'+esc(dateText(d.scheduled_at))+'</td><td>'+esc(dateText(d.delivered_at))+'</td></tr>'
+    );
+
+    $('#orderDetailHost').innerHTML=
+      '<section class="card section">'+
+        '<div class="quoteDetailHead">'+
+          '<div><h2>受注詳細</h2><p class="sectionDesc">'+esc(o.order_number||'未採番')+' / '+esc(customer.name||'')+'</p></div>'+
+          '<button id="orderDetailClose" class="ghost" type="button">閉じる</button>'+
+        '</div>'+
+        kpis([
+          ['受注金額',money(o.total_amount)],
+          ['状態',statusText(o.status)],
+          ['受注日',dateText(o.ordered_at)],
+          ['元見積',quote?.quote_number||'—']
+        ])+
+        (o.internal_note?'<div class="notice">社内メモ: '+esc(o.internal_note)+'</div>':'')+
+        '<section class="section"><h3>関連する発注</h3>'+dataTable(['発注番号','仕入先','状態','原価'],poRows)+'</section>'+
+        '<section class="section"><h3>関連する納品</h3>'+dataTable(['納品番号','状態','予定日','納品日'],deliveryRows)+'</section>'+
+      '</section>';
+
+    $('#orderDetailClose').onclick=()=>{$('#orderDetailHost').innerHTML='';};
+    $('#orderDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
+  }
+
   async function renderOrders(){
     const [{data,error},cmap]=await Promise.all([
       supabase.from('orders').select('id,customer_id,quote_id,order_number,status,total_amount,ordered_at,created_at').order('created_at',{ascending:false}),
@@ -710,11 +762,143 @@
         '<td class="amount">'+esc(money(o.total_amount))+'</td>'+
         '<td>'+esc(dateText(o.ordered_at))+'</td>'+
         '<td>'+esc(dateText(o.created_at))+'</td>'+
+        '<td><button class="linkBtn orderDetail" type="button" data-id="'+esc(o.id)+'">詳細</button></td>'+
       '</tr>';
     });
     $('#home').innerHTML=
-      pageIntro('受注','自社管理者・自社スタッフのみ閲覧できます。')+
-      dataTable(['受注番号','顧客','状態','合計','受注日','作成日'],rows);
+      pageIntro('受注','顧客が承諾した見積から作成された受注を確認します。')+
+      '<div id="orderDetailHost"></div>'+
+      dataTable(['受注番号','顧客','状態','合計','受注日','作成日','操作'],rows);
+
+    document.querySelectorAll('.orderDetail').forEach(btn=>{
+      btn.onclick=async()=>{
+        btn.disabled=true;
+        try{ await renderOrderDetail(btn.dataset.id); }
+        catch(err){ toast(err.message||String(err)); }
+        finally{ btn.disabled=false; }
+      };
+    });
+  }
+
+  async function renderPurchaseOrderDetail(id){
+    const detail=await rpc('internal_purchase_order_detail',{p_purchase_order_id:id});
+    const po=detail?.purchase_order;
+    if(!po) throw new Error('発注が見つかりません。');
+    const items=detail.items||[];
+    const rows=items.map(i=>
+      '<tr><td>'+esc(i.description||'')+'</td><td>'+esc(i.quantity)+'</td><td class="amount">'+esc(money(i.unit_cost))+'</td><td class="amount">'+esc(money(Number(i.quantity||0)*Number(i.unit_cost||0)))+'</td></tr>'
+    );
+
+    $('#purchaseOrderDetailHost').innerHTML=
+      '<section class="card section">'+
+        '<div class="quoteDetailHead">'+
+          '<div><h2>発注詳細</h2><p class="sectionDesc">'+esc(po.purchase_order_number||'未採番')+' / '+esc(po.supplier_name||'仕入先未設定')+'</p></div>'+
+          '<button id="purchaseOrderDetailClose" class="ghost" type="button">閉じる</button>'+
+        '</div>'+
+        kpis([
+          ['原価合計',money(po.total_cost)],
+          ['状態',statusText(po.status)],
+          ['作成日',dateText(po.created_at)],
+          ['受注ID',po.order_id?'紐付けあり':'—']
+        ])+
+        (po.internal_note?'<div class="notice">社内メモ: '+esc(po.internal_note)+'</div>':'')+
+        '<section class="section"><h3>明細</h3>'+dataTable(['明細','数量','単価原価','金額'],rows)+'</section>'+
+      '</section>';
+
+    $('#purchaseOrderDetailClose').onclick=()=>{$('#purchaseOrderDetailHost').innerHTML='';};
+    $('#purchaseOrderDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
+  }
+
+  async function renderPurchaseOrders(){
+    const data=await rpc('internal_purchase_orders');
+    const rows=(data||[]).map(po=>
+      '<tr>'+
+        '<td><strong>'+esc(po.purchase_order_number||'未採番')+'</strong></td>'+
+        '<td>'+esc(po.customer_name||'—')+'</td>'+
+        '<td>'+esc(po.supplier_name||'—')+'</td>'+
+        '<td>'+esc(statusText(po.status))+'</td>'+
+        '<td class="amount">'+esc(money(po.total_cost))+'</td>'+
+        '<td>'+esc(po.order_number||'—')+'</td>'+
+        '<td><button class="linkBtn purchaseOrderDetail" type="button" data-id="'+esc(po.id)+'">詳細</button></td>'+
+      '</tr>'
+    );
+
+    $('#home').innerHTML=
+      pageIntro('発注','受注に紐づく仕入・発注情報を確認します。')+
+      '<div id="purchaseOrderDetailHost"></div>'+
+      dataTable(['発注番号','顧客','仕入先','状態','原価','受注番号','操作'],rows);
+
+    document.querySelectorAll('.purchaseOrderDetail').forEach(btn=>{
+      btn.onclick=async()=>{
+        btn.disabled=true;
+        try{ await renderPurchaseOrderDetail(btn.dataset.id); }
+        catch(err){ toast(err.message||String(err)); }
+        finally{ btn.disabled=false; }
+      };
+    });
+  }
+
+  async function renderDeliveryDetail(id){
+    const detail=await rpc('internal_delivery_detail',{p_delivery_id:id});
+    const d=detail?.delivery;
+    if(!d) throw new Error('納品が見つかりません。');
+    const c=detail.customer||{};
+    const o=detail.order||null;
+
+    $('#deliveryDetailHost').innerHTML=
+      '<section class="card section">'+
+        '<div class="quoteDetailHead">'+
+          '<div><h2>納品詳細</h2><p class="sectionDesc">'+esc(d.delivery_number||'未採番')+' / '+esc(c.name||'')+'</p></div>'+
+          '<button id="deliveryDetailClose" class="ghost" type="button">閉じる</button>'+
+        '</div>'+
+        kpis([
+          ['状態',statusText(d.status)],
+          ['予定日',dateText(d.scheduled_at)],
+          ['納品日',dateText(d.delivered_at)],
+          ['受注番号',o?.order_number||'—']
+        ])+
+        (d.notes?'<div class="notice">納品メモ: '+esc(d.notes)+'</div>':'')+
+        (d.internal_note?'<div class="notice">社内メモ: '+esc(d.internal_note)+'</div>':'')+
+      '</section>';
+
+    $('#deliveryDetailClose').onclick=()=>{$('#deliveryDetailHost').innerHTML='';};
+    $('#deliveryDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
+  }
+
+  async function renderDeliveries(){
+    const [{data,error},cmap]=await Promise.all([
+      supabase.from('deliveries')
+        .select('id,customer_id,order_id,delivery_number,status,scheduled_at,delivered_at,created_at')
+        .order('created_at',{ascending:false}),
+      customerMap()
+    ]);
+    if(error) throw error;
+
+    const rows=(data||[]).map(d=>{
+      const c=cmap[d.customer_id]||{};
+      return '<tr>'+
+        '<td><strong>'+esc(d.delivery_number||'未採番')+'</strong></td>'+
+        '<td>'+esc(c.name||'—')+'</td>'+
+        '<td>'+esc(statusText(d.status))+'</td>'+
+        '<td>'+esc(dateText(d.scheduled_at))+'</td>'+
+        '<td>'+esc(dateText(d.delivered_at))+'</td>'+
+        '<td><button class="linkBtn deliveryDetail" type="button" data-id="'+esc(d.id)+'">詳細</button></td>'+
+      '</tr>';
+    });
+
+    $('#home').innerHTML=
+      pageIntro('納品','受注に紐づく納品情報を確認します。')+
+      '<div id="deliveryDetailHost"></div>'+
+      dataTable(['納品番号','顧客','状態','予定日','納品日','操作'],rows);
+
+    document.querySelectorAll('.deliveryDetail').forEach(btn=>{
+      btn.onclick=async()=>{
+        btn.disabled=true;
+        try{ await renderDeliveryDetail(btn.dataset.id); }
+        catch(err){ toast(err.message||String(err)); }
+        finally{ btn.disabled=false; }
+      };
+    });
   }
 
   async function renderSupport(){
@@ -807,6 +991,8 @@
       if(page==='customers') return await renderCustomers();
       if(page==='quotes') return await renderQuotes();
       if(page==='orders') return await renderOrders();
+      if(page==='purchase_orders') return await renderPurchaseOrders();
+      if(page==='deliveries') return await renderDeliveries();
       if(page==='support') return await renderSupport();
       if(page==='settings') return await renderSettings();
       if(page==='assets') return await renderAssets();
