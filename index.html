@@ -4372,13 +4372,17 @@
           '</form>'+
           (callconnectApi?.last_api_error?'<div class="notice error">最終APIエラー: '+esc(callconnectApi.last_api_error)+'</div>':'')+
           '<div id="callconnectApiKeyMsg" class="notice hidden"></div>'+
+          '<div class="supportQuickActions" style="margin-top:14px">'+
+            '<button id="testCallConnectApi" class="primary" type="button" '+((callconnectApi?.api_key_configured&&callconnectApi?.contacts_api_url_configured)?'':'disabled')+'>API接続テスト</button>'+
+          '</div>'+
+          '<div id="callconnectApiTestMsg" class="notice hidden"></div>'+
         '</section>'+
         '<section class="card section">'+
           '<h2>現在の連携構成</h2>'+
           '<div class="supportFlow">'+
             '<div class="supportStep done"><span class="supportStepNum">1</span><strong>Webhook</strong><small>通話終了後の履歴・顧客照合・案件化</small></div>'+
             '<div class="supportStep '+(callconnectApi?.api_key_configured?'done':'active')+'"><span class="supportStepNum">2</span><strong>REST API Key</strong><small>'+(callconnectApi?.api_key_configured?'登録済み':'未登録')+'</small></div>'+
-            '<div class="supportStep '+((callconnectApi?.api_key_configured&&callconnectApi?.contacts_api_url_configured)?'active':'')+'"><span class="supportStepNum">3</span><strong>API接続確認</strong><small>'+(callconnectApi?.api_key_configured&&callconnectApi?.contacts_api_url_configured?'接続テスト可能':'API KeyとURL設定が必要')+'</small></div>'+
+            '<div class="supportStep '+(callconnectApi?.last_api_check_status==='connected'?'done':((callconnectApi?.api_key_configured&&callconnectApi?.contacts_api_url_configured)?'active':''))+'"><span class="supportStepNum">3</span><strong>API接続確認</strong><small>'+(callconnectApi?.last_api_check_status==='connected'?'接続確認済み':(callconnectApi?.api_key_configured&&callconnectApi?.contacts_api_url_configured?'接続テスト可能':'API KeyとURL設定が必要'))+'</small></div>'+
             '<div class="supportStep"><span class="supportStepNum">4</span><strong>手動・自動同期</strong><small>顧客・通話履歴の再同期</small></div>'+
           '</div>'+
         '</section>';
@@ -4531,6 +4535,26 @@
           await renderSettings('integrations');
         }catch(err){notice('#callconnectApiKeyMsg',err.message||String(err));}
         finally{clearCallConnectApiKey.disabled=false;}
+      };
+    }
+
+    const testCallConnectApi=$('#testCallConnectApi');
+    if(testCallConnectApi){
+      testCallConnectApi.onclick=async()=>{
+        testCallConnectApi.disabled=true;
+        try{
+          notice('#callconnectApiTestMsg','CallConnect APIへ接続確認しています...',true);
+          const {data,error}=await supabase.functions.invoke('callconnect-api-test',{body:{}});
+          if(error) throw error;
+          if(!data?.ok) throw new Error('CallConnect API接続に失敗しました。');
+          notice('#callconnectApiTestMsg','CallConnect API接続に成功しました。HTTP '+esc(data.status||200)+(data.sample_count!=null?' / 取得件数 '+esc(data.sample_count):''),true);
+          toast('CallConnect API接続確認に成功しました');
+          setTimeout(()=>renderSettings('integrations'),600);
+        }catch(err){
+          notice('#callconnectApiTestMsg',err.message||String(err));
+        }finally{
+          testCallConnectApi.disabled=false;
+        }
       };
     }
 
