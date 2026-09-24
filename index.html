@@ -71,6 +71,24 @@
     .connectionBar.reconnecting{background:#eff6ff;color:#1e40af;border-color:#bfdbfe}
     .pageError{background:#fff;border:1px solid #fecaca;border-radius:16px;padding:20px}
     .pageError h3{margin:0 0 8px;color:#991b1b}.pageError p{margin:6px 0;color:#475569}
+    .appModalLayer{position:fixed;inset:0;z-index:100;background:rgba(15,23,42,.46);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:20px}
+    .appModal{width:min(960px,100%);max-height:calc(100vh - 40px);background:#fff;border:1px solid #dbe3ef;border-radius:20px;box-shadow:0 28px 80px rgba(15,23,42,.28);display:flex;flex-direction:column;overflow:hidden}
+    .appModal.wide{width:min(1120px,100%)}
+    .appModalHead{flex:0 0 auto;padding:18px 22px;border-bottom:1px solid var(--line);display:flex;align-items:flex-start;justify-content:space-between;gap:14px;background:#fff}
+    .appModalHead h2{margin:0;font-size:21px}.appModalHead p{margin:4px 0 0;color:var(--muted);font-size:13px}
+    .appModalForm{display:flex;flex-direction:column;min-height:0;flex:1}
+    .appModalBody{padding:18px 22px;overflow:auto;background:#f8fafc}
+    .appModalFoot{flex:0 0 auto;position:sticky;bottom:0;padding:14px 22px;border-top:1px solid var(--line);background:#fff;display:flex;justify-content:flex-end;gap:10px;box-shadow:0 -8px 24px rgba(15,23,42,.05)}
+    .formSection{background:#fff;border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:14px}
+    .formSectionHead{display:flex;align-items:center;gap:10px;margin-bottom:14px}.formSectionHead h3{margin:0;font-size:16px}
+    .sectionNo{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:var(--soft);color:#1d4ed8;font-weight:900;font-size:12px}
+    .modalGrid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    .modalGrid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+    .residualRow{border:1px solid var(--line);border-radius:13px;padding:12px;background:#fbfdff;margin-top:10px}
+    .amountSummary{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-top:10px}
+    .amountSummary .summaryBox{padding:12px;border:1px solid var(--line);border-radius:12px;background:#fff}
+    .amountSummary .summaryBox span{display:block;color:var(--muted);font-size:11px}.amountSummary .summaryBox strong{display:block;margin-top:5px;font-size:17px}
+    body.modalOpen{overflow:hidden}
     @media(max-width:980px){
       .appShell{grid-template-columns:1fr}.side{position:static}.sideTitle{display:none}
       #navMenu{display:flex;gap:6px;overflow:auto}.navBtn{width:auto;white-space:nowrap}
@@ -80,6 +98,7 @@
       .workspaceHead{padding:14px}.workspaceHead h1{font-size:20px}.pageIntro{align-items:flex-start;flex-direction:column}
       .card{padding:16px}
       .quoteItemRow{grid-template-columns:1fr 1fr}.quoteItemRow .descField{grid-column:1/-1}.quoteItemRow .removeItem{width:100%}
+      .appModalLayer{padding:8px}.appModal{max-height:calc(100vh - 16px);border-radius:14px}.appModalHead,.appModalBody,.appModalFoot{padding-left:14px;padding-right:14px}.modalGrid2,.modalGrid3,.amountSummary{grid-template-columns:1fr}
     }
   </style>
 </head>
@@ -234,7 +253,7 @@
     'internal_quote_detail','internal_order_detail','internal_purchase_orders',
     'internal_purchase_order_detail','internal_delivery_detail','internal_asset_detail',
     'internal_contract_detail','internal_assets_list','internal_customers_list',
-    'internal_customer_detail','internal_customer_contacts','support_ticket_workspace',
+    'internal_customer_detail','internal_customer_contacts','internal_customer_registration_options','support_ticket_workspace',
     'customer_ticket_detail','internal_numbering_settings','internal_accounts_list',
     'internal_account_companies','internal_audit_workspace','internal_document_profile','internal_demo_seed_status'
   ]);
@@ -868,59 +887,119 @@
   }
 
 
-  async function renderCustomerCreate(){
-    $('#home').innerHTML=
-      pageIntro('新規顧客登録','顧客を登録してから、その顧客のカルテから見積を作成します。')+
-      '<section class="card section">'+
-        '<div class="quoteDetailHead">'+
-          '<div><h2>顧客基本情報</h2><p class="sectionDesc">まず顧客情報を登録します。</p></div>'+
-          '<button id="customerCreateCancel" class="ghost" type="button">顧客一覧へ戻る</button>'+
-        '</div>'+
-        '<form id="customerCreateForm">'+
-          '<div class="row">'+
-            '<div class="field" style="flex:1;min-width:180px"><label>顧客コード（任意）</label><input id="customerCode"></div>'+
-            '<div class="field" style="flex:2;min-width:260px"><label>顧客名</label><input id="customerName" required autofocus></div>'+
-          '</div>'+
-          '<div class="field"><label>電話</label><input id="customerPhone"></div>'+
-          '<div class="field"><label>社内メモ</label><textarea id="customerNote" rows="3"></textarea></div>'+
-          '<div class="section" style="margin-top:18px">'+
-            '<h3>主担当者（任意）</h3>'+
-            '<div class="row">'+
-              '<div class="field" style="flex:1;min-width:180px"><label>氏名</label><input id="customerContactName"></div>'+
-              '<div class="field" style="flex:1;min-width:220px"><label>メール</label><input id="customerContactEmail" type="email"></div>'+
-              '<div class="field" style="flex:1;min-width:180px"><label>電話</label><input id="customerContactPhone"></div>'+
-            '</div>'+
-          '</div>'+
-          '<div class="row" style="margin-top:18px">'+
-            '<button class="primary" type="submit">顧客を登録</button>'+
-            '<button id="customerCreateCancel2" class="ghost" type="button">キャンセル</button>'+
-          '</div>'+
-        '</form>'+
-        '<div id="customerCreateMsg" class="notice hidden"></div>'+
-      '</section>';
+  function closeAppModal(){
+    const layer=$('#appModalLayer');
+    if(layer) layer.remove();
+    document.body.classList.remove('modalOpen');
+  }
 
-    const cancel=()=>go('customers');
-    $('#customerCreateCancel').onclick=cancel;
-    $('#customerCreateCancel2').onclick=cancel;
+  function mountAppModal(innerHtml,wide=false){
+    closeAppModal();
+    document.body.insertAdjacentHTML('beforeend',
+      '<div id="appModalLayer" class="appModalLayer" role="dialog" aria-modal="true">'+
+        '<div class="appModal '+(wide?'wide':'')+'">'+innerHtml+'</div>'+
+      '</div>'
+    );
+    document.body.classList.add('modalOpen');
+    $('#appModalLayer').onclick=e=>{ if(e.target.id==='appModalLayer') closeAppModal(); };
+  }
+
+  function localDateValue(date=new Date()){
+    const x=new Date(date.getTime()-date.getTimezoneOffset()*60000);
+    return x.toISOString().slice(0,10);
+  }
+
+  async function renderCustomerCreate(){
+    const options=await rpc('internal_customer_registration_options');
+    const parentOptions=(options?.parents||[]).map(x=>
+      '<option value="'+esc(x.id)+'">'+esc(x.customer_code||'—')+' / '+esc(x.name||'')+'</option>'
+    ).join('');
+    const supportOptions=(options?.support_companies||[]).map(x=>
+      '<option value="'+esc(x.id)+'">'+esc(x.name||'')+'</option>'
+    ).join('');
+
+    mountAppModal(
+      '<div class="appModalHead">'+
+        '<div><h2>新規顧客登録</h2><p>顧客・契約・保守情報で共通利用する顧客マスタを登録します。</p></div>'+
+        '<button id="customerCreateClose" class="ghost" type="button">×</button>'+
+      '</div>'+
+      '<form id="customerCreateForm" class="appModalForm">'+
+        '<div class="appModalBody">'+
+          '<section class="formSection">'+
+            '<div class="formSectionHead"><span class="sectionNo">01</span><h3>会社・拠点</h3></div>'+
+            '<div class="modalGrid2">'+
+              '<div class="field"><label>会社名 <span class="muted">必須</span></label><input id="customerName" required autofocus></div>'+
+              '<div class="field"><label>顧客番号</label><input id="customerCodePreview" value="'+esc(options?.next_customer_code||'自動採番')+'" readonly></div>'+
+              '<div class="field"><label>拠点区分</label><select id="customerBranchType"><option value="head_office">本店</option><option value="branch">支店</option></select></div>'+
+              '<div class="field" id="customerParentField" style="display:none"><label>親顧客</label><select id="customerParent"><option value="">選択してください</option>'+parentOptions+'</select></div>'+
+            '</div>'+
+          '</section>'+
+          '<section class="formSection">'+
+            '<div class="formSectionHead"><span class="sectionNo">02</span><h3>所在地</h3></div>'+
+            '<div class="modalGrid3">'+
+              '<div class="field"><label>郵便番号</label><input id="customerPostalCode" placeholder="000-0000"></div>'+
+              '<div class="field" style="grid-column:span 2"><label>住所1</label><input id="customerAddress1"></div>'+
+            '</div>'+
+            '<div class="field"><label>住所2</label><input id="customerAddress2"></div>'+
+          '</section>'+
+          '<section class="formSection">'+
+            '<div class="formSectionHead"><span class="sectionNo">03</span><h3>連絡先</h3></div>'+
+            '<div class="modalGrid3">'+
+              '<div class="field"><label>電話</label><input id="customerPhone"></div>'+
+              '<div class="field"><label>携帯</label><input id="customerMobile"></div>'+
+              '<div class="field"><label>FAX</label><input id="customerFax"></div>'+
+              '<div class="field"><label>メール</label><input id="customerEmail" type="email"></div>'+
+              '<div class="field" style="grid-column:span 2"><label>Web</label><input id="customerWebsite" type="url" placeholder="https://"></div>'+
+            '</div>'+
+          '</section>'+
+          '<section class="formSection">'+
+            '<div class="formSectionHead"><span class="sectionNo">04</span><h3>運用設定</h3></div>'+
+            '<div class="field"><label>サポート会社</label><select id="customerSupportCompany"><option value="">指定なし</option>'+supportOptions+'</select></div>'+
+            '<div class="field"><label>社内メモ</label><textarea id="customerNote" rows="4"></textarea></div>'+
+            '<p class="muted">担当者・機器・物件は顧客登録後に追加します。</p>'+
+          '</section>'+
+          '<div id="customerCreateMsg" class="notice hidden"></div>'+
+        '</div>'+
+        '<div class="appModalFoot">'+
+          '<button id="customerCreateCancel" class="ghost" type="button">キャンセル</button>'+
+          '<button class="primary" type="submit">顧客を登録</button>'+
+        '</div>'+
+      '</form>'
+    );
+
+    const updateBranch=()=>{
+      $('#customerParentField').style.display=$('#customerBranchType').value==='branch'?'block':'none';
+      if($('#customerBranchType').value!=='branch') $('#customerParent').value='';
+    };
+    $('#customerBranchType').onchange=updateBranch;
+    updateBranch();
+    $('#customerCreateClose').onclick=closeAppModal;
+    $('#customerCreateCancel').onclick=closeAppModal;
 
     $('#customerCreateForm').onsubmit=async e=>{
       e.preventDefault();
       const btn=e.submitter;
       if(btn) btn.disabled=true;
       try{
-        const created=await rpc('create_customer',{
-          p_customer_code:$('#customerCode').value.trim()||null,
+        const created=await rpc('create_customer_full',{
+          p_customer_code:null,
           p_name:$('#customerName').value.trim(),
+          p_branch_type:$('#customerBranchType').value,
+          p_parent_customer_id:$('#customerParent').value||null,
+          p_postal_code:$('#customerPostalCode').value.trim()||null,
+          p_address1:$('#customerAddress1').value.trim()||null,
+          p_address2:$('#customerAddress2').value.trim()||null,
           p_phone:$('#customerPhone').value.trim()||null,
-          p_internal_note:$('#customerNote').value.trim()||null,
-          p_contact_name:$('#customerContactName').value.trim()||null,
-          p_contact_email:$('#customerContactEmail').value.trim()||null,
-          p_contact_phone:$('#customerContactPhone').value.trim()||null
+          p_mobile:$('#customerMobile').value.trim()||null,
+          p_fax:$('#customerFax').value.trim()||null,
+          p_email:$('#customerEmail').value.trim()||null,
+          p_website:$('#customerWebsite').value.trim()||null,
+          p_support_company_id:$('#customerSupportCompany').value||null,
+          p_internal_note:$('#customerNote').value.trim()||null
         });
-        notice('#customerCreateMsg','顧客を登録しました。顧客カルテを開きます。',true);
-        toast('顧客を登録しました');
-        await go('customers');
-        if(created?.id) await renderCustomerDetail(created.id);
+        closeAppModal();
+        toast('顧客 '+(created?.customer_code||'')+' を登録しました');
+        await renderCustomers();
       }catch(err){
         notice('#customerCreateMsg',err.message||String(err));
       }finally{
@@ -929,62 +1008,200 @@
     };
   }
 
-  async function renderCustomerQuoteCreate(customerId){
-    const customer=await rpc('internal_customer_detail',{p_customer_id:customerId});
+  async function renderCustomerQuoteCreate(preselectedCustomerId=null){
+    const customers=await rpc('internal_customers_list');
+    const customerOptions=(customers||[]).map(c=>
+      '<option value="'+esc(c.id)+'" '+(c.id===preselectedCustomerId?'selected':'')+'>'+esc(c.customer_code||'—')+' / '+esc(c.name||'')+'</option>'
+    ).join('');
 
-    $('#home').innerHTML=
-      pageIntro('見積作成','顧客カルテから見積を作成します。顧客は固定されています。')+
-      '<section class="card section">'+
-        '<div class="quoteDetailHead">'+
-          '<div><h2>'+esc(customer.name||'')+'</h2><p class="sectionDesc">'+esc(customer.customer_code||'—')+' / この顧客で新規見積</p></div>'+
-          '<button id="quoteCreateBackCustomer" class="ghost" type="button">顧客詳細へ戻る</button>'+
+    const residualRow=()=>(
+      '<div class="residualRow" data-residual-row>'+
+        '<div class="modalGrid3">'+
+          '<div class="field"><label>旧物件・残債名</label><input class="qri-name"></div>'+
+          '<div class="field"><label>既存リース会社</label><input class="qri-lessor"></div>'+
+          '<div class="field"><label>契約番号</label><input class="qri-contract"></div>'+
+          '<div class="field"><label>残回数</label><input class="qri-remain" type="number" min="0" step="1"></div>'+
+          '<div class="field"><label>月額（税込）</label><input class="qri-monthly" type="number" min="0" step="1" value="0"></div>'+
+          '<div class="field"><label>税込残債</label><input class="qri-residual" type="number" min="0" step="1" value="0"></div>'+
+          '<div class="field"><label>税込解約金・精算額</label><input class="qri-settlement" type="number" min="0" step="1" value="0"></div>'+
+          '<div class="field"><label>見積反映額</label><input class="qri-reflection" type="number" min="0" step="1" value="0"></div>'+
+          '<div class="field"><label>支払回数</label><input class="qri-paycount" type="number" min="0" step="1"></div>'+
+          '<div class="field"><label>初回支払額</label><input class="qri-first" type="number" min="0" step="1" value="0"></div>'+
+          '<div class="field"><label>2回目以降支払額</label><input class="qri-recurring" type="number" min="0" step="1" value="0"></div>'+
+          '<div class="field"><label>備考</label><input class="qri-note"></div>'+
         '</div>'+
-        '<div class="notice"><strong>見積先</strong><br>'+esc(customer.name||'')+(customer.phone?'<br>'+esc(customer.phone):'')+'</div>'+
-        '<form id="customerQuoteForm">'+
-          '<div class="row">'+
-            '<div class="field" style="flex:1;min-width:180px"><label>有効期限</label><input id="customerQuoteValidUntil" type="date"></div>'+
-            '<div class="field" style="flex:1;min-width:180px"><label>消費税額</label><input id="customerQuoteTax" type="number" min="0" step="1" value="0"></div>'+
-          '</div>'+
-          '<div class="row between"><strong>見積明細</strong><button id="customerQuoteAddItem" class="ghost" type="button">＋ 明細追加</button></div>'+
-          '<div id="customerQuoteItems" class="quoteItems">'+quoteItemRow()+'</div>'+
-          '<div class="field"><label>社内メモ</label><textarea id="customerQuoteNote" rows="3"></textarea></div>'+
-          '<div class="row" style="margin-top:18px">'+
-            '<button class="primary" type="submit">見積を下書き保存</button>'+
-            '<button id="customerQuoteCancel" class="ghost" type="button">キャンセル</button>'+
-          '</div>'+
-        '</form>'+
-        '<div id="customerQuoteMsg" class="notice hidden"></div>'+
-      '</section>';
+        '<div class="row" style="justify-content:flex-end"><button class="ghost removeResidual" type="button">この行を削除</button></div>'+
+      '</div>'
+    );
 
-    const back=async()=>{
-      await go('customers');
-      await renderCustomerDetail(customerId);
+    mountAppModal(
+      '<div class="appModalHead">'+
+        '<div><h2>新規見積登録</h2><p>基本情報から金額・備考まで1画面で登録します。</p></div>'+
+        '<button id="quoteCreateClose" class="ghost" type="button">×</button>'+
+      '</div>'+
+      '<form id="quoteCreateForm" class="appModalForm">'+
+        '<div class="appModalBody">'+
+          '<section class="formSection">'+
+            '<div class="formSectionHead"><span class="sectionNo">01</span><h3>基本情報</h3></div>'+
+            '<div class="modalGrid3">'+
+              '<div class="field" style="grid-column:span 2"><label>宛先会社名</label><select id="quoteCreateCustomer" required><option value="">顧客を選択してください</option>'+customerOptions+'</select></div>'+
+              '<div class="field"><label>敬称</label><select id="quoteCreateHonorific"><option value="御中">御中</option><option value="様">様</option></select></div>'+
+              '<div class="field"><label>見積日</label><input id="quoteCreateDate" type="date" value="'+localDateValue()+'"></div>'+
+              '<div class="field"><label>有効期限</label><input id="quoteCreateValidUntil" type="date"></div>'+
+              '<div class="field"><label>担当者</label><select id="quoteCreateContact"><option value="">指定なし</option></select></div>'+
+              '<div class="field" style="grid-column:span 2"><label>案件名</label><input id="quoteCreateProject"></div>'+
+              '<div class="field"><label>リース期間（月）</label><input id="quoteCreateLeaseMonths" type="number" min="0" step="1"></div>'+
+              '<div class="field"><label>消費税率（%）</label><input id="quoteCreateTaxRate" type="number" min="0" step="0.1" value="10"></div>'+
+              '<div class="field" style="grid-column:span 2"><label>顧客住所</label><input id="quoteCreateAddress" readonly></div>'+
+              '<div class="field"><label>電話</label><input id="quoteCreatePhone" readonly></div>'+
+            '</div>'+
+          '</section>'+
+          '<section class="formSection">'+
+            '<div class="formSectionHead"><span class="sectionNo">02</span><h3>見積明細</h3></div>'+
+            '<div class="row between"><span class="muted">物件名・型番／数量／税抜単価／仕入単価</span><button id="quoteCreateAddItem" class="ghost" type="button">＋ 明細追加</button></div>'+
+            '<div id="quoteCreateItems" class="quoteItems">'+quoteItemRow()+'</div>'+
+          '</section>'+
+          '<section class="formSection">'+
+            '<div class="formSectionHead"><span class="sectionNo">03</span><h3>旧物件・残債</h3></div>'+
+            '<div class="row between"><span class="muted">複数件登録できます。</span><button id="quoteCreateAddResidual" class="ghost" type="button">＋ 旧物件・残債を追加</button></div>'+
+            '<div id="quoteCreateResiduals">'+residualRow()+'</div>'+
+          '</section>'+
+          '<section class="formSection">'+
+            '<div class="formSectionHead"><span class="sectionNo">04</span><h3>金額・備考</h3></div>'+
+            '<div class="amountSummary">'+
+              '<div class="summaryBox"><span>新規物件合計</span><strong id="quoteSumSubtotal">¥0</strong></div>'+
+              '<div class="summaryBox"><span>旧物件精算反映額</span><strong id="quoteSumResidual">¥0</strong></div>'+
+              '<div class="summaryBox"><span>リース対象額</span><strong id="quoteSumLeaseTarget">¥0</strong></div>'+
+              '<div class="summaryBox"><span>消費税</span><strong id="quoteSumTax">¥0</strong></div>'+
+              '<div class="summaryBox"><span>見積合計</span><strong id="quoteSumTotal">¥0</strong></div>'+
+            '</div>'+
+            '<div class="field" style="margin-top:14px"><label>社内メモ</label><textarea id="quoteCreateNote" rows="4"></textarea></div>'+
+          '</section>'+
+          '<div id="quoteCreateMsg" class="notice hidden"></div>'+
+        '</div>'+
+        '<div class="appModalFoot">'+
+          '<button id="quoteCreateCancel" class="ghost" type="button">キャンセル</button>'+
+          '<button class="primary" type="submit">見積を登録</button>'+
+        '</div>'+
+      '</form>',
+      true
+    );
+
+    const form=$('#quoteCreateForm');
+    const itemsHost=$('#quoteCreateItems');
+    const residualHost=$('#quoteCreateResiduals');
+
+    const bindResidualRemove=()=>{
+      residualHost.querySelectorAll('.removeResidual').forEach(btn=>{
+        btn.onclick=()=>{
+          const rows=residualHost.querySelectorAll('[data-residual-row]');
+          if(rows.length<=1){
+            rows[0].querySelectorAll('input').forEach(i=>i.value=i.type==='number'?'0':'');
+          }else{
+            btn.closest('[data-residual-row]').remove();
+          }
+          recalc();
+        };
+      });
     };
-    $('#quoteCreateBackCustomer').onclick=back;
-    $('#customerQuoteCancel').onclick=back;
 
-    const itemsHost=$('#customerQuoteItems');
-    bindQuoteItems(itemsHost,$('#customerQuoteAddItem'));
+    const readResidualItems=()=>{
+      return [...residualHost.querySelectorAll('[data-residual-row]')].map(row=>({
+        old_property_name:row.querySelector('.qri-name').value.trim(),
+        lessor_name:row.querySelector('.qri-lessor').value.trim(),
+        contract_number:row.querySelector('.qri-contract').value.trim(),
+        remaining_count:row.querySelector('.qri-remain').value||null,
+        monthly_amount_tax_included:Number(row.querySelector('.qri-monthly').value||0),
+        residual_amount_tax_included:Number(row.querySelector('.qri-residual').value||0),
+        settlement_amount_tax_included:Number(row.querySelector('.qri-settlement').value||0),
+        reflection_amount:Number(row.querySelector('.qri-reflection').value||0),
+        payment_count:row.querySelector('.qri-paycount').value||null,
+        first_payment_amount:Number(row.querySelector('.qri-first').value||0),
+        recurring_payment_amount:Number(row.querySelector('.qri-recurring').value||0),
+        note:row.querySelector('.qri-note').value.trim()
+      })).filter(x=>
+        x.old_property_name||x.lessor_name||x.contract_number||x.note||
+        x.remaining_count||x.monthly_amount_tax_included||x.residual_amount_tax_included||
+        x.settlement_amount_tax_included||x.reflection_amount||x.payment_count||
+        x.first_payment_amount||x.recurring_payment_amount
+      );
+    };
 
-    $('#customerQuoteForm').onsubmit=async e=>{
+    const recalc=()=>{
+      let subtotal=0;
+      itemsHost.querySelectorAll('[data-quote-item-row]').forEach(row=>{
+        subtotal+=Number(row.querySelector('.qi-qty').value||0)*Number(row.querySelector('.qi-unit').value||0);
+      });
+      const residual=readResidualItems().reduce((sum,x)=>sum+Number(x.reflection_amount||0),0);
+      const taxRate=Number($('#quoteCreateTaxRate').value||0);
+      const tax=Math.round(subtotal*taxRate/100);
+      $('#quoteSumSubtotal').textContent=money(subtotal);
+      $('#quoteSumResidual').textContent=money(residual);
+      $('#quoteSumLeaseTarget').textContent=money(subtotal+residual);
+      $('#quoteSumTax').textContent=money(tax);
+      $('#quoteSumTotal').textContent=money(subtotal+tax);
+    };
+
+    const loadCustomer=async()=>{
+      const id=$('#quoteCreateCustomer').value;
+      $('#quoteCreateAddress').value='';
+      $('#quoteCreatePhone').value='';
+      $('#quoteCreateContact').innerHTML='<option value="">指定なし</option>';
+      if(!id) return;
+      const [customer,contacts]=await Promise.all([
+        rpc('internal_customer_detail',{p_customer_id:id}),
+        rpc('internal_customer_contacts',{p_customer_id:id})
+      ]);
+      $('#quoteCreateAddress').value=[
+        customer?.postal_code?('〒'+customer.postal_code):'',
+        customer?.address1||'',
+        customer?.address2||''
+      ].filter(Boolean).join(' ');
+      $('#quoteCreatePhone').value=customer?.phone||'';
+      $('#quoteCreateContact').innerHTML='<option value="">指定なし</option>'+
+        (contacts||[]).map(x=>'<option value="'+esc(x.name||'')+'">'+esc(x.name||'')+(x.is_primary?'（主担当）':'')+'</option>').join('');
+    };
+
+    bindQuoteItems(itemsHost,$('#quoteCreateAddItem'));
+    bindResidualRemove();
+    $('#quoteCreateAddResidual').onclick=()=>{
+      residualHost.insertAdjacentHTML('beforeend',residualRow());
+      bindResidualRemove();
+    };
+    form.addEventListener('input',e=>{
+      if(e.target.matches('.qi-qty,.qi-unit,.qri-reflection,#quoteCreateTaxRate')) recalc();
+    });
+    $('#quoteCreateCustomer').onchange=loadCustomer;
+    $('#quoteCreateClose').onclick=closeAppModal;
+    $('#quoteCreateCancel').onclick=closeAppModal;
+    if(preselectedCustomerId) await loadCustomer();
+    recalc();
+
+    form.onsubmit=async e=>{
       e.preventDefault();
       const btn=e.submitter;
       if(btn) btn.disabled=true;
       try{
-        const created=await rpc('create_draft_quote',{
+        const customerId=$('#quoteCreateCustomer').value;
+        if(!customerId) throw new Error('顧客を選択してください。');
+        await rpc('create_quote_full',{
           p_customer_id:customerId,
-          p_valid_until:$('#customerQuoteValidUntil').value||null,
-          p_tax_amount:Number($('#customerQuoteTax').value||0),
-          p_internal_note:$('#customerQuoteNote').value.trim()||null,
-          p_items:readQuoteItems(itemsHost)
+          p_quote_date:$('#quoteCreateDate').value||null,
+          p_valid_until:$('#quoteCreateValidUntil').value||null,
+          p_project_name:$('#quoteCreateProject').value.trim()||null,
+          p_honorific:$('#quoteCreateHonorific').value,
+          p_contact_name:$('#quoteCreateContact').value||null,
+          p_lease_months:$('#quoteCreateLeaseMonths').value?Number($('#quoteCreateLeaseMonths').value):null,
+          p_tax_rate:Number($('#quoteCreateTaxRate').value||10),
+          p_internal_note:$('#quoteCreateNote').value.trim()||null,
+          p_items:readQuoteItems(itemsHost),
+          p_residual_items:readResidualItems()
         });
-        notice('#customerQuoteMsg','見積の下書きを作成しました。',true);
-        toast('見積を作成しました');
-        const cmap=await customerMap();
+        closeAppModal();
+        toast('見積を登録しました');
         await go('quotes');
-        if(created?.id) await renderQuoteEditor(created.id,cmap);
       }catch(err){
-        notice('#customerQuoteMsg',err.message||String(err));
+        notice('#quoteCreateMsg',err.message||String(err));
       }finally{
         if(btn) btn.disabled=false;
       }
@@ -995,7 +1212,7 @@
     const data=await rpc('internal_customers_list');
 
     $('#home').innerHTML=
-      pageIntro('顧客','顧客を検索してカルテを開き、見積・契約・機器・問い合わせへ進みます。')+
+      pageIntro('顧客','顧客の検索・新規登録・詳細確認を行います。新規登録は一覧を離れずモーダルで行います。')+
       '<section class="card section">'+
         '<div class="row between">'+
           '<div class="field" style="flex:1;max-width:520px;margin:0"><label>顧客検索</label><input id="customerSearch" placeholder="顧客名・顧客コード・電話番号"></div>'+
@@ -1296,9 +1513,9 @@
     });
 
     $('#home').innerHTML=
-      pageIntro('見積','見積の確認・編集を行います。新規見積は顧客カルテから作成します。')+
+      pageIntro('見積','見積の確認・編集・新規登録を行います。')+
       (internal
-        ? '<section class="card section"><div class="row between"><div><h3>新しい見積を作成</h3><p class="sectionDesc">先に顧客を検索し、顧客カルテの「この顧客で見積作成」から進みます。</p></div><button id="quoteChooseCustomer" class="primary" type="button">顧客を選ぶ</button></div></section>'
+        ? '<section class="card section"><div class="row between"><div><h3>見積</h3><p class="sectionDesc">一覧を離れず新規見積を登録できます。</p></div><button id="quoteChooseCustomer" class="primary" type="button">＋ 新規見積登録</button></div></section>'
         : '')+
       '<div id="quoteDetailHost"></div>'+
       '<section class="section">'+dataTable(
@@ -1307,7 +1524,7 @@
       )+'</section>';
 
     if(internal){
-      $('#quoteChooseCustomer').onclick=()=>go('customers');
+      $('#quoteChooseCustomer').onclick=()=>renderCustomerQuoteCreate(null);
       document.querySelectorAll('.quoteEdit').forEach(btn=>{
         btn.onclick=async()=>{
           btn.disabled=true;
