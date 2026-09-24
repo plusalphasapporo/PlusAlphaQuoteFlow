@@ -290,7 +290,7 @@
     'internal_quote_detail','internal_order_detail','internal_purchase_orders',
     'internal_purchase_order_detail','internal_delivery_detail','internal_asset_detail',
     'internal_contract_detail','internal_assets_list','internal_customers_list',
-    'internal_customer_detail','internal_customer_contacts','internal_customer_registration_options','support_ticket_workspace',
+    'internal_customer_detail','internal_customer_contacts','internal_customer_registration_options','internal_customer_duplicate_check','support_ticket_workspace',
     'customer_ticket_detail','internal_numbering_settings','internal_accounts_list',
     'internal_account_companies','internal_audit_workspace','internal_document_profile','internal_demo_seed_status','internal_company_settings','internal_entity_audit_history',
     'internal_products_list','internal_lease_rates_list','internal_order_profitability','internal_customer_unified_workspace','internal_receiving_workspace','internal_order_operation','role_knowledge_articles',
@@ -1356,6 +1356,9 @@
       '</div>'+
       '<form id="customerCreateForm" class="appModalForm">'+
         '<div class="appModalBody">'+
+          '<div id="customerRequiredGuide" class="notice">必須：会社名。支店・営業所の場合は親顧客も必須です。<span id="customerRequiredStatus" style="margin-left:8px"></span></div>'+
+          '<div id="customerDraftNotice" class="notice hidden"></div>'+
+          '<div id="customerDuplicateWarning" class="notice hidden"></div>'+
           '<section class="formSection">'+
             '<div class="formSectionHead"><span class="sectionNo">01</span><h3>会社・法人基本情報</h3></div>'+
             '<div class="modalGrid3">'+
@@ -1378,7 +1381,7 @@
               '<div class="field"><label>顧客番号</label><input id="customerCodePreview" value="'+esc(options?.next_customer_code||'自動採番')+'" readonly></div>'+
               '<div class="field"><label>拠点区分</label><select id="customerBranchType"><option value="head_office">本店・本社</option><option value="branch">支店・営業所・店舗</option></select></div>'+
               '<div class="field" id="customerParentField" style="display:none"><label>親顧客</label><select id="customerParent"><option value="">選択してください</option>'+parentOptions+'</select></div>'+
-              '<div class="field"><label>郵便番号</label><input id="customerPostalCode" placeholder="000-0000"></div>'+
+              '<div class="field"><label>郵便番号</label><div class="row"><input id="customerPostalCode" placeholder="000-0000" style="flex:1"><button id="customerPostalLookup" class="ghost" type="button">住所を確認</button></div><p class="muted">日本郵便の公式郵便番号検索を開きます。</p></div>'+
               '<div class="field" style="grid-column:span 2"><label>住所1</label><input id="customerAddress1"></div>'+
               '<div class="field" style="grid-column:span 3"><label>住所2・建物名</label><input id="customerAddress2"></div>'+
             '</div>'+
@@ -1422,6 +1425,7 @@
           '<div id="customerCreateMsg" class="notice hidden"></div>'+
         '</div>'+
         '<div class="appModalFoot">'+
+          '<button id="customerCreateDraftClear" class="ghost" type="button">入力内容をクリア</button>'+
           '<button id="customerCreateCancel" class="ghost" type="button">キャンセル</button>'+
           '<button class="primary" type="submit">顧客を登録</button>'+
         '</div>'+
@@ -1440,13 +1444,159 @@
     $('#customerCreateClose').onclick=closeAppModal;
     $('#customerCreateCancel').onclick=closeAppModal;
 
+    const draftKey='quoteflow.customerDraft.'+(bootData?.context?.user_id||'current');
+    const draftFieldIds=[
+      'customerName','customerType','customerNameKana','customerTradeName','customerCorporateNumber',
+      'customerRepresentativeName','customerRepresentativeTitle','customerIndustry','customerEstablishedDate',
+      'customerFiscalMonth','customerEmployeeCount','customerBranchType','customerParent','customerPostalCode',
+      'customerAddress1','customerAddress2','customerPhone','customerMobile','customerFax','customerEmail',
+      'customerWebsite','customerContactName','customerContactTitle','customerContactPreferred',
+      'customerContactPhone','customerContactMobile','customerContactEmail','customerSalesOwner',
+      'customerRelationshipStarted','customerLeadSource','customerSupportCompany','customerManualHold','customerNote'
+    ];
+    let duplicateState={exact_corporate_number:[],similar_name:[]};
+    let duplicateTimer=null;
+
+    const saveDraft=()=>{
+      const data={saved_at:new Date().toISOString()};
+      draftFieldIds.forEach(id=>{
+        const el=$('#'+id);
+        if(!el) return;
+        data[id]=el.type==='checkbox'?el.checked:el.value;
+      });
+      localStorage.setItem(draftKey,JSON.stringify(data));
+      const n=$('#customerDraftNotice');
+      if(n){
+        n.classList.remove('hidden');
+        n.classList.add('ok');
+        n.textContent='入力内容をこの端末に自動保存しました。';
+      }
+    };
+
+    const restoreDraft=()=>{
+      let data=null;
+      try{ data=JSON.parse(localStorage.getItem(draftKey)||'null'); }catch(_){}
+      if(!data) return;
+      draftFieldIds.forEach(id=>{
+        const el=$('#'+id);
+        if(!el || data[id]===undefined) return;
+        if(el.type==='checkbox') el.checked=!!data[id];
+        else el.value=data[id];
+      });
+      updateBranch();
+      const n=$('#customerDraftNotice');
+      if(n){
+        n.classList.remove('hidden');
+        n.classList.add('ok');
+        n.textContent='前回の入力途中データを復元しました。';
+      }
+    };
+
+    const clearDraft=()=>{
+      localStorage.removeItem(draftKey);
+      $('#customerCreateForm').reset();
+      updateBranch();
+      duplicateState={exact_corporate_number:[],similar_name:[]};
+      $('#customerDuplicateWarning').classList.add('hidden');
+      $('#customerDraftNotice').classList.add('hidden');
+      updateRequiredGuide();
+    };
+
+    const updateRequiredGuide=()=>{
+      const missing=[];
+      if(!$('#customerName').value.trim()) missing.push('会社名');
+      if($('#customerBranchType').value==='branch'&&!$('#customerParent').value) missing.push('親顧客');
+      const st=$('#customerRequiredStatus');
+      if(st) st.textContent=missing.length?'未入力：'+missing.join('・'):'必須項目は入力済みです。';
+    };
+
+    const renderDuplicateWarning=()=>{
+      const exact=duplicateState.exact_corporate_number||[];
+      const similar=duplicateState.similar_name||[];
+      const box=$('#customerDuplicateWarning');
+      if(!box) return;
+      if(!exact.length&&!similar.length){
+        box.classList.add('hidden');
+        box.innerHTML='';
+        return;
+      }
+      const rows=[...exact.map(x=>({...x,reason:'法人番号一致'})),...similar.filter(x=>!exact.some(y=>y.id===x.id)).map(x=>({...x,reason:'同名候補'}))];
+      box.classList.remove('hidden');
+      box.classList.remove('ok');
+      box.innerHTML='<strong>重複候補があります。登録前に確認してください。</strong>'+
+        rows.map(x=>'<div style="margin-top:8px"><span class="pill">'+esc(x.reason)+'</span> '+esc(x.customer_code||'—')+' / '+esc(x.name||'')+(x.trade_name?' / '+esc(x.trade_name):'')+'</div>').join('');
+    };
+
+    const checkDuplicate=async()=>{
+      const name=$('#customerName').value.trim();
+      const corp=$('#customerCorporateNumber').value.trim();
+      if(!name && !corp){
+        duplicateState={exact_corporate_number:[],similar_name:[]};
+        renderDuplicateWarning();
+        return;
+      }
+      try{
+        duplicateState=await rpc('internal_customer_duplicate_check',{
+          p_name:name||null,
+          p_corporate_number:corp||null,
+          p_exclude_customer_id:null
+        })||{exact_corporate_number:[],similar_name:[]};
+        renderDuplicateWarning();
+      }catch(_){}
+    };
+
+    const scheduleDuplicateCheck=()=>{
+      clearTimeout(duplicateTimer);
+      duplicateTimer=setTimeout(checkDuplicate,450);
+    };
+
+    restoreDraft();
+    updateRequiredGuide();
+
+    draftFieldIds.forEach(id=>{
+      const el=$('#'+id);
+      if(!el) return;
+      el.addEventListener('input',()=>{
+        saveDraft();
+        updateRequiredGuide();
+        if(id==='customerName'||id==='customerCorporateNumber') scheduleDuplicateCheck();
+      });
+      el.addEventListener('change',()=>{
+        saveDraft();
+        updateRequiredGuide();
+        if(id==='customerName'||id==='customerCorporateNumber') scheduleDuplicateCheck();
+      });
+    });
+
+    $('#customerCreateDraftClear').onclick=()=>{
+      if(confirm('入力途中の内容をクリアしますか？')) clearDraft();
+    };
+
+    $('#customerPostalLookup').onclick=()=>{
+      const postal=$('#customerPostalCode').value.trim();
+      if(postal) localStorage.setItem('quoteflow.lastPostalLookup',postal);
+      window.open('https://www.post.japanpost.jp/zipcode/','_blank','noopener,noreferrer');
+    };
+
+    $('#customerName').addEventListener('blur',checkDuplicate);
+    $('#customerCorporateNumber').addEventListener('blur',checkDuplicate);
+
     $('#customerCreateForm').onsubmit=async e=>{
       e.preventDefault();
       const btn=e.submitter;
       if(btn) btn.disabled=true;
       try{
         const corporateNumber=$('#customerCorporateNumber').value.trim();
+        if(!$('#customerName').value.trim()) throw new Error('会社名・法人名は必須です。');
+        if($('#customerBranchType').value==='branch'&&!$('#customerParent').value) throw new Error('支店・営業所・店舗の場合は親顧客を選択してください。');
         if(corporateNumber && !/^\d{13}$/.test(corporateNumber)) throw new Error('法人番号は13桁の数字で入力してください。');
+
+        await checkDuplicate();
+        const duplicateCount=(duplicateState.exact_corporate_number||[]).length+(duplicateState.similar_name||[]).length;
+        if(duplicateCount){
+          const ok=confirm('重複候補が'+duplicateCount+'件あります。既存顧客ではないことを確認して、このまま登録しますか？');
+          if(!ok) throw new Error('重複候補を確認してから登録してください。');
+        }
 
         const created=await rpc('create_customer_with_profile',{
           p_customer_code:null,
@@ -1485,6 +1635,7 @@
           p_contact_preferred_channel:$('#customerContactPreferred').value||null,
           p_contact_primary:true
         });
+        localStorage.removeItem(draftKey);
         closeAppModal();
         toast('顧客 '+(created?.customer_code||'')+' を登録しました');
         await renderCustomers();
