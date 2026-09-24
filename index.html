@@ -2949,7 +2949,10 @@
   }
 
   async function renderDeliveryDetail(id){
-    const detail=await rpc('internal_delivery_detail',{p_delivery_id:id});
+    const [detail,staffOptions]=await Promise.all([
+      rpc('internal_delivery_detail',{p_delivery_id:id}),
+      rpc('internal_staff_options')
+    ]);
     const d=detail?.delivery;
     if(!d) throw new Error('納品が見つかりません。');
     const c=detail.customer||{};
@@ -2965,23 +2968,53 @@
           ['状態',statusText(d.status)],
           ['予定日',dateText(d.scheduled_at)],
           ['納品日',dateText(d.delivered_at)],
-          ['受注番号',o?.order_number||'—']
+          ['作業担当',d.assigned_user_name||'未指定']
         ])+
         '<form id="deliveryEditForm">'+
-          '<div class="row">'+
-            '<div class="field" style="flex:1;min-width:180px"><label>納品番号</label><input id="deliveryEditNumber" value="'+esc(d.delivery_number||'')+'"></div>'+
-            '<div class="field" style="flex:1;min-width:180px"><label>納品予定日時</label><input id="deliveryEditScheduled" type="datetime-local"></div>'+
-          '</div>'+
-          '<div class="field"><label>納品メモ</label><textarea id="deliveryEditNotes" rows="2">'+esc(d.notes||'')+'</textarea></div>'+
-          '<div class="field"><label>社内メモ</label><textarea id="deliveryEditInternalNote" rows="2">'+esc(d.internal_note||'')+'</textarea></div>'+
+          '<section class="formSection">'+
+            '<div class="formSectionHead"><span class="sectionNo">01</span><h3>基本情報</h3></div>'+
+            '<div class="modalGrid2">'+
+              '<div class="field"><label>納品番号</label><input id="deliveryEditNumber" value="'+esc(d.delivery_number||'')+'"></div>'+
+              '<div class="field"><label>納品予定日時</label><input id="deliveryEditScheduled" type="datetime-local"></div>'+
+              '<div class="field"><label>作業担当</label><select id="deliveryEditAssigned"><option value="">未指定</option>'+
+                (staffOptions||[]).map(s=>'<option value="'+esc(s.user_id)+'" '+(s.user_id===d.assigned_user_id?'selected':'')+'>'+esc(s.display_name||'—')+'</option>').join('')+
+              '</select></div>'+
+              '<div class="field"><label>設置場所</label><input id="deliveryEditInstallLocation" value="'+esc(d.installation_location||'')+'"></div>'+
+            '</div>'+
+          '</section>'+
+          '<section class="formSection">'+
+            '<div class="formSectionHead"><span class="sectionNo">02</span><h3>納品先</h3></div>'+
+            '<div class="modalGrid2">'+
+              '<div class="field"><label>郵便番号</label><input id="deliveryEditPostal" value="'+esc(d.delivery_postal_code||'')+'"></div>'+
+              '<div class="field"><label>納品先担当者</label><input id="deliveryEditContactName" value="'+esc(d.delivery_contact_name||'')+'"></div>'+
+              '<div class="field" style="grid-column:span 2"><label>住所1</label><input id="deliveryEditAddress1" value="'+esc(d.delivery_address1||'')+'"></div>'+
+              '<div class="field" style="grid-column:span 2"><label>住所2</label><input id="deliveryEditAddress2" value="'+esc(d.delivery_address2||'')+'"></div>'+
+              '<div class="field"><label>電話</label><input id="deliveryEditContactPhone" value="'+esc(d.delivery_contact_phone||'')+'"></div>'+
+            '</div>'+
+          '</section>'+
+          '<section class="formSection">'+
+            '<div class="formSectionHead"><span class="sectionNo">03</span><h3>納品内容</h3></div>'+
+            '<div class="field"><label>納品内容・作業内容</label><textarea id="deliveryEditNotes" rows="3">'+esc(d.notes||'')+'</textarea></div>'+
+            '<div class="field"><label>社内メモ</label><textarea id="deliveryEditInternalNote" rows="2">'+esc(d.internal_note||'')+'</textarea></div>'+
+          '</section>'+
           '<button class="primary" type="submit">変更を保存</button>'+
         '</form>'+
         '<div id="deliveryEditMsg" class="notice hidden"></div>'+
         '<section class="section">'+
           '<h3>納品ステータス</h3>'+
           (d.status==='delivered'
-            ? '<div class="notice ok">納品完了：'+esc(dateText(d.delivered_at))+'</div><button id="deliveryReopenBtn" class="ghost" type="button">予定に戻す</button>'
-            : '<div class="row"><div class="field" style="flex:1;min-width:220px"><label>納品完了日時</label><input id="deliveryCompleteAt" type="datetime-local"></div><div style="align-self:end"><button id="deliveryCompleteBtn" class="green" type="button">納品完了にする</button></div></div>'
+            ? '<div class="notice ok">'+
+                '<strong>納品完了：'+esc(dateText(d.delivered_at))+'</strong>'+
+                (d.completion_confirmed?'<br>完了確認：'+esc(d.completion_confirmed_by||'確認済み')+' / '+esc(dateText(d.completion_confirmed_at)):'<br>完了確認：未確認')+
+                (d.completion_note?'<br>'+esc(d.completion_note):'')+
+              '</div><button id="deliveryReopenBtn" class="ghost" type="button">予定に戻す</button>'
+            : '<div class="modalGrid2">'+
+                '<div class="field"><label>納品完了日時</label><input id="deliveryCompleteAt" type="datetime-local"></div>'+
+                '<div class="field"><label>完了確認者</label><input id="deliveryCompleteBy" placeholder="例：山田様"></div>'+
+                '<div class="field" style="grid-column:span 2"><label>完了メモ</label><textarea id="deliveryCompleteNote" rows="2" placeholder="設置・動作確認・引き渡し内容など"></textarea></div>'+
+                '<label class="row" style="grid-column:span 2"><input id="deliveryCompleteConfirmed" type="checkbox"> 顧客または現地担当者の完了確認を取得済み</label>'+
+                '<div style="grid-column:span 2"><button id="deliveryCompleteBtn" class="green" type="button">納品完了にする</button></div>'+
+              '</div>'
           )+
           '<div id="deliveryStatusMsg" class="notice hidden"></div>'+
         '</section>'+
@@ -2990,28 +3023,36 @@
     $('#deliveryDetailClose').onclick=()=>{$('#deliveryDetailHost').innerHTML='';};
     $('#deliveryPrintBtn').onclick=()=>openBusinessDocument('delivery',{
       number:d.delivery_number,
-      customer:c,
+      customer:{
+        ...c,
+        postal_code:d.delivery_postal_code||c.postal_code,
+        address1:d.delivery_address1||c.address1,
+        address2:d.delivery_address2||c.address2,
+        phone:d.delivery_contact_phone||c.phone
+      },
       meta:{
         '納品番号':d.delivery_number||'未採番',
         '受注番号':o?.order_number||'—',
         '納品予定日':dateText(d.scheduled_at),
-        '納品日':dateText(d.delivered_at)
+        '納品日':dateText(d.delivered_at),
+        '設置場所':d.installation_location||'—',
+        '作業担当':d.assigned_user_name||'—'
       },
       items:[{description:d.notes||'納品',quantity:1,unitLabel:'',amountLabel:''}],
-      note:d.notes||''
+      note:d.completion_note||d.notes||''
     });
     $('#deliveryDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
 
     if(d.scheduled_at){
       const dt=new Date(d.scheduled_at);
-      const local=new Date(dt.getTime()-dt.getTimezoneOffset()*60000).toISOString().slice(0,16);
-      $('#deliveryEditScheduled').value=local;
+      $('#deliveryEditScheduled').value=new Date(dt.getTime()-dt.getTimezoneOffset()*60000).toISOString().slice(0,16);
     }
 
     const completeAt=$('#deliveryCompleteAt');
     if(completeAt){
       const now=new Date();
       completeAt.value=new Date(now.getTime()-now.getTimezoneOffset()*60000).toISOString().slice(0,16);
+      if(d.delivery_contact_name) $('#deliveryCompleteBy').value=d.delivery_contact_name;
     }
 
     const completeBtn=$('#deliveryCompleteBtn');
@@ -3020,9 +3061,15 @@
         completeBtn.disabled=true;
         try{
           const value=$('#deliveryCompleteAt').value;
-          await rpc('complete_delivery_at',{
+          const confirmed=$('#deliveryCompleteConfirmed').checked;
+          const confirmedBy=$('#deliveryCompleteBy').value.trim();
+          if(confirmed && !confirmedBy) throw new Error('完了確認者を入力してください。');
+          await rpc('complete_delivery_full',{
             p_delivery_id:d.id,
-            p_delivered_at:value ? new Date(value).toISOString() : null
+            p_delivered_at:value ? new Date(value).toISOString() : null,
+            p_completion_confirmed:confirmed,
+            p_completion_confirmed_by:confirmedBy||null,
+            p_completion_note:$('#deliveryCompleteNote').value.trim()||null
           });
           notice('#deliveryStatusMsg','納品完了として記録しました。',true);
           toast('納品完了にしました');
@@ -3041,7 +3088,7 @@
         reopenBtn.disabled=true;
         try{
           await rpc('reopen_delivery',{p_delivery_id:d.id});
-          notice('#deliveryStatusMsg','納品予定へ戻しました。',true);
+          notice('#deliveryStatusMsg','納品予定へ戻しました。完了確認情報もリセットしました。',true);
           toast('納品予定へ戻しました');
           await renderDeliveryDetail(d.id);
         }catch(err){
@@ -3057,10 +3104,17 @@
       const btn=e.submitter;
       if(btn) btn.disabled=true;
       try{
-        await rpc('update_delivery',{
+        await rpc('update_delivery_full',{
           p_delivery_id:d.id,
           p_delivery_number:$('#deliveryEditNumber').value.trim()||null,
           p_scheduled_at:$('#deliveryEditScheduled').value ? new Date($('#deliveryEditScheduled').value).toISOString() : null,
+          p_delivery_postal_code:$('#deliveryEditPostal').value.trim()||null,
+          p_delivery_address1:$('#deliveryEditAddress1').value.trim()||null,
+          p_delivery_address2:$('#deliveryEditAddress2').value.trim()||null,
+          p_delivery_contact_name:$('#deliveryEditContactName').value.trim()||null,
+          p_delivery_contact_phone:$('#deliveryEditContactPhone').value.trim()||null,
+          p_installation_location:$('#deliveryEditInstallLocation').value.trim()||null,
+          p_assigned_user_id:$('#deliveryEditAssigned').value||null,
           p_notes:$('#deliveryEditNotes').value.trim()||null,
           p_internal_note:$('#deliveryEditInternalNote').value.trim()||null
         });
