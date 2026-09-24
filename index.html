@@ -32,6 +32,24 @@
     body[data-role="support_staff"] .side{background:linear-gradient(180deg,#7c2d12,#431407);border-color:#9a3412}
     body[data-role="support_staff"] .navBtn.active{background:#ea580c;border-color:#fb923c}
     body[data-role="support_staff"] .workspaceTab.active{color:#c2410c}
+    .supportFlow{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin:14px 0}
+    .supportStep{border:1px solid var(--line);border-radius:14px;padding:12px;background:#fff;min-height:94px}
+    .supportStep strong{display:block;font-size:13px;margin-bottom:4px}.supportStep small{display:block;color:var(--muted);line-height:1.45}
+    .supportStep.active{border-color:#fb923c;background:#fff7ed}.supportStep.done{border-color:#86efac;background:#f0fdf4}
+    .supportStepNum{width:24px;height:24px;border-radius:999px;display:grid;place-items:center;background:#f1f5f9;font-size:11px;font-weight:900;margin-bottom:8px}
+    .supportStep.active .supportStepNum{background:#ea580c;color:#fff}.supportStep.done .supportStepNum{background:#16a34a;color:#fff}
+    .supportWorkGrid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(320px,.8fr);gap:14px}
+    .attachmentGallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-top:10px}
+    .attachmentCard{border:1px solid var(--line);border-radius:12px;padding:10px;background:#fff;overflow:hidden}
+    .attachmentCard img{width:100%;height:135px;object-fit:cover;border-radius:9px;background:#f8fafc;border:1px solid #eef2f7}
+    .attachmentSource{display:inline-flex;align-items:center;border-radius:999px;padding:4px 8px;font-size:10px;font-weight:900;background:#f1f5f9;color:#334155;margin-bottom:7px}
+    .attachmentSource.customer{background:#ecfdf5;color:#166534}.attachmentSource.internal{background:#eff6ff;color:#1d4ed8}.attachmentSource.support{background:#fff7ed;color:#c2410c}
+    .attachmentCard .fileMeta{font-size:11px;color:var(--muted);margin-top:7px;word-break:break-all}
+    .remotePanel{border:1px solid #fed7aa;background:#fff7ed;border-radius:14px;padding:14px;margin-top:14px}
+    .remotePanel h4{margin:0 0 5px}.remotePanel .hint{font-size:12px;color:#9a3412}
+    .supportQuickActions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+    @media(max-width:980px){.supportFlow{grid-template-columns:1fr 1fr}.supportWorkGrid{grid-template-columns:1fr}}
+    @media(max-width:640px){.supportFlow{grid-template-columns:1fr}}
     body[data-role="customer_user"] header{background:#14532d}
     body[data-role="customer_user"] .side{background:linear-gradient(180deg,#14532d,#052e16);border-color:#166534}
     body[data-role="customer_user"] .navBtn.active{background:#16a34a;border-color:#4ade80}
@@ -419,6 +437,31 @@
       }
     }
     throw lastError||new Error('処理に失敗しました。');
+  }
+
+  async function uploadSupportAttachments(ticketId,files,visibility='customer'){
+    const list=[...(files||[])];
+    if(!list.length) return 0;
+    const prefix=await rpc('ticket_attachment_upload_prefix',{p_ticket_id:ticketId});
+    let uploaded=0;
+    for(const file of list){
+      const safeName=String(file.name||'attachment').replace(/[^0-9A-Za-z._-]+/g,'_');
+      const path=prefix+Date.now()+'-'+Math.random().toString(36).slice(2,9)+'-'+safeName;
+      const up=await supabase.storage.from('support-attachments').upload(path,file,{
+        contentType:file.type||undefined,
+        upsert:false
+      });
+      if(up.error) throw up.error;
+      await rpc('attach_ticket_file',{
+        p_ticket_id:ticketId,
+        p_storage_path:path,
+        p_file_name:file.name||safeName,
+        p_size_bytes:file.size||0,
+        p_visibility:visibility
+      });
+      uploaded++;
+    }
+    return uploaded;
   }
 
   let bootData=null;
@@ -1025,16 +1068,27 @@
     if(role==='support_staff'){
       const h=await rpc('support_home');
       home.innerHTML=
-        pageIntro('サポートダッシュボード','担当案件と緊急度を確認できます。')+
+        pageIntro('サポートダッシュボード','電話・チャット受付から遠隔対応、自社引継ぎまでを同じ流れで処理します。')+
+        '<section class="card section"><div class="row between"><div><h2>標準対応フロー</h2><p class="sectionDesc">案件を開いたら左から順番に進めます。</p></div><button id="supportNewFromHome" class="primary" type="button">＋ 問い合わせ受付</button></div>'+
+          '<div class="supportFlow">'+
+            '<div class="supportStep active"><span class="supportStepNum">1</span><strong>受付</strong><small>CallConnect / 顧客チャット / 自社チャット</small></div>'+
+            '<div class="supportStep"><span class="supportStepNum">2</span><strong>内容・写真確認</strong><small>症状、写真、対象機器、過去履歴</small></div>'+
+            '<div class="supportStep"><span class="supportStepNum">3</span><strong>AI・ナレッジ</strong><small>AI、ナレッジ、マニュアルで切り分け</small></div>'+
+            '<div class="supportStep"><span class="supportStepNum">4</span><strong>TeamViewer</strong><small>直接設定が必要な場合に遠隔対応</small></div>'+
+            '<div class="supportStep"><span class="supportStepNum">5</span><strong>完了 / 引継ぎ</strong><small>解決できなければ自社担当者へ</small></div>'+
+          '</div>'+
+        '</section>'+
         kpis([
           ['対応中',h.kpis?.open_tickets],
           ['本日新規',h.kpis?.created_today],
           ['本日解決',h.kpis?.closed_today],
           ['緊急',h.kpis?.urgent_open]
         ])+
-        '<section class="card section"><h2>担当案件</h2>'+
+        '<section class="card section"><div class="row between"><div><h2>担当案件</h2><p class="sectionDesc">クリックして対応フローを続けます。</p></div><button id="supportCasesFromHome" class="ghost" type="button">担当案件を開く</button></div>'+
         ((h.recent_tickets||[]).length?'<div class="tableWrap"><table><thead><tr><th>番号</th><th>顧客</th><th>件名</th><th>状態</th></tr></thead><tbody>'+(h.recent_tickets||[]).map(t=>'<tr><td>'+esc(t.ticket_number||'—')+'</td><td>'+esc(t.customer_name||'')+'</td><td>'+esc(t.subject||'')+'</td><td>'+esc(statusText(t.status))+'</td></tr>').join('')+'</tbody></table></div>':'<p class="muted">担当案件はありません。</p>')+
         '</section>';
+      $('#supportNewFromHome').onclick=()=>go('support_new');
+      $('#supportCasesFromHome').onclick=()=>go('support_cases');
       return;
     }
 
