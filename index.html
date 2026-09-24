@@ -2007,12 +2007,33 @@
     if(!detail?.quote) throw new Error('見積が見つかりません。');
     const q=detail.quote;
     const items=detail.items||[];
+    const residuals=detail.residual_items||[];
     const customer=cmap[q.customer_id]||{};
     const host=$('#quoteDetailHost');
     const editable=q.status==='draft';
 
+    const residualRow=(item={})=>(
+      '<div class="residualRow" data-residual-row>'+
+        '<div class="modalGrid3">'+
+          '<div class="field"><label>旧物件・残債名</label><input class="qri-name" value="'+esc(item.old_property_name||'')+'"></div>'+
+          '<div class="field"><label>既存リース会社</label><input class="qri-lessor" value="'+esc(item.lessor_name||'')+'"></div>'+
+          '<div class="field"><label>契約番号</label><input class="qri-contract" value="'+esc(item.contract_number||'')+'"></div>'+
+          '<div class="field"><label>残回数</label><input class="qri-remain" type="number" min="0" step="1" value="'+esc(item.remaining_count??'')+'"></div>'+
+          '<div class="field"><label>月額（税込）</label><input class="qri-monthly" type="number" min="0" step="1" value="'+esc(item.monthly_amount_tax_included??0)+'"></div>'+
+          '<div class="field"><label>税込残債</label><input class="qri-residual" type="number" min="0" step="1" value="'+esc(item.residual_amount_tax_included??0)+'"></div>'+
+          '<div class="field"><label>税込解約金・精算額</label><input class="qri-settlement" type="number" min="0" step="1" value="'+esc(item.settlement_amount_tax_included??0)+'"></div>'+
+          '<div class="field"><label>見積反映額</label><input class="qri-reflection" type="number" min="0" step="1" value="'+esc(item.reflection_amount??0)+'"></div>'+
+          '<div class="field"><label>支払回数</label><input class="qri-paycount" type="number" min="0" step="1" value="'+esc(item.payment_count??'')+'"></div>'+
+          '<div class="field"><label>初回支払額</label><input class="qri-first" type="number" min="0" step="1" value="'+esc(item.first_payment_amount??0)+'"></div>'+
+          '<div class="field"><label>2回目以降支払額</label><input class="qri-recurring" type="number" min="0" step="1" value="'+esc(item.recurring_payment_amount??0)+'"></div>'+
+          '<div class="field"><label>備考</label><input class="qri-note" value="'+esc(item.note||'')+'"></div>'+
+        '</div>'+
+        '<div class="row" style="justify-content:flex-end"><button class="ghost removeResidual" type="button">この行を削除</button></div>'+
+      '</div>'
+    );
+
     const readOnlyRows=items.map(i=>
-      '<tr><td>'+esc(i.description)+'</td><td>'+esc(i.quantity)+'</td><td class="amount">'+esc(money(i.unit_price))+'</td><td class="amount">'+esc(money(Number(i.quantity||0)*Number(i.unit_price||0)))+'</td></tr>'
+      '<tr><td>'+esc(i.description)+'</td><td>'+esc(i.quantity)+'</td><td>'+esc(i.unit||'台')+'</td><td>'+esc(i.manufacturer||'—')+'</td><td>'+esc(i.supplier_name||'—')+'</td><td class="amount">'+esc(money(i.unit_price))+'</td><td class="amount">'+esc(money(Number(i.quantity||0)*Number(i.unit_price||0)))+'</td></tr>'
     );
 
     host.innerHTML=
@@ -2029,19 +2050,38 @@
               ? '<div class="notice error"><strong>管理者から差し戻し</strong><br>'+esc(q.approval_return_reason)+(q.approval_returned_at?'<br><span class="muted">'+esc(dateText(q.approval_returned_at))+'</span>':'')+'</div>'
               : '')+
             '<form id="quoteEditForm">'+
-              '<div class="row">'+
-                '<div class="field" style="flex:1;min-width:180px"><label>有効期限</label><input id="quoteEditValidUntil" type="date" value="'+esc(q.valid_until||'')+'"></div>'+
-                '<div class="field" style="flex:1;min-width:180px"><label>消費税額</label><input id="quoteEditTax" type="number" min="0" step="1" value="'+esc(q.tax_amount??0)+'"></div>'+
-              '</div>'+
-              '<div class="row between"><strong>明細</strong><button id="quoteEditAddItem" class="ghost" type="button">＋ 明細追加</button></div>'+
-              '<div id="quoteEditItems" class="quoteItems">'+(items.length?items:[{}]).map(quoteItemRow).join('')+'</div>'+
-              '<div class="field"><label>社内メモ</label><textarea id="quoteEditNote" rows="3">'+esc(q.internal_note||'')+'</textarea></div>'+
-              '<div class="quoteTotals"><span>小計 <strong>'+esc(money(q.subtotal))+'</strong></span><span>税 <strong>'+esc(money(q.tax_amount))+'</strong></span><span>合計 <strong>'+esc(money(q.total_amount))+'</strong></span></div>'+
-              '<div class="row"><button class="primary" type="submit">変更を保存</button><button id="quoteFinalizeBtn" class="green" type="button">承認申請</button><span class="muted">申請すると自動採番され、管理者承認待ちになります。</span></div>'+
+              '<section class="formSection">'+
+                '<div class="formSectionHead"><span class="sectionNo">01</span><h3>基本情報</h3></div>'+
+                '<div class="modalGrid3">'+
+                  '<div class="field"><label>見積日</label><input id="quoteEditDate" type="date" value="'+esc(q.quote_date||'')+'"></div>'+
+                  '<div class="field"><label>有効期限</label><input id="quoteEditValidUntil" type="date" value="'+esc(q.valid_until||'')+'"></div>'+
+                  '<div class="field"><label>敬称</label><select id="quoteEditHonorific"><option value="御中" '+(q.honorific==='御中'?'selected':'')+'>御中</option><option value="様" '+(q.honorific==='様'?'selected':'')+'>様</option></select></div>'+
+                  '<div class="field" style="grid-column:span 2"><label>案件名</label><input id="quoteEditProject" value="'+esc(q.project_name||'')+'"></div>'+
+                  '<div class="field"><label>担当者名</label><input id="quoteEditContact" value="'+esc(q.contact_name||'')+'"></div>'+
+                  '<div class="field"><label>リース期間（月）</label><input id="quoteEditLeaseMonths" type="number" min="0" step="1" value="'+esc(q.lease_months??'')+'"></div>'+
+                  '<div class="field"><label>消費税率（%）</label><input id="quoteEditTaxRate" type="number" min="0" step="0.1" value="'+esc(q.tax_rate??10)+'"></div>'+
+                '</div>'+
+              '</section>'+
+              '<section class="formSection">'+
+                '<div class="formSectionHead"><span class="sectionNo">02</span><h3>見積明細</h3></div>'+
+                '<div class="row between"><span class="muted">メーカー・仕入先・単位・納期予定・仕入対象まで編集できます。</span><button id="quoteEditAddItem" class="ghost" type="button">＋ 明細追加</button></div>'+
+                '<div id="quoteEditItems" class="quoteItems">'+(items.length?items:[{}]).map(quoteItemRow).join('')+'</div>'+
+              '</section>'+
+              '<section class="formSection">'+
+                '<div class="formSectionHead"><span class="sectionNo">03</span><h3>旧物件・残債</h3></div>'+
+                '<div class="row between"><span class="muted">下書き中は旧物件・残債も修正できます。</span><button id="quoteEditAddResidual" class="ghost" type="button">＋ 旧物件・残債</button></div>'+
+                '<div id="quoteEditResiduals">'+(residuals.length?residuals:[{}]).map(residualRow).join('')+'</div>'+
+              '</section>'+
+              '<section class="formSection">'+
+                '<div class="formSectionHead"><span class="sectionNo">04</span><h3>備考・保存</h3></div>'+
+                '<div class="field"><label>社内メモ</label><textarea id="quoteEditNote" rows="3">'+esc(q.internal_note||'')+'</textarea></div>'+
+                '<div class="quoteTotals"><span>小計 <strong>'+esc(money(q.subtotal))+'</strong></span><span>税 <strong>'+esc(money(q.tax_amount))+'</strong></span><span>合計 <strong>'+esc(money(q.total_amount))+'</strong></span></div>'+
+                '<div class="row"><button class="primary" type="submit">変更を保存</button><button id="quoteFinalizeBtn" class="green" type="button">承認申請</button><span class="muted">申請すると自動採番され、管理者承認待ちになります。</span></div>'+
+              '</section>'+
             '</form>'+
             '<div id="quoteEditMsg" class="notice hidden"></div>'
           : '<div class="quoteTotals"><span>小計 <strong>'+esc(money(q.subtotal))+'</strong></span><span>税 <strong>'+esc(money(q.tax_amount))+'</strong></span><span>合計 <strong>'+esc(money(q.total_amount))+'</strong></span></div>'+
-            dataTable(['明細','数量','単価','金額'],readOnlyRows)+
+            dataTable(['明細','数量','単位','メーカー','仕入先','単価','金額'],readOnlyRows)+
             (internal && q.status==='accepted'
               ? '<div class="notice ok">管理者承認済みです。受注へ進められます。</div>'+
                 '<div class="row" style="margin-top:14px"><button id="quoteToOrderBtn" class="orange" type="button">受注を作成して開く</button><span class="muted">同じ見積から重複受注は作成されません。</span></div><div id="quoteActionMsg" class="notice hidden"></div>'
@@ -2082,18 +2122,64 @@
 
     if(editable){
       const itemsBox=$('#quoteEditItems');
+      const residualBox=$('#quoteEditResiduals');
       bindQuoteItems(itemsBox,$('#quoteEditAddItem'));
+
+      const bindResidualRemove=()=>{
+        residualBox.querySelectorAll('.removeResidual').forEach(btn=>{
+          btn.onclick=()=>{
+            const rows=residualBox.querySelectorAll('[data-residual-row]');
+            if(rows.length<=1){
+              rows[0].querySelectorAll('input').forEach(i=>i.value=i.type==='number'?'0':'');
+            }else{
+              btn.closest('[data-residual-row]').remove();
+            }
+          };
+        });
+      };
+      $('#quoteEditAddResidual').onclick=()=>{
+        residualBox.insertAdjacentHTML('beforeend',residualRow());
+        bindResidualRemove();
+      };
+      bindResidualRemove();
+
+      const readResidualItems=()=>[...residualBox.querySelectorAll('[data-residual-row]')].map(row=>({
+        old_property_name:row.querySelector('.qri-name').value.trim(),
+        lessor_name:row.querySelector('.qri-lessor').value.trim(),
+        contract_number:row.querySelector('.qri-contract').value.trim(),
+        remaining_count:row.querySelector('.qri-remain').value||null,
+        monthly_amount_tax_included:Number(row.querySelector('.qri-monthly').value||0),
+        residual_amount_tax_included:Number(row.querySelector('.qri-residual').value||0),
+        settlement_amount_tax_included:Number(row.querySelector('.qri-settlement').value||0),
+        reflection_amount:Number(row.querySelector('.qri-reflection').value||0),
+        payment_count:row.querySelector('.qri-paycount').value||null,
+        first_payment_amount:Number(row.querySelector('.qri-first').value||0),
+        recurring_payment_amount:Number(row.querySelector('.qri-recurring').value||0),
+        note:row.querySelector('.qri-note').value.trim()
+      })).filter(x=>
+        x.old_property_name||x.lessor_name||x.contract_number||x.note||
+        x.remaining_count||x.monthly_amount_tax_included||x.residual_amount_tax_included||
+        x.settlement_amount_tax_included||x.reflection_amount||x.payment_count||
+        x.first_payment_amount||x.recurring_payment_amount
+      );
+
       $('#quoteEditForm').onsubmit=async e=>{
         e.preventDefault();
         const submit=e.submitter;
         if(submit) submit.disabled=true;
         try{
-          const updated=await rpc('update_draft_quote',{
+          const updated=await rpc('update_draft_quote_full',{
             p_quote_id:q.id,
+            p_quote_date:$('#quoteEditDate').value||null,
             p_valid_until:$('#quoteEditValidUntil').value||null,
-            p_tax_amount:Number($('#quoteEditTax').value||0),
+            p_project_name:$('#quoteEditProject').value.trim()||null,
+            p_honorific:$('#quoteEditHonorific').value,
+            p_contact_name:$('#quoteEditContact').value.trim()||null,
+            p_lease_months:$('#quoteEditLeaseMonths').value?Number($('#quoteEditLeaseMonths').value):null,
+            p_tax_rate:Number($('#quoteEditTaxRate').value||10),
             p_internal_note:$('#quoteEditNote').value.trim()||null,
-            p_items:readQuoteItems(itemsBox)
+            p_items:readQuoteItems(itemsBox),
+            p_residual_items:readResidualItems()
           });
           notice('#quoteEditMsg','保存しました。合計 '+money(updated?.total_amount||0),true);
           toast('見積を更新しました');
@@ -2172,7 +2258,6 @@
       };
     }
   }
-
 
   async function renderQuotes(){
     const role=bootData.context?.role;
