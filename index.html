@@ -891,22 +891,45 @@
           ['対応中問い合わせ',openTickets]
         ])+
         '<form id="customerEditForm">'+
-          '<div class="row">'+
-            '<div class="field" style="flex:1;min-width:180px"><label>顧客コード</label><input id="customerEditCode" value="'+esc(c.customer_code||'')+'"></div>'+
-            '<div class="field" style="flex:2;min-width:240px"><label>顧客名</label><input id="customerEditName" required value="'+esc(c.name||'')+'"></div>'+
-          '</div>'+
-          '<div class="field"><label>電話</label><input id="customerEditPhone" value="'+esc(c.phone||'')+'"></div>'+
-          '<div class="field"><label>社内メモ</label><textarea id="customerEditNote" rows="3">'+esc(c.internal_note||'')+'</textarea></div>'+
-          '<label class="row" style="margin:12px 0"><input id="customerEditHold" type="checkbox" '+(c.manual_hold?'checked':'')+'> <strong>手動ホールド</strong></label>'+
+          '<section class="formSection">'+
+            '<div class="formSectionHead"><span class="sectionNo">01</span><h3>会社・拠点</h3></div>'+
+            '<div class="modalGrid2">'+
+              '<div class="field"><label>顧客コード</label><input id="customerEditCode" value="'+esc(c.customer_code||'')+'" readonly></div>'+
+              '<div class="field"><label>会社名・法人名</label><input id="customerEditName" required value="'+esc(c.name||'')+'"></div>'+
+              '<div class="field"><label>屋号・店舗名</label><input id="customerEditTradeName" value="'+esc(c.trade_name||'')+'"></div>'+
+              '<div class="field"><label>拠点区分</label><select id="customerEditBranchType"><option value="head_office" '+(c.branch_type==='head_office'?'selected':'')+'>本店・本社</option><option value="branch" '+(c.branch_type==='branch'?'selected':'')+'>支店・営業所・店舗</option></select></div>'+
+            '</div>'+
+          '</section>'+
+          '<section class="formSection">'+
+            '<div class="formSectionHead"><span class="sectionNo">02</span><h3>所在地・連絡先</h3></div>'+
+            '<div class="modalGrid3">'+
+              '<div class="field"><label>郵便番号</label><input id="customerEditPostalCode" value="'+esc(c.postal_code||'')+'"></div>'+
+              '<div class="field" style="grid-column:span 2"><label>住所1</label><input id="customerEditAddress1" value="'+esc(c.address1||'')+'"></div>'+
+              '<div class="field" style="grid-column:span 3"><label>住所2</label><input id="customerEditAddress2" value="'+esc(c.address2||'')+'"></div>'+
+              '<div class="field"><label>電話</label><input id="customerEditPhone" value="'+esc(c.phone||'')+'"></div>'+
+              '<div class="field"><label>携帯</label><input id="customerEditMobile" value="'+esc(c.mobile||'')+'"></div>'+
+              '<div class="field"><label>FAX</label><input id="customerEditFax" value="'+esc(c.fax||'')+'"></div>'+
+              '<div class="field"><label>メール</label><input id="customerEditEmail" type="email" value="'+esc(c.email||'')+'"></div>'+
+              '<div class="field" style="grid-column:span 2"><label>Web</label><input id="customerEditWebsite" type="url" value="'+esc(c.website||'')+'"></div>'+
+            '</div>'+
+          '</section>'+
+          '<section class="formSection">'+
+            '<div class="formSectionHead"><span class="sectionNo">03</span><h3>運用設定</h3></div>'+
+            '<div class="field"><label>社内メモ・注意事項</label><textarea id="customerEditNote" rows="3">'+esc(c.internal_note||'')+'</textarea></div>'+
+            '<label class="row" style="margin:12px 0"><input id="customerEditHold" type="checkbox" '+(c.manual_hold?'checked':'')+'> <strong>手動ホールド</strong></label>'+
+          '</section>'+
           '<button class="primary" type="submit">顧客情報を保存</button>'+
         '</form>'+
         '<div id="customerEditMsg" class="notice hidden"></div>'+
         '<section class="section"><h3>担当者</h3>'+
           '<form id="contactCreateForm" class="card" style="box-shadow:none">'+
-            '<div class="row">'+
-              '<div class="field" style="flex:1;min-width:180px"><label>氏名</label><input id="contactName" required></div>'+
-              '<div class="field" style="flex:1;min-width:180px"><label>メール</label><input id="contactEmail" type="email"></div>'+
-              '<div class="field" style="flex:1;min-width:180px"><label>電話</label><input id="contactPhone"></div>'+
+            '<div class="modalGrid3">'+
+              '<div class="field"><label>氏名</label><input id="contactName" required></div>'+
+              '<div class="field"><label>役職・部署</label><input id="contactTitle"></div>'+
+              '<div class="field"><label>メール</label><input id="contactEmail" type="email"></div>'+
+              '<div class="field"><label>電話</label><input id="contactPhone"></div>'+
+              '<div class="field"><label>携帯</label><input id="contactMobile"></div>'+
+              '<div class="field"><label>希望連絡方法</label><select id="contactPreferred"><option value="">指定なし</option><option value="phone">電話</option><option value="mobile">携帯</option><option value="email">メール</option></select></div>'+
             '</div>'+
             '<label class="row" style="margin:10px 0"><input id="contactPrimary" type="checkbox"> 主担当にする</label>'+
             '<button class="green" type="submit">担当者を追加</button>'+
@@ -931,11 +954,21 @@
       const btn=e.submitter;
       if(btn) btn.disabled=true;
       try{
-        await rpc('update_customer',{
+        await rpc('update_customer_full_v2',{
           p_customer_id:c.id,
-          p_customer_code:$('#customerEditCode').value.trim()||null,
           p_name:$('#customerEditName').value.trim(),
+          p_trade_name:$('#customerEditTradeName').value.trim()||null,
+          p_branch_type:$('#customerEditBranchType').value,
+          p_parent_customer_id:c.parent_customer_id||null,
+          p_postal_code:$('#customerEditPostalCode').value.trim()||null,
+          p_address1:$('#customerEditAddress1').value.trim()||null,
+          p_address2:$('#customerEditAddress2').value.trim()||null,
           p_phone:$('#customerEditPhone').value.trim()||null,
+          p_mobile:$('#customerEditMobile').value.trim()||null,
+          p_fax:$('#customerEditFax').value.trim()||null,
+          p_email:$('#customerEditEmail').value.trim()||null,
+          p_website:$('#customerEditWebsite').value.trim()||null,
+          p_support_company_id:c.support_company_id||null,
           p_internal_note:$('#customerEditNote').value.trim()||null,
           p_manual_hold:$('#customerEditHold').checked
         });
@@ -954,11 +987,15 @@
       const btn=e.submitter;
       if(btn) btn.disabled=true;
       try{
-        await rpc('create_contact',{
+        await rpc('create_contact_full',{
           p_customer_id:c.id,
           p_name:$('#contactName').value.trim(),
+          p_title:$('#contactTitle').value.trim()||null,
           p_email:$('#contactEmail').value.trim()||null,
           p_phone:$('#contactPhone').value.trim()||null,
+          p_mobile_e164:$('#contactMobile').value.trim()||null,
+          p_preferred_channel:$('#contactPreferred').value||null,
+          p_active:true,
           p_is_primary:$('#contactPrimary').checked
         });
         notice('#contactCreateMsg','担当者を追加しました。',true);
@@ -978,10 +1015,13 @@
         $('#contactEditHost').innerHTML=
           '<form id="contactEditForm" class="card section" style="box-shadow:none">'+
             '<h4>担当者を編集</h4>'+
-            '<div class="row">'+
-              '<div class="field" style="flex:1;min-width:180px"><label>氏名</label><input id="contactEditName" required value="'+esc(ct.name||'')+'"></div>'+
-              '<div class="field" style="flex:1;min-width:180px"><label>メール</label><input id="contactEditEmail" type="email" value="'+esc(ct.email||'')+'"></div>'+
-              '<div class="field" style="flex:1;min-width:180px"><label>電話</label><input id="contactEditPhone" value="'+esc(ct.phone||'')+'"></div>'+
+            '<div class="modalGrid3">'+
+              '<div class="field"><label>氏名</label><input id="contactEditName" required value="'+esc(ct.name||'')+'"></div>'+
+              '<div class="field"><label>役職・部署</label><input id="contactEditTitle" value="'+esc(ct.title||'')+'"></div>'+
+              '<div class="field"><label>メール</label><input id="contactEditEmail" type="email" value="'+esc(ct.email||'')+'"></div>'+
+              '<div class="field"><label>電話</label><input id="contactEditPhone" value="'+esc(ct.phone||'')+'"></div>'+
+              '<div class="field"><label>携帯</label><input id="contactEditMobile" value="'+esc(ct.mobile_e164||'')+'"></div>'+
+              '<div class="field"><label>希望連絡方法</label><select id="contactEditPreferred"><option value="" '+(!ct.preferred_channel?'selected':'')+'>指定なし</option><option value="phone" '+(ct.preferred_channel==='phone'?'selected':'')+'>電話</option><option value="mobile" '+(ct.preferred_channel==='mobile'?'selected':'')+'>携帯</option><option value="email" '+(ct.preferred_channel==='email'?'selected':'')+'>メール</option></select></div>'+
             '</div>'+
             '<label class="row" style="margin:10px 0"><input id="contactEditPrimary" type="checkbox" '+(ct.is_primary?'checked':'')+'> 主担当にする</label>'+
             '<div class="row"><button class="primary" type="submit">変更を保存</button><button id="contactEditCancel" class="ghost" type="button">キャンセル</button></div>'+
@@ -994,11 +1034,15 @@
           const save=e.submitter;
           if(save) save.disabled=true;
           try{
-            await rpc('update_contact',{
+            await rpc('update_contact_full',{
               p_contact_id:ct.id,
               p_name:$('#contactEditName').value.trim(),
+              p_title:$('#contactEditTitle').value.trim()||null,
               p_email:$('#contactEditEmail').value.trim()||null,
               p_phone:$('#contactEditPhone').value.trim()||null,
+              p_mobile_e164:$('#contactEditMobile').value.trim()||null,
+              p_preferred_channel:$('#contactEditPreferred').value||null,
+              p_active:ct.active!==false,
               p_is_primary:$('#contactEditPrimary').checked
             });
             notice('#contactEditMsg','担当者を更新しました。',true);
@@ -1121,7 +1165,7 @@
       const btn=e.submitter;
       if(btn) btn.disabled=true;
       try{
-        const created=await rpc('create_customer_full_v2',{
+        const created=await rpc('create_customer_with_primary_contact',{
           p_customer_code:null,
           p_name:$('#customerName').value.trim(),
           p_trade_name:$('#customerTradeName').value.trim()||null,
@@ -1140,9 +1184,10 @@
           p_contact_name:$('#customerContactName').value.trim()||null,
           p_contact_title:$('#customerContactTitle').value.trim()||null,
           p_contact_phone:$('#customerContactPhone').value.trim()||null,
-          p_contact_mobile:$('#customerContactMobile').value.trim()||null,
+          p_contact_mobile_e164:$('#customerContactMobile').value.trim()||null,
           p_contact_email:$('#customerContactEmail').value.trim()||null,
-          p_contact_preferred_channel:$('#customerContactPreferred').value||null
+          p_contact_preferred_channel:$('#customerContactPreferred').value||null,
+          p_contact_primary:true
         });
         closeAppModal();
         toast('顧客 '+(created?.customer_code||'')+' を登録しました');
