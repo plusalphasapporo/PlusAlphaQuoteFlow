@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>QuoteFlow Cloud</title>
+  <style>
+    :root{--navy:#07162f;--bg:#f5f7fb;--card:#fff;--ink:#172033;--muted:#667085;--line:#dfe6f1;--blue:#2563eb;--orange:#ea580c;--green:#059669;--red:#dc2626}
+    *{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,"Segoe UI","Noto Sans JP",sans-serif;background:var(--bg);color:var(--ink)}
+    header{height:68px;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 22px;position:sticky;top:0;z-index:10}
+    .brand{font-size:19px;font-weight:900}.sub{font-size:11px;opacity:.72;margin-top:2px}.wrap{max-width:1200px;margin:auto;padding:24px}
+    .login{max-width:460px;margin:8vh auto}.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:20px;box-shadow:0 10px 30px rgba(15,23,42,.06)}
+    .field{display:grid;gap:6px;margin:14px 0}.field label{font-size:12px;font-weight:800;color:#475569}.field input,.field textarea{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font:inherit}
+    button{border:0;border-radius:10px;padding:10px 14px;font:inherit;font-weight:800;cursor:pointer}.primary{background:var(--blue);color:#fff}.orange{background:var(--orange);color:#fff}.green{background:var(--green);color:#fff}.ghost{background:#fff;border:1px solid var(--line);color:var(--ink)}
+    .hidden{display:none!important}.muted{color:var(--muted)}.notice{padding:12px 14px;border-radius:10px;background:#eff6ff;color:#1e3a8a;margin:12px 0}.error{background:#fef2f2;color:#991b1b}.ok{background:#ecfdf5;color:#065f46}
+    .row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.between{justify-content:space-between}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:16px 0}
+    .kpi{background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px}.kpi .label{font-size:12px;color:var(--muted);font-weight:800}.kpi .value{font-size:30px;font-weight:900;margin-top:6px}
+    .section{margin-top:18px}.item{border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:10px}.item h3{margin:0 0 5px;font-size:14px}.item p{margin:4px 0;font-size:13px;color:#475569}
+    table{width:100%;border-collapse:collapse}th,td{padding:10px 12px;border-bottom:1px solid #edf1f6;text-align:left;font-size:13px}th{color:#64748b;background:#fafcff}
+    .pill{display:inline-flex;padding:5px 9px;border-radius:999px;background:#f8fafc;border:1px solid var(--line);font-size:12px;font-weight:800}.pill.good{background:#ecfdf5;color:#047857}.pill.bad{background:#fef2f2;color:#b91c1c}
+    #toast{position:fixed;right:18px;bottom:18px;background:#0f172a;color:#fff;padding:11px 14px;border-radius:10px;display:none;z-index:30}
+    @media(max-width:780px){.grid{grid-template-columns:repeat(2,1fr)}.wrap{padding:14px}header{padding:0 14px}}
+  </style>
+</head>
+<body>
+<header>
+  <div><div class="brand">QuoteFlow Cloud</div><div class="sub">PlusAlpha / Supabase Staging</div></div>
+  <div class="row"><span id="dbBadge" class="pill">接続確認中</span><span id="userBadge" class="pill hidden"></span><button id="logoutBtn" class="ghost hidden">ログアウト</button></div>
+</header>
+
+<main class="wrap">
+  <section id="loginView" class="card login">
+    <h1>ログイン</h1>
+    <p class="muted">QuoteFlow Cloud のアカウントでログインしてください。</p>
+    <div id="loginMsg" class="notice hidden"></div>
+    <form id="loginForm">
+      <div class="field"><label>メールアドレス</label><input id="email" type="email" required autocomplete="username"></div>
+      <div class="field"><label>パスワード</label><input id="password" type="password" required autocomplete="current-password"></div>
+      <button class="primary" style="width:100%" type="submit">ログイン</button>
+    </form>
+  </section>
+
+  <section id="mfaView" class="card login hidden">
+    <h1>管理者MFA</h1>
+    <p class="muted">自社管理者は追加認証が必要です。</p>
+    <div id="mfaMsg" class="notice hidden"></div>
+    <div id="mfaEnrollBox">
+      <button id="enrollBtn" class="primary" type="button">Authenticatorを登録</button>
+      <div id="qrWrap" class="hidden" style="margin-top:14px"><img id="qr" alt="MFA QR" style="max-width:220px"><p id="secret" class="muted"></p></div>
+    </div>
+    <div class="field"><label>6桁コード</label><input id="mfaCode" inputmode="numeric" autocomplete="one-time-code"></div>
+    <button id="verifyBtn" class="primary" type="button">認証する</button>
+  </section>
+
+  <section id="appView" class="hidden">
+    <div class="row between">
+      <div><h1 id="pageTitle" style="margin-bottom:4px"></h1><div id="companyName" class="muted"></div></div>
+      <div id="integrations" class="row"></div>
+    </div>
+    <div id="home"></div>
+  </section>
+</main>
+<div id="toast"></div>
+
+<script type="module">
+  import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+  const supabase = createClient(
+    "https://dqtqoghnctdqoljxbjjz.supabase.co",
+    "sb_publishable_J8rfoe8B1YGnEA_xua5Ppw_Nu4T4wc5",
+    { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } }
+  );
+
+  const $ = (s) => document.querySelector(s);
+  const esc = (v) => String(v ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const roleLabel = r => ({internal_admin:'自社管理者',internal_staff:'自社スタッフ',support_staff:'サポート会社',customer_user:'顧客会社'}[r] || r || '不明');
+  const toast = (m) => { const e=$('#toast'); e.textContent=m; e.style.display='block'; setTimeout(()=>e.style.display='none',2500); };
+  const show = id => ['loginView','mfaView','appView'].forEach(x => $('#'+x).classList.toggle('hidden',x!==id));
+  const notice = (id,msg,ok=false) => { const e=$(id); e.textContent=msg; e.className='notice '+(ok?'ok':'error'); e.classList.remove('hidden'); };
+  const rpc = async (name,args={}) => { const {data,error}=await supabase.rpc(name,args); if(error) throw error; return data; };
+
+  let bootData=null, mfaState={};
+
+  function kpis(items){
+    return '<div class="grid">'+items.map(([l,v])=>'<div class="kpi"><div class="label">'+esc(l)+'</div><div class="value">'+esc(v??0)+'</div></div>').join('')+'</div>';
+  }
+
+  function integrations(){
+    const map={callconnect:'CallConnect',ai:'AI',teamviewer:'TeamViewer'};
+    const i=bootData?.integrations||{};
+    $('#integrations').innerHTML=Object.entries(map).map(([k,l])=>{
+      const st=i[k]?.state||'disabled', good=st==='connected';
+      const txt={connected:'接続済み',degraded:'一部障害',manual:'手動運用',disabled:'未接続'}[st]||st;
+      return '<span class="pill '+(good?'good':'bad')+'">'+l+' : '+txt+'</span>';
+    }).join('');
+  }
+
+  async function renderHome(){
+    const role=bootData.context?.role;
+    const home=$('#home');
+
+    if(role==='internal_admin'||role==='internal_staff'){
+      const [cc,q]=await Promise.all([rpc('internal_command_center'),rpc('internal_handoff_queue')]);
+      home.innerHTML=
+        kpis([
+          ['緊急問い合わせ',cc.now_action?.urgent_open_tickets],
+          ['未割当',cc.now_action?.unassigned_open_tickets],
+          ['未処理引き継ぎ',cc.now_action?.pending_handoffs],
+          ['手動ホールド',cc.now_action?.manual_hold_customers]
+        ])+
+        '<section class="card section"><h2>引き継ぎキュー</h2>'+
+        ((q||[]).length?(q||[]).map(h=>'<div class="item"><h3>'+esc(h.ticket_number||'')+' '+esc(h.customer_name||'')+'</h3><p>'+esc(h.subject||'')+'</p><p>理由: '+esc(h.reason||'')+'</p><p>次: '+esc(h.next_action||'')+'</p><button class="primary accept" data-id="'+esc(h.id)+'">受理する</button></div>').join(''):'<p class="muted">未処理の引き継ぎはありません。</p>')+
+        '</section>';
+      document.querySelectorAll('.accept').forEach(b=>b.onclick=async()=>{try{await rpc('accept_ticket_handoff',{p_handoff_id:b.dataset.id});toast('引き継ぎを受理しました');await renderHome();}catch(e){toast(e.message||String(e));}});
+      return;
+    }
+
+    if(role==='support_staff'){
+      const h=await rpc('support_home');
+      home.innerHTML=
+        kpis([
+          ['対応中',h.kpis?.open_tickets],
+          ['本日新規',h.kpis?.created_today],
+          ['本日解決',h.kpis?.closed_today],
+          ['緊急',h.kpis?.urgent_open]
+        ])+
+        '<section class="card section"><h2>担当案件</h2>'+
+        ((h.recent_tickets||[]).length?'<table><thead><tr><th>番号</th><th>顧客</th><th>件名</th><th>状態</th></tr></thead><tbody>'+(h.recent_tickets||[]).map(t=>'<tr><td>'+esc(t.ticket_number||'—')+'</td><td>'+esc(t.customer_name||'')+'</td><td>'+esc(t.subject||'')+'</td><td>'+esc(t.status||'')+'</td></tr>').join('')+'</tbody></table>':'<p class="muted">担当案件はありません。</p>')+
+        '</section>';
+      return;
+    }
+
+    const h=await rpc('customer_portal_home');
+    const open=(h.recent_tickets||[]).filter(t=>t.status!=='closed').length;
+    home.innerHTML=
+      kpis([
+        ['対応中',open],
+        ['問い合わせ',(h.recent_tickets||[]).length],
+        ['登録機器',(h.assets||[]).length],
+        ['契約',(h.contracts||[]).length]
+      ])+
+      '<section class="card section"><h2>新しく問い合わせる</h2><form id="ticketForm"><div class="field"><label>件名</label><input id="subject" required></div><div class="field"><label>内容</label><textarea id="description" rows="4"></textarea></div><button class="green" type="submit">送信する</button></form><div id="ticketMsg" class="notice hidden"></div></section>';
+    $('#ticketForm').onsubmit=async e=>{
+      e.preventDefault();
+      try{
+        const t=await rpc('create_customer_ticket',{p_asset_id:null,p_contract_id:null,p_subject:$('#subject').value.trim(),p_description:$('#description').value.trim()||null});
+        notice('#ticketMsg','問い合わせを作成しました。',true);
+        $('#ticketForm').reset();
+        await renderHome();
+      }catch(err){notice('#ticketMsg',err.message||String(err));}
+    };
+  }
+
+  async function prepareMfa(){
+    show('mfaView');
+    const f=await supabase.auth.mfa.listFactors();
+    if(f.error) return notice('#mfaMsg',f.error.message);
+    const verified=[...(f.data?.totp||[]),...(f.data?.phone||[])].find(x=>x.status==='verified');
+    if(verified){
+      $('#mfaEnrollBox').classList.add('hidden');
+      const ch=await supabase.auth.mfa.challenge({factorId:verified.id});
+      if(ch.error) return notice('#mfaMsg',ch.error.message);
+      mfaState={factorId:verified.id,challengeId:ch.data.id};
+    }
+  }
+
+  async function boot(){
+    const {data:{session}}=await supabase.auth.getSession();
+    if(!session){
+      show('loginView');
+      $('#logoutBtn').classList.add('hidden');
+      $('#userBadge').classList.add('hidden');
+      return;
+    }
+    $('#logoutBtn').classList.remove('hidden');
+    $('#userBadge').textContent=session.user.email||'ログイン中';
+    $('#userBadge').classList.remove('hidden');
+
+    try{
+      bootData=await rpc('current_app_bootstrap');
+    }catch(e){
+      const m=String(e.message||e);
+      if(m.toLowerCase().includes('aal2')) return prepareMfa();
+      show('loginView');
+      notice('#loginMsg',m);
+      return;
+    }
+
+    show('appView');
+    $('#pageTitle').textContent=roleLabel(bootData.context?.role);
+    $('#companyName').textContent=bootData.context?.company_name||'';
+    integrations();
+    await renderHome();
+  }
+
+  $('#loginForm').onsubmit=async e=>{
+    e.preventDefault();
+    $('#loginMsg').classList.add('hidden');
+    const {error}=await supabase.auth.signInWithPassword({email:$('#email').value.trim(),password:$('#password').value});
+    if(error) return notice('#loginMsg',error.message);
+    $('#password').value='';
+    await boot();
+  };
+
+  $('#enrollBtn').onclick=async()=>{
+    const r=await supabase.auth.mfa.enroll({factorType:'totp',friendlyName:'QuoteFlow Cloud'});
+    if(r.error) return notice('#mfaMsg',r.error.message);
+    mfaState={factorId:r.data.id};
+    $('#qr').src=r.data.totp.qr_code;
+    $('#qrWrap').classList.remove('hidden');
+    $('#secret').textContent='Secret: '+r.data.totp.secret;
+  };
+
+  $('#verifyBtn').onclick=async()=>{
+    let {factorId,challengeId}=mfaState;
+    if(!factorId) return notice('#mfaMsg','Authenticatorを登録してください。');
+    if(!challengeId){
+      const ch=await supabase.auth.mfa.challenge({factorId});
+      if(ch.error) return notice('#mfaMsg',ch.error.message);
+      challengeId=ch.data.id;
+    }
+    const v=await supabase.auth.mfa.verify({factorId,challengeId,code:$('#mfaCode').value.trim()});
+    if(v.error) return notice('#mfaMsg',v.error.message);
+    $('#mfaCode').value='';
+    await boot();
+  };
+
+  $('#logoutBtn').onclick=async()=>{await supabase.auth.signOut();bootData=null;await boot();};
+
+  try{
+    const h=await rpc('app_health');
+    $('#dbBadge').textContent=h?.ok?'DB接続 OK':'DB応答あり';
+    $('#dbBadge').className='pill good';
+  }catch(e){
+    $('#dbBadge').textContent='DB接続エラー';
+    $('#dbBadge').className='pill bad';
+  }
+
+  await boot();
+</script>
+</body>
+</html>
