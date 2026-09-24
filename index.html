@@ -305,8 +305,26 @@
 
 <div id="toast"></div>
 
+<script>
+  window.__quoteFlowModuleReady=false;
+  window.__quoteFlowReloadFresh=function(){
+    const url=new URL(window.location.href);
+    url.searchParams.set('_qf',Date.now().toString());
+    window.location.replace(url.toString());
+  };
+  setTimeout(function(){
+    if(window.__quoteFlowModuleReady) return;
+    const msg=document.getElementById('loginMsg');
+    if(!msg) return;
+    msg.className='notice error';
+    msg.innerHTML='画面プログラムを正常に読み込めませんでした。<br><button type="button" class="primary" style="margin-top:8px" onclick="window.__quoteFlowReloadFresh()">最新版を再読み込み</button>';
+    msg.classList.remove('hidden');
+  },3500);
+</script>
+
 <script type="module">
   import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+  window.__quoteFlowModuleReady=true;
 
   const TRUST_DEVICE_KEY = 'quoteflow_trusted_device';
   const AUTH_STORAGE_KEY = 'sb-dqtqoghnctdqoljxbjjz-auth-token';
@@ -9014,12 +9032,23 @@
     $('#companyName').textContent=bootData.context?.company_name||'';
     integrations();
     renderNav();
-    await setupGlobalHeader();
-    await startSupportRealtime();
-    await startInternalHandoffRealtime();
-    await startCallConnectNotificationRealtime();
-    await startDeadlineWatch();
-    await go('home');
+
+    try{
+      await setupGlobalHeader();
+      await startSupportRealtime();
+      await startInternalHandoffRealtime();
+      await startCallConnectNotificationRealtime();
+      await startDeadlineWatch();
+      await go('home');
+    }catch(err){
+      console.error('QuoteFlow post-login initialization failed',err);
+      $('#home').innerHTML=
+        '<div class="pageError"><h3>ログインは完了しています</h3>'+
+        '<p>初期画面の読み込みでエラーが発生しました。</p>'+
+        '<div class="row" style="margin-top:14px"><button id="postLoginRetryBtn" class="primary" type="button">画面を再読み込み</button></div></div>';
+      const retry=$('#postLoginRetryBtn');
+      if(retry) retry.onclick=()=>go('home');
+    }
   }
 
   $('#forgotPasswordBtn').onclick=async()=>{
@@ -9095,20 +9124,32 @@
 
   $('#loginForm').onsubmit=async e=>{
     e.preventDefault();
+    const btn=e.submitter;
+    if(btn) btn.disabled=true;
     $('#loginMsg').classList.add('hidden');
-    if($('#trustDevice').checked){
-      localStorage.setItem(TRUST_DEVICE_KEY,'1');
-    }else{
-      localStorage.removeItem(TRUST_DEVICE_KEY);
-      localStorage.removeItem(AUTH_STORAGE_KEY);
+    try{
+      if($('#trustDevice').checked){
+        localStorage.setItem(TRUST_DEVICE_KEY,'1');
+      }else{
+        localStorage.removeItem(TRUST_DEVICE_KEY);
+        localStorage.removeItem(AUTH_STORAGE_KEY);
+      }
+      notice('#loginMsg','ログインしています...',true);
+      const {error}=await supabase.auth.signInWithPassword({
+        email:$('#email').value.trim(),
+        password:$('#password').value
+      });
+      if(error) throw error;
+      $('#password').value='';
+      $('#loginMsg').classList.add('hidden');
+      await boot();
+    }catch(err){
+      console.error('QuoteFlow login failed',err);
+      show('loginView');
+      notice('#loginMsg',err?.message||'ログイン処理に失敗しました。最新版を再読み込みしてもう一度お試しください。');
+    }finally{
+      if(btn) btn.disabled=false;
     }
-    const {error}=await supabase.auth.signInWithPassword({
-      email:$('#email').value.trim(),
-      password:$('#password').value
-    });
-    if(error) return notice('#loginMsg',error.message);
-    $('#password').value='';
-    await boot();
   };
 
   $('#enrollBtn').onclick=async()=>{
