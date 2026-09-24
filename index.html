@@ -490,6 +490,7 @@
       ['customers','顧客管理'],
       ['assets','機器台帳'],
       ['support','問い合わせ管理'],
+      ['support_callconnect','CallConnect'],
       ['cases','案件管理'],
       ['handoffs','引継ぎ管理'],
       ['sales','見積・リース'],
@@ -507,6 +508,7 @@
       ['customers','顧客管理'],
       ['assets','機器台帳'],
       ['support','問い合わせ管理'],
+      ['support_callconnect','CallConnect'],
       ['cases','案件管理'],
       ['handoffs','引継ぎ管理'],
       ['sales','見積・リース'],
@@ -7407,16 +7409,18 @@
         ['受信通話',dash?.total_calls||0],
         ['未照合',dash?.unmatched_calls||0],
         ['案件作成済み',dash?.linked_tickets||0],
-        ['REST API',dash?.api_key_configured?'設定済み':'未設定']
+        ['REST API',dash?.api_key_configured?'設定済み':'未設定'],
+        ['最終履歴同期',dash?.last_records_sync_at?dateTimeText(dash.last_records_sync_at):'未実施']
       ])+
       '<section class="card section">'+
-        '<div class="row between"><div><h2>REST API</h2><p class="sectionDesc">API Keyは自社管理者が設定します。サポート会社にはキー自体を表示しません。</p></div><span class="pill '+(dash?.api_key_configured?'good':'warn')+'">'+esc(dash?.api_key_configured?'API Key設定済み':'API Key未設定')+'</span></div>'+
+        '<div class="row between"><div><h2>REST API</h2><p class="sectionDesc">API Keyは自社管理者が設定します。サポート会社にはキー自体を表示しません。</p></div><div class="row"><span class="pill '+(dash?.api_key_configured?'good':'warn')+'">'+esc(dash?.api_key_configured?'API Key設定済み':'API Key未設定')+'</span>'+((bootData?.context?.role==='internal_admin'||bootData?.context?.role==='internal_staff')?'<button id="callconnectPageSyncRecords" class="primary" type="button" '+((dash?.api_key_configured&&dash?.records_api_url_configured)?'':'disabled')+'>通話履歴を同期</button>':'')+'</div></div>'+
         '<div class="modalGrid2">'+
           '<div class="item"><strong>API Key登録日時</strong><p>'+esc(dash?.api_key_configured_at?dateTimeText(dash.api_key_configured_at):'未設定')+'</p></div>'+
           '<div class="item"><strong>最終API確認</strong><p>'+esc(dash?.last_api_check_status||'未実施')+(dash?.last_api_check_at?'<br><span class="muted">'+esc(dateTimeText(dash.last_api_check_at))+'</span>':'')+'</p></div>'+
           '<div class="item"><strong>Contacts List API URL</strong><p>'+esc(dash?.contacts_api_url_configured?'設定済み':'未設定')+'</p></div>'+
           '<div class="item"><strong>Contacts Create API URL</strong><p>'+esc(dash?.contacts_create_api_url_configured?'設定済み':'未設定')+'</p></div>'+
-          '<div class="item"><strong>Records List API URL</strong><p>'+esc(dash?.records_api_url_configured?'設定済み':'未設定')+'</p></div>'+
+          '<div class="item"><strong>Records Search API URL</strong><p>'+esc(dash?.records_api_url_configured?'設定済み':'未設定')+'</p></div>'+
+          '<div class="item"><strong>最終通話履歴同期</strong><p>'+esc(dash?.last_records_sync_at?dateTimeText(dash.last_records_sync_at):'未実施')+'</p></div>'+
         '</div>'+
         (dash?.last_api_error?'<div class="notice error">APIエラー: '+esc(dash.last_api_error)+'</div>':'')+
       '</section>'+
@@ -7429,9 +7433,40 @@
         (dash?.last_error?'<div class="notice error">最終エラー: '+esc(dash.last_error)+'</div>':'')+
       '</section>'+
       (dash?.api_key_configured&&!dash?.contacts_create_api_url_configured?'<div class="notice error"><strong>着信時の顧客表示はまだ未完成です。</strong><br>CallConnect側に顧客を同期するため、Contacts Create API URLの設定が必要です。Webhookによる通話履歴保存・電話番号照合は動作しています。</div>':'')+
-      '<section class="card section"><div class="row between"><div><h2>通話履歴</h2><p class="sectionDesc">電話番号が顧客マスタと一致すると、自動で案件作成します。照合済みは「顧客カルテ」から直接開けます。未照合はここで顧客を指定できます。</p></div></div>'+
-        dataTable(['日時','種別','電話番号','CallConnect担当','通話','顧客照合','案件','操作'],rows)+
+      '<div id="callconnectPageSyncMsg" class="notice hidden"></div>'+
+      '<section class="card section"><div class="row between"><div><h2>通話履歴</h2><p class="sectionDesc">電話番号が顧客マスタと一致すると、自動で案件作成します。照合済みは「顧客カルテ」から直接開けます。未照合はここで顧客を指定できます。</p></div><div class="field" style="margin:0;min-width:260px"><label>履歴を検索</label><input id="callconnectHistorySearch" placeholder="電話番号・会社名・担当者"></div></div>'+
+        '<div id="callconnectHistoryTable">'+dataTable(['日時','種別','電話番号','CallConnect担当','通話','顧客照合','案件','操作'],rows)+'</div>'+
       '</section>';
+
+    const callconnectPageSyncRecords=$('#callconnectPageSyncRecords');
+    if(callconnectPageSyncRecords){
+      callconnectPageSyncRecords.onclick=async()=>{
+        callconnectPageSyncRecords.disabled=true;
+        try{
+          notice('#callconnectPageSyncMsg','CallConnectの通話履歴を同期しています...',true);
+          const {data,error}=await supabase.functions.invoke('callconnect-records-sync',{body:{}});
+          if(error) throw error;
+          const msg='取得 '+Number(data?.fetched_count||0)+'件 / 新規 '+Number(data?.created_count||0)+'件 / 更新 '+Number(data?.updated_count||0)+'件 / 顧客一致 '+Number(data?.matched_count||0)+'件 / 未一致 '+Number(data?.unmatched_count||0)+'件 / 案件作成 '+Number(data?.ticket_created_count||0)+'件'+(Number(data?.failed_count||0)?' / 失敗 '+Number(data.failed_count)+'件':'');
+          notice('#callconnectPageSyncMsg',msg,Number(data?.failed_count||0)===0);
+          toast('通話履歴を同期しました');
+          setTimeout(()=>renderSupportCallConnect(),900);
+        }catch(err){
+          notice('#callconnectPageSyncMsg',err.message||String(err));
+        }finally{
+          callconnectPageSyncRecords.disabled=false;
+        }
+      };
+    }
+
+    const callconnectHistorySearch=$('#callconnectHistorySearch');
+    if(callconnectHistorySearch){
+      callconnectHistorySearch.oninput=()=>{
+        const q=callconnectHistorySearch.value.trim().toLowerCase();
+        document.querySelectorAll('#callconnectHistoryTable tbody tr').forEach(tr=>{
+          tr.style.display=!q||tr.textContent.toLowerCase().includes(q)?'':'none';
+        });
+      };
+    }
 
     document.querySelectorAll('.callconnectTicketOpen').forEach(btn=>btn.onclick=async()=>{
       await go('support_cases');
