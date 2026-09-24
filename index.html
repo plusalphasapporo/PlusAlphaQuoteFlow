@@ -1698,7 +1698,7 @@
   async function renderCustomerDetail(customerId,tab='overview'){
     const host=$('#customerDetailHost');
     const tabs=[
-      ['overview','概要'],['contacts','担当者'],['assets','OA機器'],['tickets','障害履歴'],
+      ['overview','概要'],['transactions','取引全体'],['contacts','担当者'],['assets','OA機器'],['tickets','障害履歴'],
       ['properties','物件・残債'],['monthly','月額支払'],['management','管理情報'],['history','営業対応履歴']
     ];
 
@@ -1722,17 +1722,55 @@
     const c=base||{};
     let content='';
 
-    if(tab==='contacts'){
+    if(tab==='transactions'){
+      const quoteRows=(extra.quotes||[]).map(x=>
+        '<tr><td><strong>'+esc(x.quote_number||'下書き')+'</strong></td><td>'+esc(x.project_name||'—')+'</td><td>'+esc(statusText(x.status))+'</td><td class="amount">'+esc(money(x.total_amount))+'</td><td>'+esc(dateText(x.valid_until))+'</td><td><button class="linkBtn customerQuoteOpen" type="button" data-id="'+esc(x.id)+'">詳細</button></td></tr>'
+      );
+      const orderRows=(extra.orders||[]).map(x=>
+        '<tr><td><strong>'+esc(x.order_number||'未採番')+'</strong></td><td>'+esc(statusText(x.status))+'</td><td class="amount">'+esc(money(x.total_amount))+'</td><td>'+esc(dateText(x.ordered_at))+'</td><td><button class="linkBtn customerOrderOpen" type="button" data-id="'+esc(x.id)+'">詳細</button></td></tr>'
+      );
+      const poRows=(extra.purchase_orders||[]).map(x=>
+        '<tr><td><strong>'+esc(x.purchase_order_number||'未採番')+'</strong></td><td>'+esc(x.supplier_name||'—')+'</td><td>'+esc(statusText(x.status))+'</td><td class="amount">'+esc(money(x.total_cost))+'</td><td>'+esc(dateText(x.expected_delivery_date))+'</td><td><button class="linkBtn customerPOOpen" type="button" data-id="'+esc(x.id)+'">詳細</button></td></tr>'
+      );
+      const deliveryRows=(extra.deliveries||[]).map(x=>
+        '<tr><td><strong>'+esc(x.delivery_number||'未採番')+'</strong></td><td>'+esc(statusText(x.status))+'</td><td>'+esc(dateText(x.scheduled_at))+'</td><td>'+esc(x.installation_location||'—')+'</td><td>'+esc(x.assigned_user_name||'未指定')+'</td><td><button class="linkBtn customerDeliveryOpen" type="button" data-id="'+esc(x.id)+'">詳細</button></td></tr>'
+      );
+      const contractRows=(extra.contracts||[]).map(x=>
+        '<tr><td><strong>'+esc(x.contract_number||'未採番')+'</strong></td><td>'+esc(statusText(x.status))+'</td><td>'+esc(dateText(x.start_date))+'</td><td>'+esc(dateText(x.end_date))+'</td></tr>'
+      );
+      const assetRows=(extra.assets||[]).map(x=>
+        '<tr><td><strong>'+esc(x.asset_number||'未採番')+'</strong></td><td>'+esc(x.model_name||'—')+'</td><td>'+esc(x.serial_number||'—')+'</td><td>'+esc(dateText(x.warranty_until))+'</td><td>'+esc(x.installation_location||'—')+'</td><td><button class="linkBtn customerAssetOpen" type="button" data-id="'+esc(x.id)+'">詳細</button></td></tr>'
+      );
+      const ticketRows=(extra.tickets||[]).map(x=>
+        '<tr><td><strong>'+esc(x.ticket_number||'—')+'</strong></td><td>'+esc(x.subject||'')+'</td><td>'+esc(statusText(x.status))+'</td><td>'+esc(x.priority||'normal')+'</td><td><button class="linkBtn customerTicketOpen" type="button" data-id="'+esc(x.id)+'">詳細</button></td></tr>'
+      );
+
+      content=
+        kpis([
+          ['見積',extra.summary?.quotes||0],
+          ['受注',extra.summary?.orders||0],
+          ['発注',extra.summary?.purchase_orders||0],
+          ['納品予定',extra.summary?.planned_deliveries||0],
+          ['有効契約',extra.summary?.active_contracts||0],
+          ['稼働機器',extra.summary?.active_assets||0],
+          ['対応中問合せ',extra.summary?.open_tickets||0]
+        ])+
+        '<section class="section"><div class="row between"><h3>見積</h3><button id="customerTxnNewQuote" class="primary" type="button">＋ この顧客で見積作成</button></div>'+dataTable(['見積番号','案件名','状態','合計','有効期限','操作'],quoteRows)+'</section>'+
+        '<section class="section"><h3>受注</h3>'+dataTable(['受注番号','状態','合計','受注日','操作'],orderRows)+'</section>'+
+        '<section class="section"><h3>発注</h3>'+dataTable(['発注番号','仕入先','状態','原価','予定納期','操作'],poRows)+'</section>'+
+        '<section class="section"><h3>納品</h3>'+dataTable(['納品番号','状態','予定日','設置場所','担当','操作'],deliveryRows)+'</section>'+
+        '<section class="section"><h3>契約</h3>'+dataTable(['契約番号','状態','開始日','終了日'],contractRows)+'</section>'+
+        '<section class="section"><h3>機器</h3>'+dataTable(['機器番号','機種','シリアル','保証期限','設置場所','操作'],assetRows)+'</section>'+
+        '<section class="section"><h3>問い合わせ</h3>'+dataTable(['番号','件名','状態','優先度','操作'],ticketRows)+'</section>';
+    }else if(tab==='contacts'){
       const rows=(contacts||[]).map(x=>'<tr><td><strong>'+esc(x.name||'')+'</strong>'+(x.is_primary?' <span class="pill good">主担当</span>':'')+'</td><td>'+esc(x.email||'—')+'</td><td>'+esc(x.phone||'—')+'</td></tr>');
       content=dataTable(['氏名','メール','電話'],rows);
     }else if(tab==='assets'){
-      const {data,error}=await supabase.from('assets').select('id,asset_number,model_name,serial_number,status,created_at').eq('customer_id',customerId).order('created_at',{ascending:false});
-      if(error) throw error;
-      const rows=(data||[]).map(x=>'<tr><td>'+esc(x.asset_number||'—')+'</td><td>'+esc(x.model_name||'—')+'</td><td>'+esc(x.serial_number||'—')+'</td><td>'+esc(statusText(x.status))+'</td></tr>');
-      content=dataTable(['機器番号','機種','シリアル','状態'],rows);
+      const rows=(extra.assets||[]).map(x=>'<tr><td>'+esc(x.asset_number||'—')+'</td><td>'+esc(x.model_name||'—')+'</td><td>'+esc(x.serial_number||'—')+'</td><td>'+esc(dateText(x.warranty_until))+'</td><td>'+esc(x.installation_location||'—')+'</td><td>'+esc(statusText(x.status))+'</td><td><button class="linkBtn customerAssetOpen" type="button" data-id="'+esc(x.id)+'">詳細</button></td></tr>');
+      content=dataTable(['機器番号','機種','シリアル','保証期限','設置場所','状態','操作'],rows);
     }else if(tab==='tickets'){
-      const rows=(extra.tickets||[]).map(x=>'<tr><td>'+esc(x.ticket_number||'—')+'</td><td>'+esc(x.subject||'')+'</td><td>'+esc(statusText(x.status))+'</td><td>'+esc(x.priority||'normal')+'</td><td>'+esc(dateText(x.created_at))+'</td></tr>');
-      content=dataTable(['番号','内容','状態','優先度','受付日'],rows);
+      const rows=(extra.tickets||[]).map(x=>'<tr><td>'+esc(x.ticket_number||'—')+'</td><td>'+esc(x.subject||'')+'</td><td>'+esc(statusText(x.status))+'</td><td>'+esc(x.priority||'normal')+'</td><td>'+esc(dateText(x.created_at))+'</td><td><button class="linkBtn customerTicketOpen" type="button" data-id="'+esc(x.id)+'">詳細</button></td></tr>');
+      content=dataTable(['番号','内容','状態','優先度','受付日','操作'],rows);
     }else if(tab==='properties'){
       const rows=(extra.properties||[]).map(x=>'<tr><td><strong>'+esc(x.property_name||'')+'</strong></td><td>'+esc(x.model_name||'—')+'</td><td>'+esc(x.installation_location||'—')+'</td><td>'+esc(x.quantity||0)+'</td><td>'+esc(x.remaining_count??'—')+'</td><td class="amount">'+esc(money(x.residual_amount_tax_included||0))+'</td></tr>');
       content='<div class="unifiedToolbar"><div class="notice" style="flex:1">物件・残債は、見積の旧物件残債と分離した顧客マスタ情報です。</div><button id="addPropertyBtn" class="primary" type="button">＋物件・残債</button></div>'+dataTable(['物件名','型番','設置場所','数量','残回数','税込残債'],rows);
@@ -1755,6 +1793,35 @@
       '</section>';
     $('#customerDetailClose').onclick=()=>{host.innerHTML='';};
     bindUnifiedTabs(t=>renderCustomerDetail(customerId,t));
+
+    const newQuoteBtn=$('#customerTxnNewQuote');
+    if(newQuoteBtn) newQuoteBtn.onclick=()=>renderCustomerQuoteCreate(customerId);
+
+    document.querySelectorAll('.customerQuoteOpen').forEach(btn=>btn.onclick=async()=>{
+      const cmap=await customerMap();
+      await renderSalesWorkspace('quotes');
+      await renderQuoteEditor(btn.dataset.id,cmap);
+    });
+    document.querySelectorAll('.customerOrderOpen').forEach(btn=>btn.onclick=async()=>{
+      await renderSalesWorkspace('order_ops');
+      await renderOrderDetail(btn.dataset.id);
+    });
+    document.querySelectorAll('.customerPOOpen').forEach(btn=>btn.onclick=async()=>{
+      await renderProcurementWorkspace('purchase_orders');
+      await renderPurchaseOrderDetail(btn.dataset.id);
+    });
+    document.querySelectorAll('.customerDeliveryOpen').forEach(btn=>btn.onclick=async()=>{
+      await renderProcurementWorkspace('delivery');
+      await renderDeliveryDetail(btn.dataset.id);
+    });
+    document.querySelectorAll('.customerAssetOpen').forEach(btn=>btn.onclick=async()=>{
+      await go('assets');
+      await renderAssetDetail(btn.dataset.id);
+    });
+    document.querySelectorAll('.customerTicketOpen').forEach(btn=>btn.onclick=async()=>{
+      await go('support');
+      await renderTicketDetail(btn.dataset.id);
+    });
 
     const addPropertyBtn=$('#addPropertyBtn');
     if(addPropertyBtn) addPropertyBtn.onclick=()=>openModal({
@@ -1857,7 +1924,7 @@
       }
     });
 
-    await appendEntityAuditHistory('#quoteDetailHost','quote',q.id);
+    await appendEntityAuditHistory('#customerDetailHost','customer',customerId);
     host.scrollIntoView({behavior:'smooth',block:'start'});
   }
 
