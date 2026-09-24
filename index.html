@@ -249,8 +249,12 @@
 
   function isOfflineError(err){
     const m=errorText(err).toLowerCase();
-    const st=errorStatus(err);
-    return !navigator.onLine || st===0 || m.includes('failed to fetch') || m.includes('networkerror') || m.includes('network request failed') || m.includes('load failed');
+    return !navigator.onLine ||
+      m.includes('failed to fetch') ||
+      m.includes('networkerror') ||
+      m.includes('network request failed') ||
+      m.includes('load failed') ||
+      m.includes('fetch failed');
   }
 
   function isTransientError(err){
