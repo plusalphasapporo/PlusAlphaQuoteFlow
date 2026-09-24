@@ -1727,22 +1727,72 @@
 
   async function renderProductsTab(){
     const products=await rpc('internal_products_list');
-    const rows=(products||[]).map(p=>
-      '<tr><td>'+esc(p.product_code||'—')+'</td><td><strong>'+esc(p.name||'')+'</strong></td><td>'+esc(p.manufacturer||'—')+'</td><td>'+esc(p.supplier_name||'—')+'</td><td>'+esc(p.unit||'台')+'</td><td class="amount">'+esc(money(p.sale_price))+'</td><td class="amount">'+esc(money(p.cost_price))+'</td><td>'+esc(p.procurement_target?'仕入対象':'対象外')+'</td><td>'+(p.track_serials?'<span class="pill good">台帳管理</span>':'—')+'</td><td><button class="linkBtn productEditBtn" type="button" data-id="'+esc(p.id)+'">編集</button></td></tr>'
-    );
+    const items=(products||[]).map(p=>({...p,ui_status:p.is_active===false?'inactive':'active'}));
+
     $('#home').innerHTML=
       pageIntro('見積・リース','商品マスタ・見積・リース料率・受注粗利を1画面で管理します。')+
       unifiedTabs([['quotes','見積'],['products','商品マスタ'],['lease_rates','リース料率'],['profit','受注粗利'],['order_ops','受注後処理'],['sales_settings','販売設定']],'products','sales')+
-      '<section class="card section"><div class="unifiedToolbar"><div><h2>商品マスタ</h2><p class="sectionDesc">商品コード、メーカー、仕入先、売価、原価、仕入対象を管理します。</p></div><button id="newProductBtn" class="primary" type="button">＋商品登録</button></div>'+
-      dataTable(['商品コード','商品名','メーカー','仕入先','単位','売価','原価','仕入','シリアル管理','操作'],rows)+'</section>';
+      '<section class="card section"><div class="unifiedToolbar"><div><h2>商品マスタ</h2><p class="sectionDesc">商品コード、メーカー、仕入先、売価、原価、仕入対象、シリアル管理を管理します。</p></div><button id="newProductBtn" class="primary" type="button">＋商品登録</button></div></section>'+
+      listToolbar('productList',items,'ui_status','商品コード・商品名・メーカー・仕入先・タグ',[
+        ['updated_desc','更新が新しい順'],
+        ['name_asc','商品名順'],
+        ['code_asc','商品コード順'],
+        ['supplier_asc','仕入先順'],
+        ['sale_desc','売価が高い順']
+      ])+
+      '<section class="section"><div id="productListHost"></div></section>';
+
+    const renderRows=()=>{
+      const state=listToolbarState('productList');
+      let filtered=items.filter(p=>{
+        if(state.status!=='all'&&p.ui_status!==state.status) return false;
+        if(!state.query) return true;
+        return [
+          p.product_code,p.name,p.manufacturer,p.supplier_name,p.unit,
+          (p.tags||[]).join(' '),p.internal_note,p.ui_status
+        ].some(v=>String(v||'').toLowerCase().includes(state.query));
+      });
+
+      filtered=[...filtered].sort((a,b)=>{
+        if(state.sort==='name_asc') return compareText(a.name,b.name);
+        if(state.sort==='code_asc') return compareText(a.product_code,b.product_code);
+        if(state.sort==='supplier_asc') return compareText(a.supplier_name,b.supplier_name);
+        if(state.sort==='sale_desc') return Number(b.sale_price||0)-Number(a.sale_price||0);
+        return timeValue(b.updated_at)-timeValue(a.updated_at);
+      });
+
+      updateListCount('productList',filtered.length,items.length);
+      $('#productListHost').innerHTML=dataTable(
+        ['商品コード','商品名','メーカー','仕入先','単位','売価','原価','仕入','シリアル管理','状態','操作'],
+        filtered.map(p=>
+          '<tr>'+
+            '<td>'+esc(p.product_code||'—')+'</td>'+
+            '<td><strong>'+esc(p.name||'')+'</strong></td>'+
+            '<td>'+esc(p.manufacturer||'—')+'</td>'+
+            '<td>'+esc(p.supplier_name||'—')+'</td>'+
+            '<td>'+esc(p.unit||'台')+'</td>'+
+            '<td class="amount">'+esc(money(p.sale_price))+'</td>'+
+            '<td class="amount">'+esc(money(p.cost_price))+'</td>'+
+            '<td>'+esc(p.procurement_target?'仕入対象':'対象外')+'</td>'+
+            '<td>'+(p.track_serials?'<span class="pill good">台帳管理</span>':'—')+'</td>'+
+            '<td>'+(p.is_active===false?'<span class="pill bad">無効</span>':'<span class="pill good">有効</span>')+'</td>'+
+            '<td><button class="linkBtn productEditBtn" type="button" data-id="'+esc(p.id)+'">編集</button></td>'+
+          '</tr>'
+        )
+      );
+
+      document.querySelectorAll('.productEditBtn').forEach(btn=>{
+        btn.onclick=()=>{
+          const p=items.find(x=>x.id===btn.dataset.id);
+          if(p) openProductModal(p);
+        };
+      });
+    };
+
     bindUnifiedTabs(t=>renderSalesWorkspace(t));
     $('#newProductBtn').onclick=()=>openProductModal();
-    document.querySelectorAll('.productEditBtn').forEach(btn=>{
-      btn.onclick=()=>{
-        const p=(products||[]).find(x=>x.id===btn.dataset.id);
-        if(p) openProductModal(p);
-      };
-    });
+    bindListToolbar('productList',renderRows);
+    renderRows();
   }
 
   async function openProductModal(product=null){
