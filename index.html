@@ -322,7 +322,7 @@
     'customer_ticket_detail','internal_numbering_settings','internal_accounts_list',
     'internal_account_companies','internal_audit_workspace','internal_document_profile','internal_demo_seed_status','internal_company_settings','internal_entity_audit_history',
     'internal_products_list','internal_lease_rates_list','internal_order_profitability','internal_customer_unified_workspace','internal_receiving_workspace','internal_order_operation','role_knowledge_articles',
-    'support_customer_directory','support_asset_directory','support_handoff_history','support_customer_context','support_workflow_states','support_ticket_workflow_state','support_unread_notifications','support_unread_handoff_updates','support_deadline_states','support_ticket_deadline_state','support_assignment_states','support_ticket_assignment_state','callconnect_dashboard','callconnect_api_settings',
+    'support_customer_directory','support_asset_directory','support_handoff_history','support_customer_context','support_workflow_states','support_ticket_workflow_state','support_unread_notifications','support_unread_handoff_updates','support_deadline_states','support_ticket_deadline_state','support_assignment_states','support_ticket_assignment_state','callconnect_dashboard','callconnect_api_settings','callconnect_unread_notifications',
     'internal_case_directory','internal_handoff_history','internal_knowledge_articles'
   ]);
 
@@ -483,6 +483,7 @@
   let lastDeadlineAlertKey='';
   let supportRealtimeChannel=null;
   let internalHandoffRealtimeChannel=null;
+  let callconnectNotificationChannel=null;
 
   const pageSets = {
     internal_admin: [
@@ -967,6 +968,43 @@
     }
   }
 
+  async function refreshCallConnectUnread(){
+    const role=bootData?.context?.role;
+    if(!['internal_admin','internal_staff','support_staff'].includes(role)) return {count:0,items:[]};
+    try{
+      return await rpc('callconnect_unread_notifications') || {count:0,items:[]};
+    }catch(_){
+      return {count:0,items:[]};
+    }
+  }
+
+  async function startCallConnectNotificationRealtime(){
+    if(callconnectNotificationChannel){
+      try{await supabase.removeChannel(callconnectNotificationChannel);}catch(_){}
+      callconnectNotificationChannel=null;
+    }
+    const role=bootData?.context?.role;
+    if(!['internal_admin','internal_staff','support_staff'].includes(role)) return;
+
+    callconnectNotificationChannel=supabase
+      .channel('callconnect-incoming-live')
+      .on('postgres_changes',{
+        event:'INSERT',
+        schema:'public',
+        table:'callconnect_notifications'
+      },async payload=>{
+        const unread=await refreshCallConnectUnread();
+        const item=(unread.items||[]).find(x=>x.id===payload.new?.id);
+        if(!item) return;
+        const type={201:'着信',400:'着信キャンセル',401:'不在着信',402:'営業時間外着信'}[item.record_status]||'入電';
+        const who=item.contact_company||item.contact_name||item.contact_number||'電話番号未取得';
+        toast('CallConnect '+type+'：'+who);
+        if(currentPage==='support_callconnect') await renderSupportCallConnect();
+        await setupGlobalHeader();
+      })
+      .subscribe();
+  }
+
   async function startSupportRealtime(){
     if(supportRealtimeChannel){
       try{await supabase.removeChannel(supportRealtimeChannel);}catch(_){}
@@ -1095,21 +1133,23 @@
     let count=0;
     try{
       if(role==='internal_admin'||role==='internal_staff'){
-        const [biz,unreadHandoffs,deadlineStates]=await Promise.all([
+        const [biz,unreadHandoffs,deadlineStates,callUnread]=await Promise.all([
           rpc('internal_business_dashboard'),
           rpc('internal_unread_handoff_notifications'),
-          rpc('support_deadline_states')
+          rpc('support_deadline_states'),
+          rpc('callconnect_unread_notifications')
         ]);
         const deadlineCount=(deadlineStates||[]).filter(x=>x.deadline_state==='overdue'||x.deadline_state==='due_today').length;
-        count=Number(biz?.kpis?.urgent_open_tickets||0)+Number(unreadHandoffs?.count||0)+deadlineCount;
+        count=Number(biz?.kpis?.urgent_open_tickets||0)+Number(unreadHandoffs?.count||0)+deadlineCount+Number(callUnread?.count||0);
       }else if(role==='support_staff'){
-        const [unread,handoffUpdates,deadlineStates]=await Promise.all([
+        const [unread,handoffUpdates,deadlineStates,callUnread]=await Promise.all([
           rpc('support_unread_notifications'),
           rpc('support_unread_handoff_updates'),
-          rpc('support_deadline_states')
+          rpc('support_deadline_states'),
+          rpc('callconnect_unread_notifications')
         ]);
         const deadlineCount=(deadlineStates||[]).filter(x=>x.deadline_state==='overdue'||x.deadline_state==='due_today').length;
-        count=Number(unread?.count||0)+Number(handoffUpdates?.count||0)+deadlineCount;
+        count=Number(unread?.count||0)+Number(handoffUpdates?.count||0)+deadlineCount+Number(callUnread?.count||0);
       }else if(role==='customer_user'){
         const h=await rpc('customer_portal_home');
         count=(h?.recent_tickets||[]).filter(x=>x.status!=='closed').length;
@@ -1121,7 +1161,14 @@
     }else{
       $('#notificationCount').classList.add('hidden');
     }
-    $('#notificationBtn').onclick=()=>go((role==='support_staff'||role==='internal_admin'||role==='internal_staff')?'home':role==='customer_user'?'customer_status':'support');
+    $('#notificationBtn').onclick=async()=>{
+      if(['support_staff','internal_admin','internal_staff'].includes(role)){
+        const cc=await refreshCallConnectUnread();
+        if(Number(cc?.count||0)>0) return go('support_callconnect');
+        return go('home');
+      }
+      return go(role==='customer_user'?'customer_status':'support');
+    };
 
     const searchWrap=$('#globalSearchWrap');
     if(!(role==='internal_admin'||role==='internal_staff')){
@@ -7390,6 +7437,7 @@
   }
 
   async function renderSupportCallConnect(){
+    await rpc('mark_all_callconnect_notifications_read',{}, {readOnly:false}).catch(()=>{});
     const [dash,customers]=await Promise.all([
       rpc('callconnect_dashboard'),
       rpc('support_customer_directory')
@@ -8548,6 +8596,7 @@
     await setupGlobalHeader();
     await startSupportRealtime();
     await startInternalHandoffRealtime();
+    await startCallConnectNotificationRealtime();
     await startDeadlineWatch();
     await go('home');
   }
@@ -8748,6 +8797,10 @@
         if(internalHandoffRealtimeChannel){
           try{await supabase.removeChannel(internalHandoffRealtimeChannel);}catch(_){}
           internalHandoffRealtimeChannel=null;
+        }
+        if(callconnectNotificationChannel){
+          try{await supabase.removeChannel(callconnectNotificationChannel);}catch(_){}
+          callconnectNotificationChannel=null;
         }
         if(deadlineWatchTimer){
           clearInterval(deadlineWatchTimer);
