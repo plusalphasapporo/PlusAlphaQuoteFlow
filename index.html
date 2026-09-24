@@ -15,8 +15,20 @@
     }
     *{box-sizing:border-box}
     body{margin:0;font-family:system-ui,-apple-system,"Segoe UI","Noto Sans JP",sans-serif;background:var(--bg);color:var(--ink)}
-    header{height:68px;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 22px;position:sticky;top:0;z-index:20}
-    .brand{font-size:19px;font-weight:900}.sub{font-size:11px;opacity:.72;margin-top:2px}
+    header{height:68px;background:var(--navy);color:#fff;display:grid;grid-template-columns:minmax(220px,300px) minmax(260px,620px) minmax(280px,1fr);align-items:center;gap:18px;padding:0 22px;position:sticky;top:0;z-index:20}
+    .brandBlock{min-width:0}.brand{font-size:19px;font-weight:900;letter-spacing:.01em}.sub{font-size:11px;opacity:.72;margin-top:2px}
+    .globalSearch{position:relative;display:flex;align-items:center;background:#fff;border-radius:11px;min-height:40px;color:#334155;box-shadow:0 4px 14px rgba(0,0,0,.12)}
+    .globalSearch .searchIcon{padding-left:12px;color:#64748b;font-size:18px}.globalSearch input{border:0;outline:0;width:100%;padding:10px 12px;background:transparent;font:inherit}
+    .globalSearchResults{position:absolute;left:0;right:0;top:46px;background:#fff;color:#172033;border:1px solid var(--line);border-radius:12px;box-shadow:0 16px 38px rgba(15,23,42,.2);max-height:420px;overflow:auto;padding:8px;z-index:80}
+    .searchResultItem{width:100%;display:block;text-align:left;background:#fff;border:0;border-radius:9px;padding:10px 11px;color:#172033}.searchResultItem:hover{background:#f1f5f9}
+    .searchResultItem small{display:block;color:#64748b;margin-top:3px}
+    .headerActions{display:flex;align-items:center;justify-content:flex-end;gap:9px;min-width:0}.headerPill{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.18);color:#fff}
+    .headerIconBtn{position:relative;background:rgba(255,255,255,.08);color:#fff;border:1px solid rgba(255,255,255,.16);width:40px;height:40px;padding:0;border-radius:10px}
+    .notificationCount{position:absolute;right:-5px;top:-6px;background:#dc2626;color:#fff;border-radius:999px;min-width:19px;height:19px;padding:0 5px;display:grid;place-items:center;font-size:10px;font-weight:900;border:2px solid var(--navy)}
+    .profileBadge{display:flex;flex-direction:column;line-height:1.15;padding:5px 9px;font-size:12px;font-weight:800;white-space:nowrap}.profileBadge small{font-size:10px;font-weight:600;opacity:.7;margin-top:3px}
+    .headerLogout{background:transparent;color:#dbeafe;border:1px solid rgba(255,255,255,.18);padding:8px 10px}
+    @media(max-width:1050px){header{grid-template-columns:220px 1fr auto}.headerPill{display:none}}
+    @media(max-width:760px){header{grid-template-columns:1fr auto;height:auto;min-height:68px;padding:10px 12px}.globalSearch{grid-column:1/-1;grid-row:2}.brandBlock .sub{display:none}.profileBadge{display:none!important}}
     .wrap{max-width:1380px;margin:auto;padding:22px}
     .login{max-width:460px;margin:8vh auto}
     .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:20px;box-shadow:var(--shadow)}
@@ -115,11 +127,17 @@
 </head>
 <body>
 <header>
-  <div><div class="brand">QuoteFlow Cloud</div><div class="sub">PlusAlpha / Supabase Staging</div></div>
-  <div class="row">
-    <span id="dbBadge" class="pill">接続確認中</span>
-    <span id="userBadge" class="pill hidden"></span>
-    <button id="logoutBtn" class="ghost hidden">ログアウト</button>
+  <div class="brandBlock"><div class="brand">QuoteFlow Cloud</div><div class="sub">3社でつながる OA機器サポート統合システム</div></div>
+  <div id="globalSearchWrap" class="globalSearch hidden">
+    <span class="searchIcon">⌕</span>
+    <input id="globalSearch" type="search" placeholder="顧客名・電話番号・機器で検索" autocomplete="off">
+    <div id="globalSearchResults" class="globalSearchResults hidden"></div>
+  </div>
+  <div class="headerActions">
+    <span id="dbBadge" class="pill headerPill">接続確認中</span>
+    <button id="notificationBtn" class="headerIconBtn hidden" type="button" title="通知">🔔<span id="notificationCount" class="notificationCount hidden"></span></button>
+    <span id="userBadge" class="profileBadge hidden"></span>
+    <button id="logoutBtn" class="headerLogout hidden">ログアウト</button>
   </div>
 </header>
 <div id="connectionBanner" class="connectionBar" role="status" aria-live="polite"></div>
@@ -547,6 +565,72 @@
     }).join('');
   }
 
+
+  async function setupGlobalHeader(){
+    const role=bootData?.context?.role;
+    const context=bootData?.context||{};
+    $('#userBadge').innerHTML=esc(context.display_name||'ログイン中')+'<small>'+esc(roleLabel(role))+'</small>';
+    $('#notificationBtn').classList.remove('hidden');
+
+    let count=0;
+    try{
+      if(role==='internal_admin'||role==='internal_staff'){
+        const [biz,handoffs]=await Promise.all([
+          rpc('internal_business_dashboard'),
+          rpc('internal_handoff_queue')
+        ]);
+        count=Number(biz?.kpis?.urgent_open_tickets||0)+Number((handoffs||[]).length||0);
+      }else if(role==='support_staff'){
+        const h=await rpc('support_home');
+        count=Number(h?.kpis?.urgent_open||0);
+      }else if(role==='customer_user'){
+        const h=await rpc('customer_portal_home');
+        count=(h?.recent_tickets||[]).filter(x=>x.status!=='closed').length;
+      }
+    }catch(_){ count=0; }
+    if(count>0){
+      $('#notificationCount').textContent=count>99?'99+':String(count);
+      $('#notificationCount').classList.remove('hidden');
+    }else{
+      $('#notificationCount').classList.add('hidden');
+    }
+    $('#notificationBtn').onclick=()=>go('support');
+
+    const searchWrap=$('#globalSearchWrap');
+    if(!(role==='internal_admin'||role==='internal_staff')){
+      searchWrap.classList.add('hidden');
+      return;
+    }
+    searchWrap.classList.remove('hidden');
+    const [customers,assets]=await Promise.all([
+      rpc('internal_customers_list'),
+      rpc('internal_assets_list')
+    ]);
+    const input=$('#globalSearch');
+    const results=$('#globalSearchResults');
+    input.oninput=()=>{
+      const q=input.value.trim().toLowerCase();
+      if(q.length<2){ results.classList.add('hidden'); results.innerHTML=''; return; }
+      const cs=(customers||[]).filter(x=>[x.name,x.customer_code,x.phone].some(v=>String(v||'').toLowerCase().includes(q))).slice(0,7);
+      const as=(assets||[]).filter(x=>[x.asset_number,x.serial_number,x.model_name].some(v=>String(v||'').toLowerCase().includes(q))).slice(0,7);
+      const html=[
+        ...cs.map(x=>'<button class="searchResultItem globalCustomerHit" type="button" data-id="'+esc(x.id)+'"><strong>'+esc(x.name||'')+'</strong><small>顧客 / '+esc(x.customer_code||'—')+' / '+esc(x.phone||'—')+'</small></button>'),
+        ...as.map(x=>'<button class="searchResultItem globalAssetHit" type="button" data-id="'+esc(x.id)+'"><strong>'+esc(x.model_name||x.asset_number||'')+'</strong><small>機器 / '+esc(x.asset_number||'—')+' / '+esc(x.serial_number||'—')+'</small></button>')
+      ].join('');
+      results.innerHTML=html||'<div class="empty" style="padding:14px">該当なし</div>';
+      results.classList.remove('hidden');
+      results.querySelectorAll('.globalCustomerHit').forEach(btn=>btn.onclick=async()=>{
+        results.classList.add('hidden'); input.value='';
+        await go('customers'); await renderCustomerDetail(btn.dataset.id);
+      });
+      results.querySelectorAll('.globalAssetHit').forEach(btn=>btn.onclick=async()=>{
+        results.classList.add('hidden'); input.value='';
+        await go('assets'); await renderAssetDetail(btn.dataset.id);
+      });
+    };
+    input.onblur=()=>setTimeout(()=>results.classList.add('hidden'),180);
+  }
+
   function renderNav(){
     const role=bootData?.context?.role;
     const pages=pageSets[role]||[['home','ホーム']];
@@ -623,15 +707,15 @@
           ['手動ホールド',biz.kpis?.manual_hold_customers]
         ])+
         '<section class="card section">'+
-          '<div class="row between"><div><h2>見積キュー</h2><p class="sectionDesc">下書き・管理者承認待ち・管理者承認済みを確認します。</p></div><button class="ghost dashGo" data-page="quotes" type="button">見積を開く</button></div>'+
+          '<div class="row between"><div><h2>見積キュー</h2><p class="sectionDesc">下書き・管理者承認待ち・管理者承認済みを確認します。</p></div><button class="ghost dashGo" data-page="sales" type="button">見積・リースを開く</button></div>'+
           dataTable(['見積番号','顧客','状態','合計'],quoteRows)+
         '</section>'+
         '<section class="card section">'+
-          '<div class="row between"><div><h2>受注キュー</h2><p class="sectionDesc">発注・納品の未作成を確認します。</p></div><button class="ghost dashGo" data-page="orders" type="button">受注を開く</button></div>'+
+          '<div class="row between"><div><h2>受注キュー</h2><p class="sectionDesc">発注・納品の未作成を確認します。</p></div><button class="ghost dashGo" data-page="sales" type="button">受注後処理を開く</button></div>'+
           dataTable(['受注番号','顧客','状態','発注','納品'],orderRows)+
         '</section>'+
         '<section class="card section">'+
-          '<div class="row between"><div><h2>納品予定</h2><p class="sectionDesc">予定日順。予定超過を優先して確認します。</p></div><button class="ghost dashGo" data-page="deliveries" type="button">納品を開く</button></div>'+
+          '<div class="row between"><div><h2>納品予定</h2><p class="sectionDesc">予定日順。予定超過を優先して確認します。</p></div><button class="ghost dashGo" data-page="procurement" type="button">仕入・納品を開く</button></div>'+
           dataTable(['納品番号','顧客','受注番号','予定日','状態'],deliveryRows)+
         '</section>'+
         '<section class="card section">'+
@@ -686,7 +770,7 @@
         ['登録機器',(h.assets||[]).length],
         ['契約',(h.contracts||[]).length]
       ])+
-      '<section class="card section"><div class="row between"><h2>最近の納品</h2><button class="ghost customerHomeGo" data-page="deliveries" type="button">納品を開く</button></div>'+
+      '<section class="card section"><div class="row between"><h2>最近の納品</h2><button class="ghost customerHomeGo" data-page="procurement" type="button">納品を開く</button></div>'+
       dataTable(['納品番号','状態','予定日','納品日'],recentDeliveries)+'</section>'+
       '<section class="card section"><div class="row between"><h2>最近の問い合わせ</h2><button class="ghost customerHomeGo" data-page="support" type="button">問い合わせを開く</button></div>'+
       ((h.recent_tickets||[]).length?'<div class="tableWrap"><table><thead><tr><th>番号</th><th>件名</th><th>状態</th></tr></thead><tbody>'+(h.recent_tickets||[]).map(t=>'<tr><td>'+esc(t.ticket_number||'—')+'</td><td>'+esc(t.subject||'')+'</td><td>'+esc(statusText(t.status))+'</td></tr>').join('')+'</tbody></table></div>':'<p class="muted">問い合わせはまだありません。</p>')+
@@ -1915,7 +1999,7 @@
           });
           notice('#quoteEditMsg','保存しました。合計 '+money(updated?.total_amount||0),true);
           toast('見積を更新しました');
-          setTimeout(()=>go('quotes'),450);
+          setTimeout(()=>go('sales'),450);
         }catch(err){
           notice('#quoteEditMsg',err.message||String(err));
         }finally{
@@ -1930,7 +2014,7 @@
           const finalized=await rpc('finalize_quote',{p_quote_id:q.id});
           notice('#quoteEditMsg','承認申請しました。見積番号 '+String(finalized?.quote_number||''),true);
           toast('管理者承認待ちにしました');
-          setTimeout(()=>go('quotes'),500);
+          setTimeout(()=>go('sales'),500);
         }catch(err){
           const msg=String(err.message||err);
           notice('#quoteEditMsg',msg.includes('numbering configuration required')?'採番設定が未設定です。管理者の「設定」から見積番号の形式を登録してください。':msg);
@@ -1946,7 +2030,7 @@
           const approved=await rpc('approve_quote',{p_quote_id:q.id});
           notice('#quoteActionMsg','管理者承認しました。見積番号 '+String(approved?.quote_number||''),true);
           toast('見積を承認しました');
-          setTimeout(()=>go('quotes'),450);
+          setTimeout(()=>go('sales'),450);
         }catch(err){
           notice('#quoteActionMsg',err.message||String(err));
         }finally{
@@ -1964,7 +2048,7 @@
           await rpc('return_quote_for_revision',{p_quote_id:q.id,p_reason:reason});
           notice('#quoteActionMsg','見積を差し戻しました。担当者が修正して再申請できます。',true);
           toast('見積を差し戻しました');
-          setTimeout(()=>go('quotes'),450);
+          setTimeout(()=>go('sales'),450);
         }catch(err){
           notice('#quoteActionMsg',err.message||String(err));
         }finally{
@@ -1979,7 +2063,7 @@
           const order=await rpc('convert_quote_to_order',{p_quote_id:q.id});
           notice('#quoteActionMsg',(order?.already_exists?'既存の受注があります。':'受注を作成しました。')+' 受注番号 '+String(order?.order_number||''),true);
           toast(order?.already_exists?'既存の受注を開きます':'受注を作成しました');
-          await go('orders');
+          await renderSalesWorkspace('order_ops');
           if(order?.id) await renderOrderDetail(order.id);
         }catch(err){
           const msg=String(err.message||err);
@@ -3905,6 +3989,7 @@
     $('#companyName').textContent=bootData.context?.company_name||'';
     integrations();
     renderNav();
+    await setupGlobalHeader();
     await go('home');
   }
 
