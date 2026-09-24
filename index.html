@@ -294,10 +294,8 @@
   }
 
   async function renderCustomerDetail(customerId){
-    const [customerRes,quoteRes,orderRes,contractRes,assetRes,ticketRes]=await Promise.all([
-      supabase.from('customers')
-        .select('id,customer_code,name,phone,status,manual_hold,internal_note,created_at,updated_at')
-        .eq('id',customerId).single(),
+    const [customer,quoteRes,orderRes,contractRes,assetRes,ticketRes]=await Promise.all([
+      rpc('internal_customer_detail',{p_customer_id:customerId}),
       supabase.from('quotes')
         .select('id,quote_number,status,total_amount,valid_until,created_at')
         .eq('customer_id',customerId)
@@ -321,11 +319,11 @@
         .limit(50)
     ]);
 
-    for(const r of [customerRes,quoteRes,orderRes,contractRes,assetRes,ticketRes]){
+    for(const r of [quoteRes,orderRes,contractRes,assetRes,ticketRes]){
       if(r.error) throw r.error;
     }
 
-    const c=customerRes.data;
+    const c=customer;
     const quotes=quoteRes.data||[];
     const orders=orderRes.data||[];
     const contracts=contractRes.data||[];
@@ -379,11 +377,7 @@
   }
 
   async function renderCustomers(){
-    const {data,error}=await supabase
-      .from('customers')
-      .select('id,customer_code,name,phone,status,manual_hold,updated_at')
-      .order('name',{ascending:true});
-    if(error) throw error;
+    const data=await rpc('internal_customers_list');
     const rows=(data||[]).map(c=>
       '<tr>'+
         '<td>'+esc(c.customer_code||'—')+'</td>'+
@@ -411,9 +405,15 @@
   }
 
   async function customerMap(){
+    const role=bootData?.context?.role;
+    const map={};
+    if(role==='internal_admin'||role==='internal_staff'){
+      const data=await rpc('internal_customers_list');
+      (data||[]).forEach(c=>map[c.id]=c);
+      return map;
+    }
     const {data,error}=await supabase.from('customers').select('id,name,customer_code');
     if(error) throw error;
-    const map={};
     (data||[]).forEach(c=>map[c.id]=c);
     return map;
   }
@@ -1086,14 +1086,44 @@
           ['契約',contracts.length],
           ['登録日',dateText(a.created_at)]
         ])+
-        '<div class="row"><span class="pill">機種 '+esc(a.model_name||'—')+'</span><span class="pill">S/N '+esc(a.serial_number||'—')+'</span></div>'+
-        (a.internal_note?'<div class="notice">社内メモ: '+esc(a.internal_note)+'</div>':'')+
+        '<form id="assetEditForm">'+
+          '<div class="row">'+
+            '<div class="field" style="flex:1;min-width:180px"><label>機器番号</label><input id="assetEditNumber" value="'+esc(a.asset_number||'')+'"></div>'+
+            '<div class="field" style="flex:1;min-width:180px"><label>機種</label><input id="assetEditModel" value="'+esc(a.model_name||'')+'"></div>'+
+          '</div>'+
+          '<div class="field"><label>シリアル番号</label><input id="assetEditSerial" value="'+esc(a.serial_number||'')+'"></div>'+
+          '<div class="field"><label>社内メモ</label><textarea id="assetEditNote" rows="3">'+esc(a.internal_note||'')+'</textarea></div>'+
+          '<button class="primary" type="submit">変更を保存</button>'+
+        '</form>'+
+        '<div id="assetEditMsg" class="notice hidden"></div>'+
         '<section class="section"><h3>この機器の問い合わせ</h3>'+dataTable(['番号','件名','状態','優先度'],ticketRows)+'</section>'+
         '<section class="section"><h3>顧客の契約</h3>'+dataTable(['契約番号','状態','開始日','終了日'],contractRows)+'</section>'+
       '</section>';
 
     $('#assetDetailClose').onclick=()=>{$('#assetDetailHost').innerHTML='';};
     $('#assetDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
+
+    $('#assetEditForm').onsubmit=async e=>{
+      e.preventDefault();
+      const btn=e.submitter;
+      if(btn) btn.disabled=true;
+      try{
+        await rpc('update_asset',{
+          p_asset_id:a.id,
+          p_asset_number:$('#assetEditNumber').value.trim()||null,
+          p_serial_number:$('#assetEditSerial').value.trim()||null,
+          p_model_name:$('#assetEditModel').value.trim()||null,
+          p_internal_note:$('#assetEditNote').value.trim()||null
+        });
+        notice('#assetEditMsg','機器情報を更新しました。',true);
+        toast('機器を更新しました');
+        setTimeout(()=>go('assets'),400);
+      }catch(err){
+        notice('#assetEditMsg',err.message||String(err));
+      }finally{
+        if(btn) btn.disabled=false;
+      }
+    };
   }
 
   async function renderInternalContractDetail(id){
@@ -1119,12 +1149,43 @@
           ['終了日',dateText(ct.end_date)],
           ['登録機器',assets.length]
         ])+
-        (ct.internal_note?'<div class="notice">社内メモ: '+esc(ct.internal_note)+'</div>':'')+
+        '<form id="contractEditForm">'+
+          '<div class="field"><label>契約番号</label><input id="contractEditNumber" value="'+esc(ct.contract_number||'')+'"></div>'+
+          '<div class="row">'+
+            '<div class="field" style="flex:1;min-width:180px"><label>開始日</label><input id="contractEditStart" type="date" value="'+esc(ct.start_date||'')+'"></div>'+
+            '<div class="field" style="flex:1;min-width:180px"><label>終了日</label><input id="contractEditEnd" type="date" value="'+esc(ct.end_date||'')+'"></div>'+
+          '</div>'+
+          '<div class="field"><label>社内メモ</label><textarea id="contractEditNote" rows="3">'+esc(ct.internal_note||'')+'</textarea></div>'+
+          '<button class="primary" type="submit">変更を保存</button>'+
+        '</form>'+
+        '<div id="contractEditMsg" class="notice hidden"></div>'+
         '<section class="section"><h3>顧客の機器</h3>'+dataTable(['機器番号','機種','シリアル','状態'],assetRows)+'</section>'+
       '</section>';
 
     $('#contractDetailClose').onclick=()=>{$('#contractDetailHost').innerHTML='';};
     $('#contractDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
+
+    $('#contractEditForm').onsubmit=async e=>{
+      e.preventDefault();
+      const btn=e.submitter;
+      if(btn) btn.disabled=true;
+      try{
+        await rpc('update_contract',{
+          p_contract_id:ct.id,
+          p_contract_number:$('#contractEditNumber').value.trim()||null,
+          p_start_date:$('#contractEditStart').value||null,
+          p_end_date:$('#contractEditEnd').value||null,
+          p_internal_note:$('#contractEditNote').value.trim()||null
+        });
+        notice('#contractEditMsg','契約情報を更新しました。',true);
+        toast('契約を更新しました');
+        setTimeout(()=>go('assets'),400);
+      }catch(err){
+        notice('#contractEditMsg',err.message||String(err));
+      }finally{
+        if(btn) btn.disabled=false;
+      }
+    };
   }
 
   async function renderAssets(){
@@ -1132,14 +1193,20 @@
     const internal=role==='internal_admin'||role==='internal_staff';
 
     if(internal){
-      const [assets,contractRes,cmap]=await Promise.all([
+      const [assets,contractRes,customers]=await Promise.all([
         rpc('internal_assets_list'),
         supabase.from('contracts')
           .select('id,customer_id,contract_number,status,start_date,end_date,created_at')
           .order('created_at',{ascending:false}),
-        customerMap()
+        rpc('internal_customers_list')
       ]);
       if(contractRes.error) throw contractRes.error;
+
+      const cmap={};
+      (customers||[]).forEach(c=>cmap[c.id]=c);
+      const customerOptions=(customers||[]).map(c=>
+        '<option value="'+esc(c.id)+'">'+esc(c.name||c.customer_code||c.id)+'</option>'
+      ).join('');
 
       const assetRows=(assets||[]).map(a=>
         '<tr>'+
@@ -1149,7 +1216,7 @@
           '<td>'+esc(a.serial_number||'—')+'</td>'+
           '<td>'+esc(statusText(a.status))+'</td>'+
           '<td>'+esc(a.open_ticket_count||0)+'</td>'+
-          '<td><button class="linkBtn internalAssetDetail" type="button" data-id="'+esc(a.id)+'">詳細</button></td>'+
+          '<td><button class="linkBtn internalAssetDetail" type="button" data-id="'+esc(a.id)+'">詳細・編集</button></td>'+
         '</tr>'
       );
       const contractRows=(contractRes.data||[]).map(ct=>{
@@ -1160,16 +1227,88 @@
           '<td>'+esc(statusText(ct.status))+'</td>'+
           '<td>'+esc(dateText(ct.start_date))+'</td>'+
           '<td>'+esc(dateText(ct.end_date))+'</td>'+
-          '<td><button class="linkBtn internalContractDetail" type="button" data-id="'+esc(ct.id)+'">詳細</button></td>'+
+          '<td><button class="linkBtn internalContractDetail" type="button" data-id="'+esc(ct.id)+'">詳細・編集</button></td>'+
         '</tr>';
       });
 
       $('#home').innerHTML=
-        pageIntro('契約・機器','顧客ごとの契約、機器、関連サポート状況を確認します。')+
+        pageIntro('契約・機器','契約と機器を顧客へ紐付けて登録・編集します。状態は既存ルールに従い、新規時の既定値から開始します。')+
+        '<section class="card section">'+
+          '<h2>新規契約</h2>'+
+          '<form id="contractCreateForm">'+
+            '<div class="field"><label>顧客</label><select id="contractCustomer" required><option value="">選択してください</option>'+customerOptions+'</select></div>'+
+            '<div class="field"><label>契約番号（任意）</label><input id="contractNumber"></div>'+
+            '<div class="row">'+
+              '<div class="field" style="flex:1;min-width:180px"><label>開始日</label><input id="contractStart" type="date"></div>'+
+              '<div class="field" style="flex:1;min-width:180px"><label>終了日</label><input id="contractEnd" type="date"></div>'+
+            '</div>'+
+            '<div class="field"><label>社内メモ</label><textarea id="contractNote" rows="3"></textarea></div>'+
+            '<button class="primary" type="submit">契約を登録</button>'+
+          '</form>'+
+          '<div id="contractCreateMsg" class="notice hidden"></div>'+
+        '</section>'+
+        '<section class="card section">'+
+          '<h2>新規機器</h2>'+
+          '<form id="assetCreateForm">'+
+            '<div class="field"><label>顧客</label><select id="assetCustomer" required><option value="">選択してください</option>'+customerOptions+'</select></div>'+
+            '<div class="row">'+
+              '<div class="field" style="flex:1;min-width:180px"><label>機器番号（任意）</label><input id="assetNumber"></div>'+
+              '<div class="field" style="flex:1;min-width:180px"><label>機種</label><input id="assetModel"></div>'+
+            '</div>'+
+            '<div class="field"><label>シリアル番号</label><input id="assetSerial"></div>'+
+            '<div class="field"><label>社内メモ</label><textarea id="assetNote" rows="3"></textarea></div>'+
+            '<button class="primary" type="submit">機器を登録</button>'+
+          '</form>'+
+          '<div id="assetCreateMsg" class="notice hidden"></div>'+
+        '</section>'+
         '<div id="contractDetailHost"></div>'+
         '<div id="assetDetailHost"></div>'+
         '<section class="card section"><h2>契約</h2>'+dataTable(['契約番号','顧客','状態','開始日','終了日','操作'],contractRows)+'</section>'+
         '<section class="card section"><h2>機器</h2>'+dataTable(['機器番号','顧客','機種','シリアル','状態','対応中','操作'],assetRows)+'</section>';
+
+      $('#contractCreateForm').onsubmit=async e=>{
+        e.preventDefault();
+        const btn=e.submitter;
+        if(btn) btn.disabled=true;
+        try{
+          await rpc('create_contract',{
+            p_customer_id:$('#contractCustomer').value,
+            p_contract_number:$('#contractNumber').value.trim()||null,
+            p_start_date:$('#contractStart').value||null,
+            p_end_date:$('#contractEnd').value||null,
+            p_internal_note:$('#contractNote').value.trim()||null
+          });
+          notice('#contractCreateMsg','契約を登録しました。',true);
+          toast('契約を登録しました');
+          setTimeout(()=>go('assets'),400);
+        }catch(err){
+          notice('#contractCreateMsg',err.message||String(err));
+        }finally{
+          if(btn) btn.disabled=false;
+        }
+      };
+
+      $('#assetCreateForm').onsubmit=async e=>{
+        e.preventDefault();
+        const btn=e.submitter;
+        if(btn) btn.disabled=true;
+        try{
+          await rpc('create_asset',{
+            p_customer_id:$('#assetCustomer').value,
+            p_asset_number:$('#assetNumber').value.trim()||null,
+            p_serial_number:$('#assetSerial').value.trim()||null,
+            p_model_name:$('#assetModel').value.trim()||null,
+            p_internal_note:$('#assetNote').value.trim()||null
+          });
+          notice('#assetCreateMsg','機器を登録しました。',true);
+          toast('機器を登録しました');
+          setTimeout(()=>go('assets'),400);
+        }catch(err){
+          notice('#assetCreateMsg',err.message||String(err));
+        }finally{
+          if(btn) btn.disabled=false;
+        }
+      };
 
       document.querySelectorAll('.internalAssetDetail').forEach(btn=>{
         btn.onclick=async()=>{
