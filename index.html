@@ -7986,7 +7986,7 @@
       '</tr>';
     });
     $('#home').innerHTML=
-      pageIntro(supportView?'電話履歴':'CallConnect連携',supportView?'電話履歴・顧客照合・案件を確認します。技術設定は表示しません。':'CallConnectから受信した通話を自動で顧客照合し、着信案件としてQuoteFlowへ反映します。')+
+      pageIntro(supportView?'電話履歴':'CallConnect連携',supportView?'着信を確認し、電話番号で顧客を特定してから新規受付へ進みます。':'CallConnectから受信した通話を顧客照合し、内容確認後に問い合わせ登録へ進めます。')+
       kpis(supportView?[
         ['受信通話',dash?.total_calls||0],
         ['未照合',dash?.unmatched_calls||0],
@@ -8022,7 +8022,7 @@
       '</section>')+
       (!supportView&&dash?.api_key_configured&&!dash?.contacts_create_api_url_configured?'<div class="notice error"><strong>着信時の顧客表示はまだ未完成です。</strong><br>CallConnect側に顧客を同期するため、Contacts Create API URLの設定が必要です。Webhookによる通話履歴保存・電話番号照合は動作しています。</div>':'')+
       '<div id="callconnectPageSyncMsg" class="notice hidden"></div>'+
-      '<section class="card section"><div class="row between"><div><h2>通話履歴</h2><p class="sectionDesc">電話番号が顧客マスタと一致すると、自動で案件作成します。照合済みは「顧客カルテ」から直接開けます。未照合はここで顧客を指定できます。</p></div><div class="field" style="margin:0;min-width:260px"><label>履歴を検索</label><input id="callconnectHistorySearch" placeholder="電話番号・会社名・担当者"></div></div>'+
+      '<section class="card section"><div class="row between"><div><h2>通話履歴</h2><p class="sectionDesc">電話番号で顧客を確認し、内容を聞いてから新規問い合わせを登録します。登録後はそのまま対応画面へ進めます。</p></div><div class="field" style="margin:0;min-width:260px"><label>履歴を検索</label><input id="callconnectHistorySearch" placeholder="電話番号・会社名・担当者"></div></div>'+
         '<div id="callconnectHistoryTable">'+dataTable(['日時','種別','電話番号','CallConnect担当','通話','顧客照合','案件','操作'],rows)+'</div>'+
       '</section>';
 
@@ -8103,10 +8103,22 @@
       btn.disabled=true;
       try{
         const result=await rpc('link_callconnect_customer',{p_call_id:btn.dataset.id,p_customer_id:sel.value});
-        toast('顧客を紐付けました');
+        toast('顧客を確認しました');
         if(result?.ticket_id){
           await go('support_cases');
           await renderTicketDetail(result.ticket_id);
+        }else if(bootData?.context?.role==='support_staff'){
+          const call=calls.find(x=>x.id===btn.dataset.id)||{};
+          pendingCallConnectIntake={
+            source:'callconnect',
+            call_id:btn.dataset.id,
+            customer_id:sel.value,
+            phone:call.contact_number||'',
+            company:call.contact_company||'',
+            name:call.contact_name||'',
+            record_status:call.record_status||201
+          };
+          await go('support_new');
         }else{
           await renderSupportCallConnect();
         }
