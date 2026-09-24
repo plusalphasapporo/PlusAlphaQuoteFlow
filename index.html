@@ -7539,9 +7539,13 @@
 
   async function renderSupportCallConnect(){
     await rpc('mark_all_callconnect_notifications_read',{}, {readOnly:false}).catch(()=>{});
+    const role=bootData?.context?.role;
+    const customerDirectoryRpc=(role==='internal_admin'||role==='internal_staff')
+      ? 'internal_customers_list'
+      : 'support_customer_directory';
     const [dash,customers]=await Promise.all([
       rpc('callconnect_dashboard'),
-      rpc('support_customer_directory')
+      rpc(customerDirectoryRpc)
     ]);
     const calls=dash?.calls||[];
     const statusTextMap={200:'発信通話',201:'着信通話',300:'発信不在',301:'発信キャンセル',400:'着信キャンセル',401:'不在着信',402:'営業時間外着信'};
@@ -7627,14 +7631,28 @@
     }
 
     document.querySelectorAll('.callconnectTicketOpen').forEach(btn=>btn.onclick=async()=>{
-      await go('support_cases');
+      const role=bootData?.context?.role;
+      await go(role==='support_staff'?'support_cases':'support');
       await renderTicketDetail(btn.dataset.id);
     });
     document.querySelectorAll('.callconnectCustomerOpen').forEach(btn=>btn.onclick=async()=>{
       btn.disabled=true;
       try{
-        await go('customers');
-        await renderCustomerDetail(btn.dataset.id,'overview');
+        const role=bootData?.context?.role;
+        if(role==='support_staff'){
+          await go('support_customers');
+          const ctx=await rpc('support_customer_context',{p_customer_id:btn.dataset.id});
+          const assetRows=(ctx.assets||[]).map(a=>'<tr><td>'+esc(a.asset_number||'—')+'</td><td>'+esc(a.model_name||'—')+'</td><td>'+esc(a.serial_number||'—')+'</td><td>'+esc(statusText(a.status))+'</td></tr>');
+          const ticketRows=(ctx.tickets||[]).map(t=>'<tr><td>'+esc(t.ticket_number||'—')+'</td><td>'+esc(t.subject||'')+'</td><td>'+esc(statusText(t.status))+'</td><td>'+esc(t.priority||'normal')+'</td></tr>');
+          const host=$('#supportCustomerDetail');
+          if(host){
+            host.innerHTML='<div class="card section" style="box-shadow:none"><h2>'+esc(ctx.customer?.name||'')+'</h2><p class="muted">電話 '+esc(ctx.customer?.phone||'—')+'</p><h3>登録機器</h3>'+dataTable(['機器番号','機種','シリアル','状態'],assetRows)+'<h3>問い合わせ履歴</h3>'+dataTable(['番号','件名','状態','優先度'],ticketRows)+'</div>';
+            host.scrollIntoView({behavior:'smooth',block:'start'});
+          }
+        }else{
+          await go('customers');
+          await renderCustomerDetail(btn.dataset.id,'overview');
+        }
       }catch(err){
         toast(err.message||String(err));
       }finally{
