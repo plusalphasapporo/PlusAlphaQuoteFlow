@@ -821,6 +821,17 @@
     }
   }
 
+  function supportRequestTypeLabel(v){
+    return ({inquiry:'問い合わせ',incident:'障害',setting_request:'設定依頼'}[v]||'問い合わせ');
+  }
+
+  function supportRequestTypeBadge(v){
+    const label=supportRequestTypeLabel(v);
+    if(v==='incident') return '<span class="hold">'+esc(label)+'</span>';
+    if(v==='setting_request') return '<span class="pill">'+esc(label)+'</span>';
+    return '<span class="pill good">'+esc(label)+'</span>';
+  }
+
   function integrations(){
     const map={callconnect:'CallConnect',ai:'AI',teamviewer:'TeamViewer'};
     const i=bootData?.integrations||{};
@@ -1080,12 +1091,12 @@
         '</section>'+
         kpis([
           ['対応中',h.kpis?.open_tickets],
-          ['本日新規',h.kpis?.created_today],
-          ['本日解決',h.kpis?.closed_today],
+          ['障害対応中',h.kpis?.incidents_open],
+          ['設定依頼中',h.kpis?.settings_open],
           ['緊急',h.kpis?.urgent_open]
         ])+
         '<section class="card section"><div class="row between"><div><h2>担当案件</h2><p class="sectionDesc">クリックして対応フローを続けます。</p></div><button id="supportCasesFromHome" class="ghost" type="button">担当案件を開く</button></div>'+
-        ((h.recent_tickets||[]).length?'<div class="tableWrap"><table><thead><tr><th>番号</th><th>顧客</th><th>件名</th><th>状態</th></tr></thead><tbody>'+(h.recent_tickets||[]).map(t=>'<tr><td>'+esc(t.ticket_number||'—')+'</td><td>'+esc(t.customer_name||'')+'</td><td>'+esc(t.subject||'')+'</td><td>'+esc(statusText(t.status))+'</td></tr>').join('')+'</tbody></table></div>':'<p class="muted">担当案件はありません。</p>')+
+        ((h.recent_tickets||[]).length?'<div class="tableWrap"><table><thead><tr><th>番号</th><th>種別</th><th>顧客</th><th>件名</th><th>状態</th></tr></thead><tbody>'+(h.recent_tickets||[]).map(t=>'<tr><td>'+esc(t.ticket_number||'—')+'</td><td>'+supportRequestTypeBadge(t.request_type)+'</td><td>'+esc(t.customer_name||'')+'</td><td>'+esc(t.subject||'')+'</td><td>'+esc(statusText(t.status))+'</td></tr>').join('')+'</tbody></table></div>':'<p class="muted">担当案件はありません。</p>')+
         '</section>';
       $('#supportNewFromHome').onclick=()=>go('support_new');
       $('#supportCasesFromHome').onclick=()=>go('support_cases');
@@ -5228,8 +5239,9 @@
 
     $('#ticketDetailHost').innerHTML=
       '<section class="card section">'+
-        '<div class="quoteDetailHead"><div><h2>サポート案件カルテ</h2><p class="sectionDesc">'+esc(t.ticket_number||'—')+' / '+esc(t.subject||'')+'</p></div><button id="ticketDetailClose" class="ghost" type="button">閉じる</button></div>'+
+        '<div class="quoteDetailHead"><div><h2>サポート案件カルテ</h2><p class="sectionDesc">'+esc(t.ticket_number||'—')+' / '+supportRequestTypeLabel(t.request_type)+' / '+esc(t.subject||'')+'</p></div><button id="ticketDetailClose" class="ghost" type="button">閉じる</button></div>'+
         kpis([
+          ['種別',supportRequestTypeLabel(t.request_type)],
           ['状態',statusText(t.status)],
           ['優先度',t.priority||'normal'],
           ['作成日',dateText(t.created_at)],
@@ -5239,7 +5251,7 @@
           ['機器',asset?.asset_number||'未指定']
         ])+
         '<div class="modalGrid2">'+
-          '<section class="card section" style="box-shadow:none;margin:0"><h3>案件概要</h3><div class="item"><strong>件名</strong><p>'+esc(t.subject||'')+'</p></div><div class="item"><strong>内容</strong><p style="white-space:pre-wrap">'+esc(displayDescription)+'</p></div><div class="item"><strong>顧客</strong><p>'+esc(cust?.customer_code||'—')+' / '+esc(cust?.name||'—')+'</p></div></section>'+
+          '<section class="card section" style="box-shadow:none;margin:0"><h3>案件概要</h3><div class="item"><strong>種別</strong><p>'+supportRequestTypeBadge(t.request_type)+'</p></div><div class="item"><strong>件名</strong><p>'+esc(t.subject||'')+'</p></div><div class="item"><strong>内容</strong><p style="white-space:pre-wrap">'+esc(displayDescription)+'</p></div><div class="item"><strong>顧客</strong><p>'+esc(cust?.customer_code||'—')+' / '+esc(cust?.name||'—')+'</p></div></section>'+
           '<section class="card section" style="box-shadow:none;margin:0"><h3>連絡・対象情報</h3><div class="item"><strong>主担当者</strong><p>'+esc(primary?.name||'未登録')+'<br><span class="muted">'+esc(primary?.phone||primary?.email||'連絡先未登録')+'</span></p></div><div class="item"><strong>契約</strong><p>'+(contract?esc(contract.contract_number||'—'):'未指定')+'</p></div><div class="item"><strong>機器</strong><p>'+(asset?esc(asset.asset_number||'—')+' / '+esc(asset.model_name||''):'未指定')+'</p></div></section>'+
         '</div>'+
         internalEdit+
@@ -5545,7 +5557,7 @@
         ['完了',summary.closed||0]
       ])+
       (internal
-        ? '<section class="card section"><div class="row between"><div><h2>新規サポート案件</h2><p class="sectionDesc">顧客を選択し、必要に応じて契約・機器を紐づけます。</p></div><button id="supportCaseCreateToggle" class="primary" type="button">＋ 新規案件</button></div><div id="supportCaseCreateBox" class="hidden" style="margin-top:14px"><form id="supportCaseCreateForm"><div class="modalGrid2"><div class="field"><label>顧客</label><select id="supportCaseCustomer" required><option value="">選択してください</option>'+(customers||[]).map(x=>'<option value="'+esc(x.id)+'">'+esc(x.customer_code||'—')+' / '+esc(x.name||'')+'</option>').join('')+'</select></div><div class="field"><label>優先度</label><select id="supportCasePriority"><option value="normal">通常</option><option value="high">高</option><option value="urgent">緊急</option><option value="low">低</option></select></div></div><div id="supportCaseContextFields"></div><div class="field"><label>件名</label><input id="supportCaseSubject" required></div><div class="field"><label>内容</label><textarea id="supportCaseDescription" rows="4"></textarea></div><div class="field"><label>サポート会社へ送る写真・スクリーンショット</label><input id="supportCaseFiles" type="file" accept="image/*,.pdf" multiple><small class="muted">自社で受け取った写真や、確認してほしい画面を添付できます。</small></div><button class="primary" type="submit">案件を登録</button></form><div id="supportCaseCreateMsg" class="notice hidden"></div></div></section>'
+        ? '<section class="card section"><div class="row between"><div><h2>障害・設定依頼の登録</h2><p class="sectionDesc">自社で受けた障害・設定依頼をサポート会社へ登録します。</p></div><button id="supportCaseCreateToggle" class="primary" type="button">＋ 障害・設定依頼を登録</button></div><div id="supportCaseCreateBox" class="hidden" style="margin-top:14px"><form id="supportCaseCreateForm"><div class="modalGrid2"><div class="field"><label>依頼種別</label><select id="supportCaseRequestType"><option value="incident">障害登録</option><option value="setting_request">設定依頼</option></select></div><div class="field"><label>顧客</label><select id="supportCaseCustomer" required><option value="">選択してください</option>'+(customers||[]).map(x=>'<option value="'+esc(x.id)+'">'+esc(x.customer_code||'—')+' / '+esc(x.name||'')+'</option>').join('')+'</select></div><div class="field"><label>優先度</label><select id="supportCasePriority"><option value="normal">通常</option><option value="high">高</option><option value="urgent">緊急</option><option value="low">低</option></select></div></div><div id="supportCaseContextFields"></div><div class="field"><label>件名</label><input id="supportCaseSubject" required placeholder="例：印刷できない / メール設定変更"></div><div class="field"><label>内容</label><textarea id="supportCaseDescription" rows="4" placeholder="発生日時、症状、エラー表示、希望する設定内容、影響範囲など"></textarea></div><div class="field"><label>サポート会社へ送る写真・スクリーンショット</label><input id="supportCaseFiles" type="file" accept="image/*,.pdf" multiple><small class="muted">自社で受け取った写真や、確認してほしい画面を添付できます。</small></div><button class="primary" type="submit">案件を登録</button></form><div id="supportCaseCreateMsg" class="notice hidden"></div></div></section>'
         : '')+
       listToolbar('supportCaseList',data,'status','番号・顧客・件名・機器・契約・担当者',[
         ['priority_desc','優先度が高い順'],['updated_desc','更新が新しい順'],['created_desc','作成が新しい順']
@@ -5558,7 +5570,7 @@
       let filtered=data.filter(t=>{
         if(state.status!=='all'&&t.status!==state.status) return false;
         return !state.query||[
-          t.ticket_number,t.customer_name,t.customer_code,t.subject,t.priority,t.status,
+          t.ticket_number,t.customer_name,t.customer_code,t.subject,t.priority,t.status,supportRequestTypeLabel(t.request_type),
           t.asset_number,t.asset_model_name,t.contract_number,t.assigned_internal_user_name
         ].some(v=>String(v||'').toLowerCase().includes(state.query));
       });
@@ -5570,10 +5582,11 @@
       });
       updateListCount('supportCaseList',filtered.length,data.length);
       $('#supportCaseListHost').innerHTML=dataTable(
-        ['番号','顧客','件名','状態','優先度','機器/契約','担当','最終対応','操作'],
+        ['番号','種別','顧客','件名','状態','優先度','機器/契約','担当','最終対応','操作'],
         filtered.map(t=>
           '<tr>'+
             '<td><strong>'+esc(t.ticket_number||'—')+'</strong></td>'+
+            '<td>'+supportRequestTypeBadge(t.request_type)+'</td>'+
             '<td>'+esc(t.customer_name||'—')+'</td>'+
             '<td>'+esc(t.subject||'')+'</td>'+
             '<td>'+esc(statusText(t.status))+'</td>'+
@@ -5606,18 +5619,20 @@
         e.preventDefault();
         const btn=e.submitter;if(btn)btn.disabled=true;
         try{
-          const result=await rpc('internal_create_support_ticket',{
+          const result=await rpc('internal_create_support_request',{
             p_customer_id:$('#supportCaseCustomer').value,
             p_asset_id:$('#supportCaseAsset')?.value||null,
             p_contract_id:$('#supportCaseContract')?.value||null,
+            p_request_type:$('#supportCaseRequestType').value,
             p_subject:$('#supportCaseSubject').value.trim(),
             p_description:$('#supportCaseDescription').value.trim()||null,
             p_priority:$('#supportCasePriority').value
           });
           const files=[...($('#supportCaseFiles')?.files||[])];
           if(result?.id && files.length) await uploadSupportAttachments(result.id,files,'support');
-          notice('#supportCaseCreateMsg','サポート案件を登録しました。'+(files.length?' 写真 '+files.length+'件を添付しました。':''),true);
-          toast('サポート案件を登録しました');
+          const typeText=supportRequestTypeLabel($('#supportCaseRequestType').value);
+          notice('#supportCaseCreateMsg',typeText+'を登録しました。'+(files.length?' 写真 '+files.length+'件を添付しました。':''),true);
+          toast(typeText+'を登録しました');
           if(result?.id) await renderTicketDetail(result.id);
         }catch(err){notice('#supportCaseCreateMsg',err.message||String(err));}
         finally{if(btn)btn.disabled=false;}
