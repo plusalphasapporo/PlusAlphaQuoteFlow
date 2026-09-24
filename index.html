@@ -680,75 +680,85 @@
     const home=$('#home');
 
     if(role==='internal_admin'||role==='internal_staff'){
-      const [cc,q,biz]=await Promise.all([
-        rpc('internal_command_center'),
-        rpc('internal_handoff_queue'),
-        rpc('internal_business_dashboard')
+      const [ops,q]=await Promise.all([
+        rpc('internal_operations_dashboard'),
+        rpc('internal_handoff_queue')
       ]);
 
-      const quoteRows=(biz.quote_queue||[]).map(x=>
+      const actionRows=(ops.action_queue||[]).map(x=>
         '<tr>'+
-          '<td>'+esc(x.quote_number||'下書き')+'</td>'+
+          '<td>'+(x.severity==='overdue'?'<span class="hold">至急</span>':x.severity==='today'?'<span class="pill good">本日</span>':'<span class="pill">対応</span>')+'</td>'+
+          '<td><strong>'+esc(x.title||'')+'</strong><br><span class="muted">'+esc(x.number||'—')+'</span></td>'+
           '<td>'+esc(x.customer_name||'')+'</td>'+
-          '<td>'+esc(statusText(x.status))+'</td>'+
-          '<td class="amount">'+esc(money(x.total_amount))+'</td>'+
+          '<td>'+esc(x.detail||'')+'</td>'+
+          '<td>'+esc(x.due_text||'—')+'</td>'+
+          '<td><button class="linkBtn dashActionOpen" type="button" data-kind="'+esc(x.kind||'')+'" data-id="'+esc(x.id||'')+'" data-parent-id="'+esc(x.parent_id||'')+'">開く</button></td>'+
         '</tr>'
       );
-      const orderRows=(biz.order_queue||[]).map(x=>
+
+      const receivingRows=(ops.receiving_queue||[]).map(x=>
         '<tr>'+
-          '<td>'+esc(x.order_number||'未採番')+'</td>'+
+          '<td>'+esc(x.purchase_order_number||'未採番')+'</td>'+
+          '<td>'+esc(x.supplier_name||'—')+'</td>'+
           '<td>'+esc(x.customer_name||'')+'</td>'+
-          '<td>'+esc(statusText(x.status))+'</td>'+
-          '<td>'+(x.has_purchase_order?'発注あり':'<span class="hold">発注未作成</span>')+'</td>'+
-          '<td>'+(x.has_delivery?'納品あり':'<span class="hold">納品未作成</span>')+'</td>'+
+          '<td><strong>'+esc(x.description||'')+'</strong></td>'+
+          '<td>'+esc(x.received_quantity||0)+' / '+esc(x.quantity||0)+'</td>'+
+          '<td>'+esc(x.remaining_quantity||0)+' '+esc(x.unit||'台')+'</td>'+
+          '<td>'+(x.is_overdue?'<span class="hold">'+esc(dateText(x.due_date))+'</span>':x.is_today?'<span class="pill good">本日</span>':esc(dateText(x.due_date)))+'</td>'+
+          '<td><button class="linkBtn dashReceivingOpen" type="button" data-id="'+esc(x.item_id)+'">入荷</button></td>'+
         '</tr>'
       );
-      const deliveryRows=(biz.delivery_queue||[]).map(x=>
+
+      const deliveryRows=(ops.delivery_queue||[]).map(x=>
         '<tr>'+
           '<td>'+esc(x.delivery_number||'未採番')+'</td>'+
           '<td>'+esc(x.customer_name||'')+'</td>'+
-          '<td>'+esc(x.order_number||'—')+'</td>'+
           '<td>'+esc(dateText(x.scheduled_at))+'</td>'+
-          '<td>'+(x.is_overdue?'<span class="hold">予定超過</span>':esc(statusText(x.status)))+'</td>'+
+          '<td>'+esc(x.installation_location||'—')+'</td>'+
+          '<td>'+esc(x.assigned_user_name||'未指定')+'</td>'+
+          '<td>'+(x.is_overdue?'<span class="hold">予定超過</span>':x.is_today?'<span class="pill good">本日</span>':'予定')+'</td>'+
+          '<td><button class="linkBtn dashDeliveryOpen" type="button" data-id="'+esc(x.id)+'">詳細</button></td>'+
         '</tr>'
       );
-      const ticketRows=(biz.ticket_queue||[]).map(x=>
+
+      const ticketRows=(ops.ticket_queue||[]).map(x=>
         '<tr>'+
           '<td>'+esc(x.ticket_number||'—')+'</td>'+
           '<td>'+esc(x.customer_name||'')+'</td>'+
           '<td>'+esc(x.subject||'')+'</td>'+
           '<td>'+esc(x.priority||'normal')+'</td>'+
-          '<td>'+esc(statusText(x.status))+'</td>'+
+          '<td>'+(x.assigned?'担当済':'<span class="hold">担当未設定</span>')+'</td>'+
+          '<td><button class="linkBtn dashTicketOpen" type="button" data-id="'+esc(x.id)+'">詳細</button></td>'+
         '</tr>'
       );
 
       home.innerHTML=
-        pageIntro('ダッシュボード','見積から受注・発注・納品・サポートまで、今日確認が必要な項目をまとめています。')+
+        pageIntro('ダッシュボード','今日やるべき業務を優先度順に表示します。各行からそのまま処理画面へ移動できます。')+
         kpis([
-          ['見積下書き',biz.kpis?.quote_drafts],
-          ['管理者承認待ち',biz.kpis?.quotes_waiting_customer],
-          ['承認済・受注化待ち',biz.kpis?.accepted_quotes_without_order],
-          ['発注未作成',biz.kpis?.orders_without_purchase_order],
-          ['納品未作成',biz.kpis?.orders_without_delivery],
-          ['納品予定超過',biz.kpis?.deliveries_overdue],
-          ['対応中問い合わせ',biz.kpis?.open_tickets],
-          ['手動ホールド',biz.kpis?.manual_hold_customers]
+          ['承認待ち',ops.kpis?.approval_waiting],
+          ['受注化待ち',ops.kpis?.accepted_without_order],
+          ['発注未作成',ops.kpis?.orders_without_purchase_order],
+          ['入荷超過',ops.kpis?.receiving_overdue],
+          ['本日入荷',ops.kpis?.receiving_due_today],
+          ['本日納品',ops.kpis?.deliveries_today],
+          ['納品超過',ops.kpis?.deliveries_overdue],
+          ['高優先度問い合わせ',ops.kpis?.urgent_open_tickets]
         ])+
         '<section class="card section">'+
-          '<div class="row between"><div><h2>見積キュー</h2><p class="sectionDesc">下書き・管理者承認待ち・管理者承認済みを確認します。</p></div><button class="ghost dashGo" data-page="sales" type="button">見積・リースを開く</button></div>'+
-          dataTable(['見積番号','顧客','状態','合計'],quoteRows)+
+          '<div class="row between"><div><h2>今日の優先対応</h2><p class="sectionDesc">期限超過 → 本日予定 → 承認・受注・発注 → 問い合わせの順で並びます。</p></div><span class="pill">'+esc(ops.business_date||'')+'</span></div>'+
+          dataTable(['優先','対応内容','顧客','詳細','期限・状態','操作'],actionRows)+
         '</section>'+
         '<section class="card section">'+
-          '<div class="row between"><div><h2>受注キュー</h2><p class="sectionDesc">発注・納品の未作成を確認します。</p></div><button class="ghost dashGo" data-page="sales" type="button">受注後処理を開く</button></div>'+
-          dataTable(['受注番号','顧客','状態','発注','納品'],orderRows)+
+          '<div class="row between"><div><h2>未入荷</h2><p class="sectionDesc">未入荷残数と納期を確認し、ここから直接入荷登録へ進めます。</p></div><button class="ghost dashGoProc" type="button">入荷一覧を開く</button></div>'+
+          dataTable(['発注番号','仕入先','顧客','明細','入荷','未入荷','納期','操作'],receivingRows)+
         '</section>'+
         '<section class="card section">'+
-          '<div class="row between"><div><h2>納品予定</h2><p class="sectionDesc">予定日順。予定超過を優先して確認します。</p></div><button class="ghost dashGo" data-page="procurement" type="button">仕入・納品を開く</button></div>'+
-          dataTable(['納品番号','顧客','受注番号','予定日','状態'],deliveryRows)+
+          '<div class="row between"><div><h2>納品予定</h2><p class="sectionDesc">本日分と予定超過を上位表示します。</p></div><button class="ghost dashGoDelivery" type="button">納品一覧を開く</button></div>'+
+          dataTable(['納品番号','顧客','予定','設置場所','担当','状態','操作'],deliveryRows)+
         '</section>'+
         '<section class="card section">'+
-          '<div class="row between"><div><h2>サポート</h2><p class="sectionDesc">未完了の問い合わせを確認します。</p></div><button class="ghost dashGo" data-page="support" type="button">サポートを開く</button></div>'+
-          dataTable(['番号','顧客','件名','優先度','状態'],ticketRows)+
+          '<div class="row between"><div><h2>問い合わせ</h2><p class="sectionDesc">緊急・高優先度・担当未設定を優先して確認します。</p></div><button class="ghost dashGoSupport" type="button">サポートを開く</button></div>'+
+          dataTable(['番号','顧客','件名','優先度','担当','操作'],ticketRows)+
         '</section>'+
         '<section class="card section"><h2>引き継ぎキュー</h2>'+
           ((q||[]).length?(q||[]).map(h=>
@@ -756,7 +766,57 @@
           ).join(''):'<p class="muted">未処理の引き継ぎはありません。</p>')+
         '</section>';
 
-      document.querySelectorAll('.dashGo').forEach(b=>b.onclick=()=>go(b.dataset.page));
+      const openReceivingItem=async(itemId)=>{
+        await renderProcurementWorkspace('receiving');
+        const btn=[...document.querySelectorAll('.receiveItemBtn')].find(x=>x.dataset.id===itemId);
+        if(btn) btn.click();
+      };
+
+      document.querySelectorAll('.dashActionOpen').forEach(btn=>{
+        btn.onclick=async()=>{
+          const kind=btn.dataset.kind;
+          const id=btn.dataset.id;
+          if(kind==='quote'){
+            await renderSalesWorkspace('quotes');
+            const cmap=await customerMap();
+            await renderQuoteEditor(id,cmap);
+            return;
+          }
+          if(kind==='order'){
+            await renderSalesWorkspace('order_ops');
+            await renderOrderDetail(id);
+            return;
+          }
+          if(kind==='receiving'){
+            await openReceivingItem(id);
+            return;
+          }
+          if(kind==='delivery'){
+            await renderProcurementWorkspace('delivery');
+            await renderDeliveryDetail(id);
+            return;
+          }
+          if(kind==='ticket'){
+            await go('support');
+            await renderTicketDetail(id);
+          }
+        };
+      });
+
+      document.querySelectorAll('.dashReceivingOpen').forEach(btn=>btn.onclick=()=>openReceivingItem(btn.dataset.id));
+      document.querySelectorAll('.dashDeliveryOpen').forEach(btn=>btn.onclick=async()=>{
+        await renderProcurementWorkspace('delivery');
+        await renderDeliveryDetail(btn.dataset.id);
+      });
+      document.querySelectorAll('.dashTicketOpen').forEach(btn=>btn.onclick=async()=>{
+        await go('support');
+        await renderTicketDetail(btn.dataset.id);
+      });
+
+      $('.dashGoProc').onclick=()=>renderProcurementWorkspace('receiving');
+      $('.dashGoDelivery').onclick=()=>renderProcurementWorkspace('delivery');
+      $('.dashGoSupport').onclick=()=>go('support');
+
       document.querySelectorAll('.accept').forEach(b=>b.onclick=async()=>{
         try{
           await rpc('accept_ticket_handoff',{p_handoff_id:b.dataset.id});
