@@ -292,7 +292,7 @@
     'internal_contract_detail','internal_assets_list','internal_customers_list',
     'internal_customer_detail','internal_customer_contacts','internal_customer_registration_options','support_ticket_workspace',
     'customer_ticket_detail','internal_numbering_settings','internal_accounts_list',
-    'internal_account_companies','internal_audit_workspace','internal_document_profile','internal_demo_seed_status',
+    'internal_account_companies','internal_audit_workspace','internal_document_profile','internal_demo_seed_status','internal_company_settings',
     'internal_products_list','internal_lease_rates_list','internal_order_profitability','internal_customer_unified_workspace','internal_receiving_workspace','internal_order_operation','role_knowledge_articles',
     'support_customer_directory','support_asset_directory','support_handoff_history','support_customer_context',
     'internal_case_directory','internal_handoff_history','internal_knowledge_articles'
@@ -2535,118 +2535,184 @@
     renderRows();
   }
 
-  async function renderSettings(){
+  async function renderSettings(tab='company'){
     const role=bootData.context?.role;
     if(role!=='internal_admin') throw new Error('管理者のみ利用できます。');
 
-    const [cfg,docProfile,demoStatus]=await Promise.all([
+    const [company,cfg,docProfile,demoStatus]=await Promise.all([
+      rpc('internal_company_settings'),
       rpc('internal_numbering_settings'),
       rpc('internal_document_profile'),
       rpc('internal_demo_seed_status')
     ]);
     const quote=cfg?.quote||{};
     const order=cfg?.order||{};
+    const tabs=[
+      ['company','会社情報'],
+      ['numbering','自動採番'],
+      ['documents','帳票'],
+      ['security','セキュリティ'],
+      ['demo','デモデータ']
+    ];
+
+    let body='';
+
+    if(tab==='company'){
+      body=
+        '<section class="card section">'+
+          '<div class="formSectionHead"><span class="sectionNo">01</span><h2>会社情報</h2></div>'+
+          '<p class="sectionDesc">QuoteFlow Cloud内で使用する会社名の正本です。帳票に表示する住所・電話・登録番号は「帳票」タブで設定します。</p>'+
+          '<form id="companySettingsForm">'+
+            '<div class="modalGrid2">'+
+              '<div class="field"><label>会社名</label><input id="settingsCompanyName" value="'+esc(company?.name||'')+'" required></div>'+
+              '<div class="field"><label>会社区分</label><input value="'+esc(company?.company_type||'internal')+'" disabled></div>'+
+            '</div>'+
+            '<div class="notice">会社区分や利用停止状態はシステム権限に関係するため、この画面では変更しません。</div>'+
+            '<button class="primary" type="submit">会社情報を保存</button>'+
+          '</form>'+
+          '<div id="companySettingsMsg" class="notice hidden"></div>'+
+        '</section>';
+    }else if(tab==='numbering'){
+      body=
+        '<section class="card section">'+
+          '<div class="formSectionHead"><span class="sectionNo">02</span><h2>自動採番</h2></div>'+
+          '<p class="sectionDesc">現在、自動採番を使用しているのは見積番号と受注番号です。未設定の場合、見積確定・受注化を実行できません。</p>'+
+          '<form id="numberingForm">'+
+            '<div class="modalGrid2">'+
+              '<div class="field"><label>見積番号の形式</label><input id="quotePattern" value="'+esc(quote.pattern||'')+'" placeholder="例: Q-{YYYY}-{SEQ4}"></div>'+
+              '<div class="field"><label>見積番号の次回連番</label><input id="quoteStart" type="number" min="1" step="1" value="'+esc(quote.next_sequence||1)+'"></div>'+
+              '<div class="field"><label>受注番号の形式</label><input id="orderPattern" value="'+esc(order.pattern||'')+'" placeholder="例: O-{YYYY}-{SEQ4}"></div>'+
+              '<div class="field"><label>受注番号の次回連番</label><input id="orderStart" type="number" min="1" step="1" value="'+esc(order.next_sequence||1)+'"></div>'+
+            '</div>'+
+            '<div class="notice">使用可能: {YYYY} {YY} {MM} {DD} {SEQ} {SEQ1}〜{SEQ12}<br>例：Q-{YYYY}-{SEQ4} → Q-2026-0001</div>'+
+            '<button class="primary" type="submit">採番設定を保存</button>'+
+          '</form>'+
+          '<div id="numberingMsg" class="notice hidden"></div>'+
+        '</section>';
+    }else if(tab==='documents'){
+      body=
+        '<section class="card section">'+
+          '<div class="formSectionHead"><span class="sectionNo">03</span><h2>帳票の発行元情報</h2></div>'+
+          '<p class="sectionDesc">見積書・発注書・納品書へ表示する発行元情報です。空欄の項目は帳票に表示しません。</p>'+
+          '<form id="documentProfileForm">'+
+            '<div class="modalGrid2">'+
+              '<div class="field"><label>会社名 / 屋号</label><input id="docIssuerName" value="'+esc(docProfile?.issuer_name||'')+'"></div>'+
+              '<div class="field"><label>担当者</label><input id="docContactName" value="'+esc(docProfile?.contact_name||'')+'"></div>'+
+              '<div class="field"><label>郵便番号</label><input id="docPostalCode" value="'+esc(docProfile?.postal_code||'')+'"></div>'+
+              '<div class="field"><label>登録番号</label><input id="docRegistrationNumber" value="'+esc(docProfile?.registration_number||'')+'"></div>'+
+              '<div class="field" style="grid-column:span 2"><label>住所</label><input id="docAddress" value="'+esc(docProfile?.address||'')+'"></div>'+
+              '<div class="field"><label>電話</label><input id="docPhone" value="'+esc(docProfile?.phone||'')+'"></div>'+
+              '<div class="field"><label>メール</label><input id="docEmail" type="email" value="'+esc(docProfile?.email||'')+'"></div>'+
+            '</div>'+
+            '<div class="field"><label>帳票フッター備考</label><textarea id="docFooterNote" rows="3">'+esc(docProfile?.footer_note||'')+'</textarea></div>'+
+            '<button class="primary" type="submit">帳票設定を保存</button>'+
+          '</form>'+
+          '<div id="documentProfileMsg" class="notice hidden"></div>'+
+        '</section>';
+    }else if(tab==='security'){
+      body=
+        '<section class="card section">'+
+          '<div class="formSectionHead"><span class="sectionNo">04</span><h2>セキュリティ</h2></div>'+
+          '<p class="sectionDesc">MFA、パスワード、信頼済み端末、セッション管理は専用画面で管理します。</p>'+
+          '<div class="grid">'+
+            '<div class="kpi"><div class="label">MFA</div><div class="value">必須</div></div>'+
+            '<div class="kpi"><div class="label">信頼済み端末</div><div class="value">対応</div></div>'+
+            '<div class="kpi"><div class="label">パスワード</div><div class="value">12文字以上</div></div>'+
+            '<div class="kpi"><div class="label">他端末ログアウト</div><div class="value">対応</div></div>'+
+          '</div>'+
+          '<div class="notice">管理者設定を変更する操作はAAL2（MFA認証済み）を要求します。</div>'+
+          '<button id="openSecuritySettings" class="primary" type="button">セキュリティ設定を開く</button>'+
+        '</section>';
+    }else{
+      body=
+        '<section class="card section">'+
+          '<div class="formSectionHead"><span class="sectionNo">05</span><h2>デモデータ</h2></div>'+
+          '<p class="sectionDesc">機能確認用のデモデータです。削除してもログイン用デモアカウントと本データは残ります。</p>'+
+          '<div class="grid">'+
+            '<div class="kpi"><div class="label">顧客</div><div class="value">'+esc(demoStatus?.customers||0)+'</div></div>'+
+            '<div class="kpi"><div class="label">見積</div><div class="value">'+esc(demoStatus?.quotes||0)+'</div></div>'+
+            '<div class="kpi"><div class="label">受注</div><div class="value">'+esc(demoStatus?.orders||0)+'</div></div>'+
+            '<div class="kpi"><div class="label">発注</div><div class="value">'+esc(demoStatus?.purchase_orders||0)+'</div></div>'+
+            '<div class="kpi"><div class="label">納品</div><div class="value">'+esc(demoStatus?.deliveries||0)+'</div></div>'+
+            '<div class="kpi"><div class="label">問い合わせ</div><div class="value">'+esc(demoStatus?.support_tickets||0)+'</div></div>'+
+          '</div>'+
+          (demoStatus?.exists
+            ? '<div class="notice">Seed: '+esc(demoStatus.seed_key||'')+'<br>削除対象を確認してから実行してください。</div><button id="deleteDemoSeedBtn" class="orange" type="button">デモデータを一括削除</button>'
+            : '<div class="notice">現在、削除対象のデモデータはありません。</div>')+
+          '<div id="demoSeedMsg" class="notice hidden"></div>'+
+        '</section>';
+    }
 
     $('#home').innerHTML=
-      pageIntro('設定','見積番号・受注番号の採番形式を設定します。')+
-      '<section class="card section">'+
-        '<h2>自動採番</h2>'+
-        '<p class="sectionDesc">形式は運用ルールに合わせて入力してください。未設定の間は見積確定・受注化を実行できません。</p>'+
-        '<form id="numberingForm">'+
-          '<div class="field"><label>見積番号の形式</label><input id="quotePattern" value="'+esc(quote.pattern||'')+'" placeholder="例: Q-{YYYY}-{SEQ4}"></div>'+
-          '<div class="field"><label>見積番号の次回連番</label><input id="quoteStart" type="number" min="1" step="1" value="'+esc(quote.next_sequence||1)+'"></div>'+
-          '<div class="field"><label>受注番号の形式</label><input id="orderPattern" value="'+esc(order.pattern||'')+'" placeholder="例: O-{YYYY}-{SEQ4}"></div>'+
-          '<div class="field"><label>受注番号の次回連番</label><input id="orderStart" type="number" min="1" step="1" value="'+esc(order.next_sequence||1)+'"></div>'+
-          '<div class="notice">使用可能: {YYYY} {YY} {MM} {DD} {SEQ} {SEQ1}〜{SEQ12}<br>入力例は説明用です。正式な番号形式として自動採用はしません。</div>'+
-          '<button class="primary" type="submit">採番設定を保存</button>'+
-        '</form>'+
-        '<div id="numberingMsg" class="notice hidden"></div>'+
-      '</section>'+
-      '<section class="card section">'+
-        '<h2>帳票の発行元情報</h2>'+
-        '<p class="sectionDesc">見積書・発注書・納品書に表示する情報です。空欄の項目は帳票に表示しません。</p>'+
-        '<form id="documentProfileForm">'+
-          '<div class="field"><label>会社名 / 屋号</label><input id="docIssuerName" value="'+esc(docProfile?.issuer_name||'')+'"></div>'+
-          '<div class="row">'+
-            '<div class="field" style="flex:1;min-width:180px"><label>郵便番号</label><input id="docPostalCode" value="'+esc(docProfile?.postal_code||'')+'"></div>'+
-            '<div class="field" style="flex:3;min-width:260px"><label>住所</label><input id="docAddress" value="'+esc(docProfile?.address||'')+'"></div>'+
-          '</div>'+
-          '<div class="row">'+
-            '<div class="field" style="flex:1;min-width:180px"><label>電話</label><input id="docPhone" value="'+esc(docProfile?.phone||'')+'"></div>'+
-            '<div class="field" style="flex:1;min-width:220px"><label>メール</label><input id="docEmail" type="email" value="'+esc(docProfile?.email||'')+'"></div>'+
-          '</div>'+
-          '<div class="row">'+
-            '<div class="field" style="flex:1;min-width:180px"><label>担当者</label><input id="docContactName" value="'+esc(docProfile?.contact_name||'')+'"></div>'+
-            '<div class="field" style="flex:1;min-width:220px"><label>登録番号</label><input id="docRegistrationNumber" value="'+esc(docProfile?.registration_number||'')+'"></div>'+
-          '</div>'+
-          '<div class="field"><label>帳票フッター備考</label><textarea id="docFooterNote" rows="3">'+esc(docProfile?.footer_note||'')+'</textarea></div>'+
-          '<button class="primary" type="submit">発行元情報を保存</button>'+
-        '</form>'+
-        '<div id="documentProfileMsg" class="notice hidden"></div>'+
-      '</section>'+
-      '<section class="card section">'+
-        '<h2>デモデータ</h2>'+
-        '<p class="sectionDesc">機能確認用のデモデータです。削除しても既存のログイン用デモアカウントと本データは残ります。</p>'+
-        '<div class="grid">'+
-          '<div class="kpi"><div class="label">顧客</div><div class="value">'+esc(demoStatus?.customers||0)+'</div></div>'+
-          '<div class="kpi"><div class="label">見積</div><div class="value">'+esc(demoStatus?.quotes||0)+'</div></div>'+
-          '<div class="kpi"><div class="label">受注</div><div class="value">'+esc(demoStatus?.orders||0)+'</div></div>'+
-          '<div class="kpi"><div class="label">発注</div><div class="value">'+esc(demoStatus?.purchase_orders||0)+'</div></div>'+
-          '<div class="kpi"><div class="label">納品</div><div class="value">'+esc(demoStatus?.deliveries||0)+'</div></div>'+
-          '<div class="kpi"><div class="label">問い合わせ</div><div class="value">'+esc(demoStatus?.support_tickets||0)+'</div></div>'+
-        '</div>'+
-        (demoStatus?.exists
-          ? '<div class="notice">Seed: '+esc(demoStatus.seed_key||'')+'<br>「Q-/ORD-/PO-/DLV-/CNT-/AST-/TKT-DEMO」で始まるデータが中心です。</div>'+
-            '<button id="deleteDemoSeedBtn" class="orange" type="button">デモデータを一括削除</button>'
-          : '<div class="notice">現在、削除対象のデモデータはありません。</div>')+
-        '<div id="demoSeedMsg" class="notice hidden"></div>'+
-      '</section>';
+      pageIntro('設定','会社情報・採番・帳票・セキュリティを用途ごとに分けて管理します。')+
+      unifiedTabs(tabs,tab,'settings')+
+      '<div id="settingsBody">'+body+'</div>';
 
-    $('#numberingForm').onsubmit=async e=>{
-      e.preventDefault();
-      const btn=e.submitter;
-      if(btn) btn.disabled=true;
-      try{
-        const saved=await rpc('save_numbering_settings',{
-          p_quote_pattern:$('#quotePattern').value.trim()||null,
-          p_quote_start:Number($('#quoteStart').value||1),
-          p_order_pattern:$('#orderPattern').value.trim()||null,
-          p_order_start:Number($('#orderStart').value||1)
-        });
-        notice('#numberingMsg','採番設定を保存しました。',true);
-        $('#quotePattern').value=saved?.quote?.pattern||'';
-        $('#quoteStart').value=saved?.quote?.next_sequence||1;
-        $('#orderPattern').value=saved?.order?.pattern||'';
-        $('#orderStart').value=saved?.order?.next_sequence||1;
-      }catch(err){
-        notice('#numberingMsg',err.message||String(err));
-      }finally{
-        if(btn) btn.disabled=false;
-      }
-    };
+    bindUnifiedTabs(t=>renderSettings(t));
 
-    $('#documentProfileForm').onsubmit=async e=>{
-      e.preventDefault();
-      const btn=e.submitter;
-      if(btn) btn.disabled=true;
-      try{
-        await rpc('save_document_profile',{
-          p_issuer_name:$('#docIssuerName').value.trim()||null,
-          p_postal_code:$('#docPostalCode').value.trim()||null,
-          p_address:$('#docAddress').value.trim()||null,
-          p_phone:$('#docPhone').value.trim()||null,
-          p_email:$('#docEmail').value.trim()||null,
-          p_contact_name:$('#docContactName').value.trim()||null,
-          p_registration_number:$('#docRegistrationNumber').value.trim()||null,
-          p_footer_note:$('#docFooterNote').value.trim()||null
-        });
-        notice('#documentProfileMsg','帳票の発行元情報を保存しました。',true);
-      }catch(err){
-        notice('#documentProfileMsg',err.message||String(err));
-      }finally{
-        if(btn) btn.disabled=false;
-      }
-    };
+    const companyForm=$('#companySettingsForm');
+    if(companyForm){
+      companyForm.onsubmit=async e=>{
+        e.preventDefault();
+        const btn=e.submitter;if(btn)btn.disabled=true;
+        try{
+          const saved=await rpc('save_company_settings',{p_name:$('#settingsCompanyName').value.trim()});
+          notice('#companySettingsMsg','会社情報を保存しました。',true);
+          if(bootData?.context) bootData.context.company_name=saved?.name||bootData.context.company_name;
+          $('#companyName').textContent=saved?.name||'';
+          toast('会社情報を更新しました');
+        }catch(err){notice('#companySettingsMsg',err.message||String(err));}
+        finally{if(btn)btn.disabled=false;}
+      };
+    }
+
+    const numberingForm=$('#numberingForm');
+    if(numberingForm){
+      numberingForm.onsubmit=async e=>{
+        e.preventDefault();
+        const btn=e.submitter;if(btn)btn.disabled=true;
+        try{
+          const saved=await rpc('save_numbering_settings',{
+            p_quote_pattern:$('#quotePattern').value.trim()||null,
+            p_quote_start:Number($('#quoteStart').value||1),
+            p_order_pattern:$('#orderPattern').value.trim()||null,
+            p_order_start:Number($('#orderStart').value||1)
+          });
+          notice('#numberingMsg','採番設定を保存しました。',true);
+          $('#quotePattern').value=saved?.quote?.pattern||'';
+          $('#quoteStart').value=saved?.quote?.next_sequence||1;
+          $('#orderPattern').value=saved?.order?.pattern||'';
+          $('#orderStart').value=saved?.order?.next_sequence||1;
+        }catch(err){notice('#numberingMsg',err.message||String(err));}
+        finally{if(btn)btn.disabled=false;}
+      };
+    }
+
+    const documentForm=$('#documentProfileForm');
+    if(documentForm){
+      documentForm.onsubmit=async e=>{
+        e.preventDefault();
+        const btn=e.submitter;if(btn)btn.disabled=true;
+        try{
+          await rpc('save_document_profile',{
+            p_issuer_name:$('#docIssuerName').value.trim()||null,
+            p_postal_code:$('#docPostalCode').value.trim()||null,
+            p_address:$('#docAddress').value.trim()||null,
+            p_phone:$('#docPhone').value.trim()||null,
+            p_email:$('#docEmail').value.trim()||null,
+            p_contact_name:$('#docContactName').value.trim()||null,
+            p_registration_number:$('#docRegistrationNumber').value.trim()||null,
+            p_footer_note:$('#docFooterNote').value.trim()||null
+          });
+          notice('#documentProfileMsg','帳票設定を保存しました。',true);
+          toast('帳票設定を更新しました');
+        }catch(err){notice('#documentProfileMsg',err.message||String(err));}
+        finally{if(btn)btn.disabled=false;}
+      };
+    }
+
+    const securityBtn=$('#openSecuritySettings');
+    if(securityBtn) securityBtn.onclick=()=>go('security');
 
     const deleteDemoBtn=$('#deleteDemoSeedBtn');
     if(deleteDemoBtn){
@@ -2658,15 +2724,11 @@
           await rpc('delete_demo_seed',{p_seed_key:demoStatus.seed_key});
           notice('#demoSeedMsg','デモデータを削除しました。ログイン用デモアカウントと既存本データは残っています。',true);
           toast('デモデータを削除しました');
-          setTimeout(()=>go('settings'),500);
-        }catch(err){
-          notice('#demoSeedMsg',err.message||String(err));
-        }finally{
-          deleteDemoBtn.disabled=false;
-        }
+          setTimeout(()=>renderSettings('demo'),500);
+        }catch(err){notice('#demoSeedMsg',err.message||String(err));}
+        finally{deleteDemoBtn.disabled=false;}
       };
     }
-
   }
 
   async function renderOrderDetail(orderId){
