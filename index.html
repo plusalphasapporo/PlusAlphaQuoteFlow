@@ -493,6 +493,8 @@
   let supportRealtimeChannel=null;
   let internalHandoffRealtimeChannel=null;
   let callconnectNotificationChannel=null;
+  let callconnectNotificationPollTimer=null;
+  let lastCallConnectPopupId='';
   let pendingCallConnectIntake=null;
 
   const pageSets = {
@@ -992,7 +994,7 @@
   async function showCallConnectIncomingPopup(item){
     document.querySelectorAll('.callIncomingWrap').forEach(x=>x.remove());
     const type={201:'着信',401:'不在着信',402:'営業時間外着信'}[item?.record_status]||'入電';
-    const display=item?.contact_company||item?.contact_name||'顧客未照合';
+    const display=item?.matched_customer_name||item?.contact_company||item?.contact_name||'顧客未照合';
     const number=item?.contact_number||'電話番号未取得';
     const role=bootData?.context?.role;
     let customerContext=null;
@@ -1082,8 +1084,27 @@
       try{await supabase.removeChannel(callconnectNotificationChannel);}catch(_){}
       callconnectNotificationChannel=null;
     }
+    if(callconnectNotificationPollTimer){
+      clearInterval(callconnectNotificationPollTimer);
+      callconnectNotificationPollTimer=null;
+    }
     const role=bootData?.context?.role;
     if(!['internal_admin','internal_staff','support_staff'].includes(role)) return;
+
+    const checkUnread=async()=>{
+      try{
+        const unread=await refreshCallConnectUnread();
+        const item=(unread.items||[])[0];
+        if(item && item.id!==lastCallConnectPopupId){
+          lastCallConnectPopupId=item.id;
+          await showCallConnectIncomingPopup(item);
+          await setupGlobalHeader();
+        }
+      }catch(_){}
+    };
+
+    await checkUnread();
+    callconnectNotificationPollTimer=setInterval(checkUnread,3000);
 
     callconnectNotificationChannel=supabase
       .channel('callconnect-incoming-live')
@@ -1095,6 +1116,7 @@
         const unread=await refreshCallConnectUnread();
         const item=(unread.items||[]).find(x=>x.id===payload.new?.id);
         if(!item) return;
+        lastCallConnectPopupId=item.id;
         const type={201:'着信',401:'不在着信',402:'営業時間外着信'}[item.record_status]||'入電';
         const who=item.contact_company||item.contact_name||item.contact_number||'電話番号未取得';
         toast('CallConnect '+type+'：'+who);
