@@ -240,18 +240,83 @@
     const home=$('#home');
 
     if(role==='internal_admin'||role==='internal_staff'){
-      const [cc,q]=await Promise.all([rpc('internal_command_center'),rpc('internal_handoff_queue')]);
+      const [cc,q,biz]=await Promise.all([
+        rpc('internal_command_center'),
+        rpc('internal_handoff_queue'),
+        rpc('internal_business_dashboard')
+      ]);
+
+      const quoteRows=(biz.quote_queue||[]).map(x=>
+        '<tr>'+
+          '<td>'+esc(x.quote_number||'下書き')+'</td>'+
+          '<td>'+esc(x.customer_name||'')+'</td>'+
+          '<td>'+esc(statusText(x.status))+'</td>'+
+          '<td class="amount">'+esc(money(x.total_amount))+'</td>'+
+        '</tr>'
+      );
+      const orderRows=(biz.order_queue||[]).map(x=>
+        '<tr>'+
+          '<td>'+esc(x.order_number||'未採番')+'</td>'+
+          '<td>'+esc(x.customer_name||'')+'</td>'+
+          '<td>'+esc(statusText(x.status))+'</td>'+
+          '<td>'+(x.has_purchase_order?'発注あり':'<span class="hold">発注未作成</span>')+'</td>'+
+          '<td>'+(x.has_delivery?'納品あり':'<span class="hold">納品未作成</span>')+'</td>'+
+        '</tr>'
+      );
+      const deliveryRows=(biz.delivery_queue||[]).map(x=>
+        '<tr>'+
+          '<td>'+esc(x.delivery_number||'未採番')+'</td>'+
+          '<td>'+esc(x.customer_name||'')+'</td>'+
+          '<td>'+esc(x.order_number||'—')+'</td>'+
+          '<td>'+esc(dateText(x.scheduled_at))+'</td>'+
+          '<td>'+(x.is_overdue?'<span class="hold">予定超過</span>':esc(statusText(x.status)))+'</td>'+
+        '</tr>'
+      );
+      const ticketRows=(biz.ticket_queue||[]).map(x=>
+        '<tr>'+
+          '<td>'+esc(x.ticket_number||'—')+'</td>'+
+          '<td>'+esc(x.customer_name||'')+'</td>'+
+          '<td>'+esc(x.subject||'')+'</td>'+
+          '<td>'+esc(x.priority||'normal')+'</td>'+
+          '<td>'+esc(statusText(x.status))+'</td>'+
+        '</tr>'
+      );
+
       home.innerHTML=
-        pageIntro('ダッシュボード','今日確認が必要な項目をまとめています。')+
+        pageIntro('ダッシュボード','見積から受注・発注・納品・サポートまで、今日確認が必要な項目をまとめています。')+
         kpis([
-          ['緊急問い合わせ',cc.now_action?.urgent_open_tickets],
-          ['未割当',cc.now_action?.unassigned_open_tickets],
-          ['未処理引き継ぎ',cc.now_action?.pending_handoffs],
-          ['手動ホールド',cc.now_action?.manual_hold_customers]
+          ['見積下書き',biz.kpis?.quote_drafts],
+          ['顧客回答待ち',biz.kpis?.quotes_waiting_customer],
+          ['受注化待ち',biz.kpis?.accepted_quotes_without_order],
+          ['発注未作成',biz.kpis?.orders_without_purchase_order],
+          ['納品未作成',biz.kpis?.orders_without_delivery],
+          ['納品予定超過',biz.kpis?.deliveries_overdue],
+          ['対応中問い合わせ',biz.kpis?.open_tickets],
+          ['手動ホールド',biz.kpis?.manual_hold_customers]
         ])+
+        '<section class="card section">'+
+          '<div class="row between"><div><h2>見積キュー</h2><p class="sectionDesc">下書き・顧客回答待ち・承諾済みを確認します。</p></div><button class="ghost dashGo" data-page="quotes" type="button">見積を開く</button></div>'+
+          dataTable(['見積番号','顧客','状態','合計'],quoteRows)+
+        '</section>'+
+        '<section class="card section">'+
+          '<div class="row between"><div><h2>受注キュー</h2><p class="sectionDesc">発注・納品の未作成を確認します。</p></div><button class="ghost dashGo" data-page="orders" type="button">受注を開く</button></div>'+
+          dataTable(['受注番号','顧客','状態','発注','納品'],orderRows)+
+        '</section>'+
+        '<section class="card section">'+
+          '<div class="row between"><div><h2>納品予定</h2><p class="sectionDesc">予定日順。予定超過を優先して確認します。</p></div><button class="ghost dashGo" data-page="deliveries" type="button">納品を開く</button></div>'+
+          dataTable(['納品番号','顧客','受注番号','予定日','状態'],deliveryRows)+
+        '</section>'+
+        '<section class="card section">'+
+          '<div class="row between"><div><h2>サポート</h2><p class="sectionDesc">未完了の問い合わせを確認します。</p></div><button class="ghost dashGo" data-page="support" type="button">サポートを開く</button></div>'+
+          dataTable(['番号','顧客','件名','優先度','状態'],ticketRows)+
+        '</section>'+
         '<section class="card section"><h2>引き継ぎキュー</h2>'+
-        ((q||[]).length?(q||[]).map(h=>'<div class="item"><h3>'+esc(h.ticket_number||'')+' '+esc(h.customer_name||'')+'</h3><p>'+esc(h.subject||'')+'</p><p>理由: '+esc(h.reason||'')+'</p><p>次: '+esc(h.next_action||'')+'</p><button class="primary accept" data-id="'+esc(h.id)+'">受理する</button></div>').join(''):'<p class="muted">未処理の引き継ぎはありません。</p>')+
+          ((q||[]).length?(q||[]).map(h=>
+            '<div class="item"><h3>'+esc(h.ticket_number||'')+' '+esc(h.customer_name||'')+'</h3><p>'+esc(h.subject||'')+'</p><p>理由: '+esc(h.reason||'')+'</p><p>次: '+esc(h.next_action||'')+'</p><button class="primary accept" data-id="'+esc(h.id)+'">受理する</button></div>'
+          ).join(''):'<p class="muted">未処理の引き継ぎはありません。</p>')+
         '</section>';
+
+      document.querySelectorAll('.dashGo').forEach(b=>b.onclick=()=>go(b.dataset.page));
       document.querySelectorAll('.accept').forEach(b=>b.onclick=async()=>{
         try{
           await rpc('accept_ticket_handoff',{p_handoff_id:b.dataset.id});
