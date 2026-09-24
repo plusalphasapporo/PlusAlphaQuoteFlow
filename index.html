@@ -48,6 +48,17 @@
     .remotePanel{border:1px solid #fed7aa;background:#fff7ed;border-radius:14px;padding:14px;margin-top:14px}
     .remotePanel h4{margin:0 0 5px}.remotePanel .hint{font-size:12px;color:#9a3412}
     .supportQuickActions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+    .supportMainActions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:14px 0}
+    .supportMainAction{border:1px solid var(--line);background:#fff;border-radius:14px;padding:14px;text-align:left;min-height:92px;box-shadow:0 6px 18px rgba(15,23,42,.05)}
+    .supportMainAction:hover{border-color:#93c5fd;background:#f8fbff}
+    .supportMainAction strong{display:block;font-size:14px;margin-bottom:5px}
+    .supportMainAction small{display:block;color:var(--muted);line-height:1.45}
+    .supportMainAction.orange{background:#fff7ed;border-color:#fed7aa;color:#9a3412}
+    .supportMainAction.green{background:#f0fdf4;border-color:#bbf7d0;color:#166534}
+    .supportMainAction.warn{background:#fff1f2;border-color:#fecdd3;color:#9f1239}
+    .supportClassificationPanel{border:1px solid #dbeafe;background:#f8fbff;border-radius:14px;padding:14px;margin:12px 0}
+    @media(max-width:900px){.supportMainActions{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @media(max-width:640px){.supportMainActions{grid-template-columns:1fr}}
     .supportPriorityGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:14px 0}
     .supportPriorityCard{border:1px solid var(--line);border-radius:16px;background:#fff;padding:15px;min-height:180px}
     .supportPriorityCard.urgent{border-color:#fecaca;background:#fffafa}
@@ -6272,6 +6283,15 @@
       : '<div class="notice"><strong>現在の対応工程：</strong> '+supportStageBadge(supportStage||'completed')+'</div>';
     const firstLineAssist=!customer
       ? '<section id="supportAssistWorkspace" class="formSection"><div class="formSectionHead"><span class="sectionNo">'+assistSectionNo+'</span><h3>サポート対応フロー</h3></div>'+
+          '<div class="supportMainActions">'+
+            '<button id="ticketActionAi" class="supportMainAction" type="button"><strong>AI・ナレッジ</strong><small>症状から原因と対応方法を探す</small></button>'+
+            '<button id="ticketActionRemote" class="supportMainAction orange" type="button"><strong>TeamViewer</strong><small>顧客PCへ遠隔で設定・確認する</small></button>'+
+            '<button id="ticketActionCustomer" class="supportMainAction" type="button"><strong>顧客・機器</strong><small>契約・機器・連絡先を確認する</small></button>'+
+            (t.status!=='closed'?'<button id="ticketActionIncident" class="supportMainAction warn" type="button"><strong>障害として登録</strong><small>この問い合わせを障害案件として分類する</small></button>':'')+
+            (t.status!=='closed'?'<button id="ticketActionSetting" class="supportMainAction" type="button"><strong>設定依頼として登録</strong><small>この問い合わせを設定依頼として分類する</small></button>':'')+
+            (t.status!=='closed'?'<button id="ticketActionFinish" class="supportMainAction green" type="button"><strong>解決・引継ぎ</strong><small>完了または自社担当への引継ぎへ進む</small></button>':'')+
+          '</div>'+
+          '<div id="ticketClassificationPanel" class="supportClassificationPanel hidden"></div>'+
           '<div class="supportFlow">'+
             '<div class="supportStep done"><span class="supportStepNum">1</span><strong>受付</strong><small>'+esc(intakeSource)+'</small></div>'+
             '<div class="supportStep '+(attachments.length?'done':'active')+'"><span class="supportStepNum">2</span><strong>依頼内容・写真確認</strong><small>'+supportRequestTypeLabel(t.request_type)+' / '+esc(attachments.length)+'件の写真・添付</small></div>'+
@@ -6425,6 +6445,12 @@
         if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
       };
       const customerJump=$('#supportTicketCustomerJump');
+      const actionAi=$('#ticketActionAi');
+      const actionRemote=$('#ticketActionRemote');
+      const actionCustomer=$('#ticketActionCustomer');
+      const actionIncident=$('#ticketActionIncident');
+      const actionSetting=$('#ticketActionSetting');
+      const actionFinish=$('#ticketActionFinish');
       if(customerJump) customerJump.onclick=()=>jump('#supportTicketCustomerContext');
       const aiJump=$('#supportTicketAiJump');
       if(aiJump) aiJump.onclick=()=>{
@@ -6438,6 +6464,60 @@
       };
       const quickComplete=$('#supportTicketCompleteQuick');
       if(quickComplete) quickComplete.onclick=()=>$('#ticketCloseBtn')?.click();
+
+      if(actionAi) actionAi.onclick=()=>{
+        jump('#supportAssistWorkspace');
+        setTimeout(()=>$('#ticketKnowledgeSearch')?.focus(),250);
+      };
+      if(actionRemote) actionRemote.onclick=()=>{
+        jump('#supportRemoteWorkspace');
+        setTimeout(()=>$('#ticketTeamViewerId')?.focus(),250);
+      };
+      if(actionCustomer) actionCustomer.onclick=()=>jump('#supportTicketCustomerContext');
+
+      const openClassification=(type)=>{
+        const panel=$('#ticketClassificationPanel');
+        if(!panel) return;
+        const isIncident=type==='incident';
+        panel.classList.remove('hidden');
+        panel.innerHTML=
+          '<div class="row between"><div><strong>'+(isIncident?'障害として登録':'設定依頼として登録')+'</strong><div class="muted" style="margin-top:4px">同じ問い合わせカルテのまま種別を変更します。</div></div><button id="ticketClassificationCancel" class="ghost" type="button">閉じる</button></div>'+
+          (isIncident
+            ? '<div class="modalGrid2"><div class="field"><label>発生日時</label><input id="classifyOccurredAt" type="datetime-local"></div><div class="field"><label>影響範囲</label><select id="classifyImpact"><option value="unknown">不明</option><option value="single_device">1台のみ</option><option value="multiple_users">複数ユーザー</option><option value="whole_office">拠点全体</option></select></div></div><div class="field"><label>エラー内容</label><textarea id="classifyError" rows="3"></textarea></div><div class="field"><label>実施済み対応</label><textarea id="classifyAttempted" rows="3"></textarea></div><label class="row"><input id="classifyStopped" type="checkbox"> 業務停止あり</label>'
+            : '<div class="field"><label>依頼する設定内容</label><textarea id="classifyRequested" rows="3"></textarea></div><div class="modalGrid2"><div class="field"><label>対象機器</label><input id="classifyTarget" value="'+esc(asset?.asset_number||asset?.model_name||'')+'"></div><div class="field"><label>希望日時</label><input id="classifyPreferred" type="datetime-local"></div></div><div class="field"><label>現在の状態</label><textarea id="classifyCurrent" rows="3">'+esc(displayDescription)+'</textarea></div><label class="row"><input id="classifyRemote" type="checkbox"> TeamViewer等の遠隔対応可</label>')+
+          '<div class="supportQuickActions"><button id="ticketClassificationSave" class="primary" type="button">'+(isIncident?'障害として保存':'設定依頼として保存')+'</button></div>'+
+          '<div id="ticketClassificationMsg" class="notice hidden"></div>';
+        $('#ticketClassificationCancel').onclick=()=>panel.classList.add('hidden');
+        $('#ticketClassificationSave').onclick=async()=>{
+          const btn=$('#ticketClassificationSave'); btn.disabled=true;
+          try{
+            const details=isIncident?{
+              occurred_at:$('#classifyOccurredAt').value||null,
+              error_message:$('#classifyError').value.trim()||null,
+              impact_scope:$('#classifyImpact').value||'unknown',
+              business_stopped:!!$('#classifyStopped').checked,
+              attempted_actions:$('#classifyAttempted').value.trim()||null
+            }:{
+              requested_setting:$('#classifyRequested').value.trim()||null,
+              target_device:$('#classifyTarget').value.trim()||null,
+              current_state:$('#classifyCurrent').value.trim()||null,
+              preferred_at:$('#classifyPreferred').value||null,
+              remote_allowed:!!$('#classifyRemote').checked
+            };
+            await rpc('classify_support_ticket',{p_ticket_id:t.id,p_request_type:type,p_request_details:details});
+            toast(isIncident?'障害として登録しました':'設定依頼として登録しました');
+            await renderTicketDetail(t.id);
+          }catch(err){notice('#ticketClassificationMsg',err.message||String(err));}
+          finally{btn.disabled=false;}
+        };
+        panel.scrollIntoView({behavior:'smooth',block:'center'});
+      };
+      if(actionIncident) actionIncident.onclick=()=>openClassification('incident');
+      if(actionSetting) actionSetting.onclick=()=>openClassification('setting_request');
+      if(actionFinish) actionFinish.onclick=()=>{
+        jump('#supportAssistWorkspace');
+        setTimeout(()=>$('#ticketAssistSolved')?.focus()||$('#ticketAssistEscalate')?.focus(),250);
+      };
     }
 
     const attachmentGallery=$('#ticketAttachmentGallery');
