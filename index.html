@@ -230,6 +230,7 @@
       ['assets','契約・機器'],
       ['support','サポート'],
       ['accounts','アカウント'],
+      ['audit','監査ログ'],
       ['security','セキュリティ'],
       ['settings','設定']
     ],
@@ -2305,6 +2306,134 @@
     });
   }
 
+  async function renderAudit(){
+    if(bootData.context?.role!=='internal_admin') throw new Error('管理者のみ利用できます。');
+
+    const data=await rpc('internal_audit_workspace',{p_limit:300});
+    const logs=data.logs||[];
+    const sessions=data.sessions||[];
+
+    const actionLabel=a=>({
+      'customer.created':'顧客作成',
+      'customer.updated':'顧客更新',
+      'contact.created':'担当者作成',
+      'contact.updated':'担当者更新',
+      'quote.finalized':'見積確定',
+      'quote.accepted':'見積承諾',
+      'quote.rejected':'見積辞退',
+      'order.created':'受注作成',
+      'purchase_order.created':'発注作成',
+      'purchase_order.updated':'発注更新',
+      'delivery.created':'納品作成',
+      'delivery.updated':'納品更新',
+      'contract.created':'契約作成',
+      'contract.updated':'契約更新',
+      'asset.created':'機器作成',
+      'asset.updated':'機器更新',
+      'account.profile.updated':'アカウント更新',
+      'account.initial_password_set':'初期パスワード設定',
+      'user.invited':'ユーザー招待',
+      'user.disabled':'ユーザー停止',
+      'user.enabled':'ユーザー再開',
+      'user.role_changed':'権限変更',
+      'user.mfa_reset':'MFAリセット'
+    }[a]||a||'—');
+
+    const roleText=r=>({
+      internal_admin:'自社管理者',
+      internal_staff:'自社スタッフ',
+      support_staff:'サポート会社',
+      customer_user:'顧客会社'
+    }[r]||r||'—');
+
+    function renderLogRows(){
+      const q=$('#auditSearch')?.value.trim().toLowerCase()||'';
+      const action=$('#auditActionFilter')?.value||'';
+      const filtered=logs.filter(l=>{
+        if(action && l.action!==action) return false;
+        if(!q) return true;
+        return [
+          l.actor_name,l.actor_email,l.actor_role,l.action,l.target_type,l.target_id,
+          l.ip_address,l.request_id
+        ].some(v=>String(v||'').toLowerCase().includes(q));
+      });
+      const rows=filtered.map(l=>
+        '<tr>'+
+          '<td>'+esc(dateText(l.created_at))+'</td>'+
+          '<td><strong>'+esc(l.actor_name||'system')+'</strong><br><span class="muted">'+esc(l.actor_email||'')+'</span></td>'+
+          '<td>'+esc(roleText(l.actor_role))+'</td>'+
+          '<td>'+esc(actionLabel(l.action))+'</td>'+
+          '<td>'+esc(l.target_type||'—')+'<br><span class="muted">'+esc(l.target_id||'')+'</span></td>'+
+          '<td>'+esc(l.ip_address||'—')+'</td>'+
+          '<td><button class="linkBtn auditDetail" type="button" data-id="'+esc(l.id)+'">詳細</button></td>'+
+        '</tr>'
+      );
+      $('#auditTableHost').innerHTML=dataTable(['日時','操作者','権限','操作','対象','IP','詳細'],rows);
+
+      document.querySelectorAll('.auditDetail').forEach(btn=>{
+        btn.onclick=()=>{
+          const l=logs.find(x=>x.id===btn.dataset.id);
+          if(!l) return;
+          const pretty=v=>v?'<pre style="white-space:pre-wrap;overflow:auto;background:#f8fafc;padding:12px;border-radius:10px;border:1px solid var(--line)">'+esc(JSON.stringify(v,null,2))+'</pre>':'<div class="empty">なし</div>';
+          $('#auditDetailHost').innerHTML=
+            '<section class="card section">'+
+              '<div class="quoteDetailHead">'+
+                '<div><h2>監査ログ詳細</h2><p class="sectionDesc">'+esc(actionLabel(l.action))+' / '+esc(dateText(l.created_at))+'</p></div>'+
+                '<button id="auditDetailClose" class="ghost" type="button">閉じる</button>'+
+              '</div>'+
+              '<div class="row"><span class="pill">操作者 '+esc(l.actor_name||'system')+'</span><span class="pill">IP '+esc(l.ip_address||'—')+'</span></div>'+
+              '<p class="muted">Request ID: '+esc(l.request_id||'—')+'</p>'+
+              '<p class="muted">User-Agent: '+esc(l.user_agent||'—')+'</p>'+
+              '<h3>変更前</h3>'+pretty(l.before_data)+
+              '<h3>変更後</h3>'+pretty(l.after_data)+
+            '</section>';
+          $('#auditDetailClose').onclick=()=>{$('#auditDetailHost').innerHTML='';};
+          $('#auditDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
+        };
+      });
+    }
+
+    const actionOptions=[...new Set(logs.map(l=>l.action).filter(Boolean))].sort()
+      .map(a=>'<option value="'+esc(a)+'">'+esc(actionLabel(a))+'</option>').join('');
+
+    const sessionRows=sessions.map(x=>
+      '<tr>'+
+        '<td><strong>'+esc(x.display_name||'—')+'</strong>'+(x.is_current?' <span class="pill good">現在</span>':'')+'<br><span class="muted">'+esc(x.email||'')+'</span></td>'+
+        '<td>'+esc(x.aal||'—')+'</td>'+
+        '<td>'+esc(x.ip||'—')+'</td>'+
+        '<td>'+esc(dateText(x.created_at))+'</td>'+
+        '<td>'+esc(dateText(x.updated_at))+'</td>'+
+        '<td><span class="muted">'+esc(x.user_agent||'—')+'</span></td>'+
+      '</tr>'
+    );
+
+    $('#home').innerHTML=
+      pageIntro('監査ログ','重要操作の履歴と現在のログインセッションを確認します。')+
+      kpis([
+        ['監査ログ',data.stats?.log_count||0],
+        ['現在のセッション',data.stats?.session_count||0],
+        ['AAL2セッション',data.stats?.aal2_sessions||0],
+        ['30日以内の操作者',data.stats?.actors_30d||0]
+      ])+
+      '<section class="card section">'+
+        '<h2>操作履歴</h2>'+
+        '<div class="row">'+
+          '<div class="field" style="flex:2;min-width:240px"><label>検索</label><input id="auditSearch" placeholder="操作者・対象・IP・Request ID"></div>'+
+          '<div class="field" style="flex:1;min-width:220px"><label>操作</label><select id="auditActionFilter"><option value="">すべて</option>'+actionOptions+'</select></div>'+
+        '</div>'+
+        '<div id="auditDetailHost"></div>'+
+        '<div id="auditTableHost"></div>'+
+      '</section>'+
+      '<section class="card section">'+
+        '<h2>現在のログインセッション</h2>'+
+        dataTable(['ユーザー','AAL','IP','開始','更新','端末情報'],sessionRows)+
+      '</section>';
+
+    $('#auditSearch').oninput=renderLogRows;
+    $('#auditActionFilter').onchange=renderLogRows;
+    renderLogRows();
+  }
+
   async function renderSecurity(){
     const [{data:{session}},aal,factors]=await Promise.all([
       supabase.auth.getSession(),
@@ -2445,6 +2574,7 @@
       if(page==='deliveries') return await renderDeliveries();
       if(page==='support') return await renderSupport();
       if(page==='accounts') return await renderAccounts();
+      if(page==='audit') return await renderAudit();
       if(page==='security') return await renderSecurity();
       if(page==='settings') return await renderSettings();
       if(page==='assets') return await renderAssets();
