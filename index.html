@@ -1019,7 +1019,10 @@
   }
 
   async function renderCustomerQuoteCreate(preselectedCustomerId=null){
-    const customers=await rpc('internal_customers_list');
+    const [customers,products]=await Promise.all([
+      rpc('internal_customers_list'),
+      rpc('internal_products_list')
+    ]);
     const customerOptions=(customers||[]).map(c=>
       '<option value="'+esc(c.id)+'" '+(c.id===preselectedCustomerId?'selected':'')+'>'+esc(c.customer_code||'—')+' / '+esc(c.name||'')+'</option>'
     ).join('');
@@ -1068,7 +1071,13 @@
           '</section>'+
           '<section class="formSection">'+
             '<div class="formSectionHead"><span class="sectionNo">02</span><h3>見積明細</h3></div>'+
-            '<div class="row between"><span class="muted">物件名・型番／数量／税抜単価／仕入単価</span><button id="quoteCreateAddItem" class="ghost" type="button">＋ 明細追加</button></div>'+
+            '<div class="row" style="margin-bottom:10px">'+
+              '<div class="field" style="flex:1;min-width:260px;margin:0"><label>商品マスタから追加</label><select id="quoteProductPicker"><option value="">商品を選択してください</option>'+
+                (products||[]).filter(p=>p.is_active!==false).map(p=>'<option value="'+esc(p.id)+'">'+esc(p.product_code||'—')+' / '+esc(p.name)+' / '+esc(money(p.sale_price))+'</option>').join('')+
+              '</select></div>'+
+              '<div style="align-self:end"><button id="quoteAddProduct" class="primary" type="button">商品を明細へ追加</button></div>'+
+            '</div>'+
+            '<div class="row between"><span class="muted">商品名／数量／税抜単価／仕入単価。自由入力明細も追加できます。</span><button id="quoteCreateAddItem" class="ghost" type="button">＋ 自由明細</button></div>'+
             '<div id="quoteCreateItems" class="quoteItems">'+quoteItemRow()+'</div>'+
           '</section>'+
           '<section class="formSection">'+
@@ -1173,6 +1182,23 @@
     };
 
     bindQuoteItems(itemsHost,$('#quoteCreateAddItem'));
+    $('#quoteAddProduct').onclick=()=>{
+      const id=$('#quoteProductPicker').value;
+      const p=(products||[]).find(x=>x.id===id);
+      if(!p){ toast('商品を選択してください'); return; }
+      let expected=null;
+      if(Number(p.lead_time_days||0)>0){
+        const d=new Date(); d.setDate(d.getDate()+Number(p.lead_time_days));
+        expected=d.toISOString().slice(0,10);
+      }
+      itemsHost.insertAdjacentHTML('beforeend',quoteItemRow({
+        product_id:p.id,description:p.name,manufacturer:p.manufacturer,supplier_name:p.supplier_name,unit:p.unit||'台',
+        quantity:1,unit_price:p.sale_price||0,cost_price:p.cost_price||0,procurement_target:p.procurement_target!==false,
+        expected_delivery_date:expected
+      }));
+      bindQuoteItems(itemsHost,$('#quoteCreateAddItem'));
+      recalc();
+    };
     bindResidualRemove();
     $('#quoteCreateAddResidual').onclick=()=>{
       residualHost.insertAdjacentHTML('beforeend',residualRow());
@@ -1209,7 +1235,7 @@
         });
         closeAppModal();
         toast('見積を登録しました');
-        await go('quotes');
+        await go('sales');
       }catch(err){
         notice('#quoteCreateMsg',err.message||String(err));
       }finally{
@@ -1636,8 +1662,17 @@
   }
 
   function quoteItemRow(item={}){
+    const meta=[item.manufacturer,item.supplier_name,item.unit,item.procurement_target===false?'仕入対象外':(item.procurement_target?'仕入対象':'')].filter(Boolean).join(' / ');
     return '<div class="quoteItemRow" data-quote-item-row>'+
-      '<div class="field descField"><label>明細名</label><input class="qi-desc" required value="'+esc(item.description||'')+'" placeholder="例：システム保守費用"></div>'+
+      '<input class="qi-product-id" type="hidden" value="'+esc(item.product_id||'')+'">'+
+      '<input class="qi-manufacturer" type="hidden" value="'+esc(item.manufacturer||'')+'">'+
+      '<input class="qi-supplier" type="hidden" value="'+esc(item.supplier_name||'')+'">'+
+      '<input class="qi-unit-name" type="hidden" value="'+esc(item.unit||'台')+'">'+
+      '<input class="qi-procure" type="hidden" value="'+esc(item.procurement_target===false?'false':'true')+'">'+
+      '<input class="qi-expected" type="hidden" value="'+esc(item.expected_delivery_date||'')+'">'+
+      '<div class="field descField"><label>明細名</label><input class="qi-desc" required value="'+esc(item.description||'')+'" placeholder="例：システム保守費用">'+
+        (meta?'<div class="muted" style="font-size:11px;margin-top:4px">'+esc(meta)+'</div>':'')+
+      '</div>'+
       '<div class="field"><label>数量</label><input class="qi-qty" type="number" min="0" step="0.01" required value="'+esc(item.quantity ?? 1)+'"></div>'+
       '<div class="field"><label>単価</label><input class="qi-unit" type="number" min="0" step="1" required value="'+esc(item.unit_price ?? 0)+'"></div>'+
       '<div class="field"><label>原価</label><input class="qi-cost" type="number" min="0" step="1" value="'+esc(item.cost_price ?? 0)+'"></div>'+
@@ -1655,7 +1690,15 @@
       const cost_price=Number(row.querySelector('.qi-cost').value||0);
       if(!description) throw new Error((index+1)+'行目の明細名を入力してください。');
       if(quantity<0||unit_price<0||cost_price<0) throw new Error('数量・単価・原価は0以上で入力してください。');
-      return {description,quantity,unit_price,cost_price};
+      return {
+        product_id:row.querySelector('.qi-product-id')?.value||null,
+        description,quantity,unit_price,cost_price,
+        manufacturer:row.querySelector('.qi-manufacturer')?.value||null,
+        supplier_name:row.querySelector('.qi-supplier')?.value||null,
+        unit:row.querySelector('.qi-unit-name')?.value||'台',
+        procurement_target:(row.querySelector('.qi-procure')?.value||'true')==='true',
+        expected_delivery_date:row.querySelector('.qi-expected')?.value||null
+      };
     });
   }
 
