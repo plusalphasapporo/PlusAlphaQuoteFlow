@@ -4399,7 +4399,7 @@
             '<div class="modalGrid3">'+
               '<div class="field"><label>Contacts List API URL</label><input id="callconnectContactsApiUrl" type="url" value="'+esc(callconnectApi?.contacts_api_url||'')+'" placeholder="CallConnect API仕様の Try it out! で表示されたURL"></div>'+
               '<div class="field"><label>Contacts Create API URL</label><input id="callconnectContactsCreateApiUrl" type="url" value="'+esc(callconnectApi?.contacts_create_api_url||'')+'" placeholder="Contact作成APIの Try it out! で表示されたURL"></div>'+
-              '<div class="field"><label>Records List API URL</label><input id="callconnectRecordsApiUrl" type="url" value="'+esc(callconnectApi?.records_api_url||'')+'" placeholder="CallConnect API仕様の Try it out! で表示されたURL"></div>'+
+              '<div class="field"><label>Records Search API URL</label><input id="callconnectRecordsApiUrl" type="url" value="'+esc(callconnectApi?.records_api_url||'')+'" placeholder="CallConnect API仕様の Try it out! で表示されたURL"></div>'+
             '</div>'+
             '<div class="notice">接続先URLは固定値を推測せず、CallConnect公式API仕様画面で表示されたURLを登録します。</div>'+
             '<button class="ghost" type="submit">API URLを保存</button>'+
@@ -4415,7 +4415,7 @@
           (callconnectApi?.last_api_error?'<div class="notice error">最終APIエラー: '+esc(callconnectApi.last_api_error)+'</div>':'')+
           '<div id="callconnectApiKeyMsg" class="notice hidden"></div>'+
           '<div class="supportQuickActions" style="margin-top:14px">'+
-            '<button id="testCallConnectApi" class="primary" type="button" '+((callconnectApi?.api_key_configured&&callconnectApi?.contacts_api_url_configured)?'':'disabled')+'>API接続テスト</button>'+
+            '<button id="testCallConnectApi" class="primary" type="button" '+((callconnectApi?.api_key_configured&&callconnectApi?.contacts_api_url_configured)?'':'disabled')+'>API接続テスト</button><button id="syncCallConnectRecords" class="ghost" type="button" '+((callconnectApi?.api_key_configured&&callconnectApi?.records_api_url_configured)?'':'disabled')+'>通話履歴を同期</button>'+
           '</div>'+
           '<div id="callconnectApiTestMsg" class="notice hidden"></div>'+
         '</section>'+
