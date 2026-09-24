@@ -2114,6 +2114,18 @@
         '<p class="muted">QuoteFlow CloudではMFAを無効化できません。Authenticatorを変更する場合は、新しい端末へ登録を移行してから旧端末を外す運用にします。</p>'+
       '</section>'+
       '<section class="card section">'+
+        '<h2>パスワード変更</h2>'+
+        '<p class="sectionDesc">現在のパスワードを確認してから変更します。変更後は他の端末のセッションを終了します。</p>'+
+        '<form id="passwordChangeForm">'+
+          '<div class="field"><label>現在のパスワード</label><input id="currentPassword" type="password" autocomplete="current-password" required></div>'+
+          '<div class="field"><label>新しいパスワード</label><input id="newPassword" type="password" autocomplete="new-password" minlength="12" required></div>'+
+          '<div class="field"><label>新しいパスワード（確認）</label><input id="newPasswordConfirm" type="password" autocomplete="new-password" minlength="12" required></div>'+
+          '<p class="muted">12文字以上で、英大文字・英小文字・数字・記号をそれぞれ1文字以上使用してください。</p>'+
+          '<button class="primary" type="submit">パスワードを変更</button>'+
+        '</form>'+
+        '<div id="passwordChangeMsg" class="notice hidden"></div>'+
+      '</section>'+
+      '<section class="card section">'+
         '<h2>信頼済み端末</h2>'+
         '<p class="sectionDesc">信頼済みにすると、このブラウザにMFA済みセッションを保持します。共有PCでは無効にしてください。</p>'+
         '<label class="row" style="margin:12px 0"><input id="securityTrustDevice" type="checkbox" '+(trusted?'checked':'')+'> この端末を信頼する</label>'+
@@ -2126,6 +2138,41 @@
         '<button id="signOutOthersBtn" class="orange" type="button">他の端末をログアウト</button>'+
         '<div id="sessionManageMsg" class="notice hidden"></div>'+
       '</section>';
+
+    $('#passwordChangeForm').onsubmit=async e=>{
+      e.preventDefault();
+      const btn=e.submitter;
+      if(btn) btn.disabled=true;
+      try{
+        const currentPassword=$('#currentPassword').value;
+        const newPassword=$('#newPassword').value;
+        const confirm=$('#newPasswordConfirm').value;
+
+        if(newPassword!==confirm) throw new Error('新しいパスワードが一致しません。');
+        if(newPassword.length<12) throw new Error('新しいパスワードは12文字以上にしてください。');
+        if(!/[A-Z]/.test(newPassword)) throw new Error('英大文字を1文字以上含めてください。');
+        if(!/[a-z]/.test(newPassword)) throw new Error('英小文字を1文字以上含めてください。');
+        if(!/[0-9]/.test(newPassword)) throw new Error('数字を1文字以上含めてください。');
+        if(!/[^A-Za-z0-9]/.test(newPassword)) throw new Error('記号を1文字以上含めてください。');
+        if(currentPassword===newPassword) throw new Error('現在のパスワードとは異なるパスワードを設定してください。');
+
+        const {error}=await supabase.auth.updateUser({
+          current_password:currentPassword,
+          password:newPassword
+        });
+        if(error) throw error;
+
+        const otherSessions=await supabase.auth.signOut({scope:'others'});
+        if(otherSessions.error) throw otherSessions.error;
+
+        $('#passwordChangeForm').reset();
+        notice('#passwordChangeMsg','パスワードを変更し、他の端末のセッションを終了しました。現在の端末はログインを維持しています。',true);
+      }catch(err){
+        notice('#passwordChangeMsg',err.message||String(err));
+      }finally{
+        if(btn) btn.disabled=false;
+      }
+    };
 
     $('#securityTrustSave').onclick=()=>{
       const next=$('#securityTrustDevice').checked;
