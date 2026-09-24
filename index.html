@@ -5127,19 +5127,46 @@
     }
     const aiState=bootData?.integrations?.ai?.state||'disabled';
     const aiStateText={connected:'接続済み',degraded:'一部障害',manual:'手動運用',disabled:'未接続'}[aiState]||aiState;
+    const teamviewerState=bootData?.integrations?.teamviewer?.state||'disabled';
+    const teamviewerStateText={connected:'接続済み',degraded:'一部障害',manual:'手動運用',disabled:'未接続'}[teamviewerState]||teamviewerState;
     const assistSectionNo=internal?'02':'01';
     const firstLineAssist=!customer
-      ? '<section class="formSection"><div class="formSectionHead"><span class="sectionNo">'+assistSectionNo+'</span><h3>一次対応フロー</h3></div>'+
-          '<div class="notice"><strong>受付内容を確認 → ナレッジ/マニュアルで切り分け → 顧客へ案内 → 解決または自社へ引継ぎ</strong><br><span class="muted">候補は自動送信しません。内容を確認してから返信してください。</span></div>'+
-          '<div class="modalGrid2">'+
-            '<div class="item"><strong>受付経路</strong><p>'+esc(intakeSource)+'</p></div>'+
-            '<div class="item"><strong>AI連携状態</strong><p>'+esc(aiStateText)+'</p></div>'+
+      ? '<section class="formSection"><div class="formSectionHead"><span class="sectionNo">'+assistSectionNo+'</span><h3>サポート対応フロー</h3></div>'+
+          '<div class="supportFlow">'+
+            '<div class="supportStep done"><span class="supportStepNum">1</span><strong>受付</strong><small>'+esc(intakeSource)+'</small></div>'+
+            '<div class="supportStep '+(attachments.length?'done':'active')+'"><span class="supportStepNum">2</span><strong>内容・写真確認</strong><small>'+esc(attachments.length)+'件の写真・添付</small></div>'+
+            '<div class="supportStep active"><span class="supportStepNum">3</span><strong>AI・ナレッジ</strong><small>AI・ナレッジ・マニュアルで原因切り分け</small></div>'+
+            '<div class="supportStep"><span class="supportStepNum">4</span><strong>TeamViewer</strong><small>必要時のみ顧客PCへ遠隔接続</small></div>'+
+            '<div class="supportStep"><span class="supportStepNum">5</span><strong>完了 / 自社引継ぎ</strong><small>難しい場合は自社担当へ</small></div>'+
           '</div>'+
-          '<div class="field"><label>ナレッジ・マニュアル検索</label><input id="ticketKnowledgeSearch" value="'+esc(t.subject||'')+'" placeholder="症状・機種名・エラー内容など"></div>'+
-          '<div id="ticketKnowledgeCandidates"></div>'+
-          '<div class="row" style="margin-top:12px">'+
-            (t.status!=='closed'?'<button id="ticketAssistSolved" class="green" type="button">解決して完了</button>':'')+
-            (support&&t.status!=='closed'?'<button id="ticketAssistEscalate" class="orange" type="button">解決できない → 自社へ引継ぎ</button>':'')+
+          '<div class="supportWorkGrid">'+
+            '<div>'+
+              '<div class="notice"><strong>内容と写真を確認してから、AI・ナレッジ・マニュアルで対応方法を探します。</strong><br><span class="muted">候補は自動送信しません。内容を確認してから顧客へ案内します。</span></div>'+
+              '<div class="modalGrid2">'+
+                '<div class="item"><strong>受付経路</strong><p>'+esc(intakeSource)+'</p></div>'+
+                '<div class="item"><strong>AI連携</strong><p>'+esc(aiStateText)+'</p></div>'+
+              '</div>'+
+              '<div class="field"><label>AI・ナレッジ・マニュアル検索</label><input id="ticketKnowledgeSearch" value="'+esc((t.subject||'')+' '+displayDescription)+'" placeholder="症状・機種名・エラー内容など"></div>'+
+              '<div id="ticketKnowledgeCandidates"></div>'+
+            '</div>'+
+            '<div>'+
+              '<section class="remotePanel">'+
+                '<h4>TeamViewer 遠隔対応</h4>'+
+                '<div class="hint">連携状態: '+esc(teamviewerStateText)+'</div>'+
+                '<p class="muted">直接設定・障害対応が必要な場合のみ使用します。顧客の同意を確認してから接続します。</p>'+
+                '<div class="field"><label>TeamViewer ID / セッションコード</label><input id="ticketTeamViewerId" placeholder="顧客から確認したIDまたはセッションコード"></div>'+
+                '<div class="field"><label>遠隔で行う内容</label><textarea id="ticketRemoteAction" rows="3" placeholder="例：プリンター設定変更、共有フォルダ接続確認"></textarea></div>'+
+                '<div class="supportQuickActions">'+
+                  '<button id="ticketRemoteStart" class="orange" type="button">遠隔対応を履歴に記録</button>'+
+                  (t.status!=='closed'?'<button id="ticketRemoteSolved" class="green" type="button">遠隔で解決 → 完了</button>':'')+
+                '</div>'+
+                '<div id="ticketRemoteMsg" class="notice hidden"></div>'+
+              '</section>'+
+            '</div>'+
+          '</div>'+
+          '<div class="supportQuickActions">'+
+            (t.status!=='closed'?'<button id="ticketAssistSolved" class="green" type="button">案内で解決 → 完了</button>':'')+
+            (support&&t.status!=='closed'?'<button id="ticketAssistEscalate" class="orange" type="button">解決できない → 自社担当へ引継ぎ</button>':'')+
           '</div>'+
         '</section>'
       : '';
@@ -5154,8 +5181,9 @@
         ).join('')
       : '<div class="empty">メッセージはまだありません。</div>';
 
+    const attachmentSourceLabel=a=>({customer:'顧客から',internal:'自社から',support:'サポート会社'}[a.uploader_group]||'送信元不明');
     const attachmentRows=attachments.map(a=>
-      '<tr><td>'+esc(a.file_name||'—')+'</td><td>'+esc(a.visibility?visibilityLabel(a.visibility):'顧客向け')+'</td><td>'+esc(a.size_bytes||0)+'</td><td>'+esc(dateText(a.created_at))+'</td></tr>'
+      '<tr><td>'+esc(a.file_name||'—')+'</td><td><strong>'+esc(attachmentSourceLabel(a))+'</strong>'+(a.uploader_name?'<br><span class="muted">'+esc(a.uploader_name)+'</span>':'')+'</td><td>'+esc(a.visibility?visibilityLabel(a.visibility):'顧客向け')+'</td><td>'+esc(a.size_bytes||0)+'</td><td>'+esc(dateText(a.created_at))+'</td></tr>'
     );
 
     const handoffRows=handoffs.map(h=>
@@ -5220,11 +5248,56 @@
         '<section class="section"><h3>対応履歴・メッセージ</h3>'+messagesHtml+
           '<form id="ticketMessageForm" class="card section" style="box-shadow:none">'+visibilitySelect+'<div class="field"><label>返信</label><textarea id="ticketMessageBody" rows="4" required></textarea></div><button class="primary" type="submit">メッセージを送信</button></form><div id="ticketMessageMsg" class="notice hidden"></div></section>'+
         (!customer?'<section class="section"><h3>引き継ぎ履歴</h3>'+dataTable(internal?['状態','理由','次の対応','作成日','操作']:['状態','理由','次の対応','作成日'],handoffRows)+'</section>':'')+
-        '<section class="section"><h3>添付ファイル</h3>'+dataTable(['ファイル名','公開範囲','サイズ(bytes)','作成日'],attachmentRows)+'</section>'+
+        '<section class="section"><div class="row between"><div><h3>写真・添付ファイル</h3><p class="sectionDesc">'+(support?'顧客または自社から届いた写真を確認します。':customer?'サポート会社へ追加の写真を送れます。':'サポート会社へ追加の写真を送れます。')+'</p></div>'+
+          ((customer||internal)&&t.status!=='closed'?'<label class="ghost" style="display:inline-flex;align-items:center;cursor:pointer">＋ 写真を追加<input id="ticketAttachmentInput" type="file" accept="image/*,.pdf" multiple style="display:none"></label>':'')+
+        '</div><div id="ticketAttachmentGallery" class="attachmentGallery"></div>'+dataTable(['ファイル名','送信元','公開範囲','サイズ(bytes)','作成日'],attachmentRows)+'<div id="ticketAttachmentMsg" class="notice hidden"></div></section>'+
       '</section>';
 
     $('#ticketDetailClose').onclick=()=>{$('#ticketDetailHost').innerHTML='';};
     $('#ticketDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
+
+    const attachmentGallery=$('#ticketAttachmentGallery');
+    if(attachmentGallery){
+      if(!attachments.length){
+        attachmentGallery.innerHTML='<div class="empty">写真・添付ファイルはまだありません。</div>';
+      }else{
+        attachmentGallery.innerHTML=attachments.map(a=>
+          '<article class="attachmentCard" data-attachment-id="'+esc(a.id)+'">'+
+            '<span class="attachmentSource '+esc(a.uploader_group||'')+'">'+esc(attachmentSourceLabel(a))+'</span>'+
+            '<div class="attachmentPreview muted">読み込み中...</div>'+
+            '<div class="fileMeta">'+esc(a.file_name||'—')+(a.uploader_name?'<br>'+esc(a.uploader_name):'')+'</div>'+
+          '</article>'
+        ).join('');
+        for(const a of attachments){
+          const card=document.querySelector('[data-attachment-id="'+CSS.escape(String(a.id))+'"]');
+          if(!card) continue;
+          const preview=card.querySelector('.attachmentPreview');
+          try{
+            const signed=await supabase.storage.from('support-attachments').createSignedUrl(a.storage_path,300);
+            if(signed.error) throw signed.error;
+            const url=signed.data?.signedUrl;
+            const imageLike=/\.(png|jpe?g|gif|webp|bmp)$/i.test(String(a.file_name||''));
+            preview.innerHTML=imageLike
+              ? '<a href="'+esc(url)+'" target="_blank" rel="noopener"><img src="'+esc(url)+'" alt="'+esc(a.file_name||'添付画像')+'"></a>'
+              : '<a class="linkBtn" href="'+esc(url)+'" target="_blank" rel="noopener">添付を開く</a>';
+          }catch(_){
+            preview.textContent='プレビューできません';
+          }
+        }
+      }
+    }
+
+    const attachmentInput=$('#ticketAttachmentInput');
+    if(attachmentInput) attachmentInput.onchange=async()=>{
+      const files=[...(attachmentInput.files||[])];
+      if(!files.length) return;
+      try{
+        notice('#ticketAttachmentMsg','アップロードしています...',true);
+        await uploadSupportAttachments(t.id,files,customer?'customer':'support');
+        toast('写真を追加しました');
+        await renderTicketDetail(t.id);
+      }catch(err){notice('#ticketAttachmentMsg',err.message||String(err));}
+    };
 
     if(!customer){
       const knowledgeSource=(knowledgeArticles||[]).filter(x=>x.is_active!==false);
@@ -5274,9 +5347,36 @@
       const escalate=$('#ticketAssistEscalate');
       if(escalate) escalate.onclick=()=>{
         $('#ticketHandoffBox')?.classList.remove('hidden');
+        if($('#handoffReason') && !$('#handoffReason').value) $('#handoffReason').value='AI・ナレッジ・マニュアルおよび遠隔対応で解決できないため';
+        if($('#handoffNextAction') && !$('#handoffNextAction').value) $('#handoffNextAction').value='自社担当者で詳細調査・現地対応要否を判断';
         $('#handoffReason')?.focus();
         $('#ticketHandoffBox')?.scrollIntoView({behavior:'smooth',block:'center'});
       };
+
+      const recordRemote=async(closeAfter=false)=>{
+        const remoteId=($('#ticketTeamViewerId')?.value||'').trim();
+        const action=($('#ticketRemoteAction')?.value||'').trim();
+        if(!remoteId) return notice('#ticketRemoteMsg','TeamViewer ID / セッションコードを入力してください。');
+        if(!action) return notice('#ticketRemoteMsg','遠隔で行う内容を入力してください。');
+        try{
+          await rpc('post_ticket_message',{
+            p_ticket_id:t.id,
+            p_visibility:'support',
+            p_body:'【TeamViewer遠隔対応】\nID / セッションコード: '+remoteId+'\n対応内容: '+action
+          });
+          if(closeAfter){
+            await rpc('close_support_ticket',{p_ticket_id:t.id});
+            toast('TeamViewer対応で解決・完了しました');
+          }else{
+            toast('TeamViewer対応を履歴へ記録しました');
+          }
+          await renderTicketDetail(t.id);
+        }catch(err){notice('#ticketRemoteMsg',err.message||String(err));}
+      };
+      const remoteStart=$('#ticketRemoteStart');
+      if(remoteStart) remoteStart.onclick=()=>recordRemote(false);
+      const remoteSolved=$('#ticketRemoteSolved');
+      if(remoteSolved) remoteSolved.onclick=()=>recordRemote(true);
     }
 
     if(internal){
@@ -5377,7 +5477,7 @@
 
       $('#home').innerHTML=
         pageIntro('問い合わせ','問い合わせの作成・返信・履歴確認ができます。')+
-        '<section class="card section"><h2>新しく問い合わせる</h2><p class="sectionDesc">件名と内容を入力してください。</p><form id="ticketForm"><div class="field"><label>件名</label><input id="subject" required></div><div class="field"><label>内容</label><textarea id="description" rows="5"></textarea></div><button class="green" type="submit">問い合わせを送信</button></form><div id="ticketMsg" class="notice hidden"></div></section>'+
+        '<section class="card section"><h2>新しく問い合わせる</h2><p class="sectionDesc">内容と、必要に応じてエラー画面や機器の写真を送ってください。</p><form id="ticketForm"><div class="field"><label>件名</label><input id="subject" required></div><div class="field"><label>内容</label><textarea id="description" rows="5"></textarea></div><div class="field"><label>写真・スクリーンショット</label><input id="customerTicketFiles" type="file" accept="image/*,.pdf" multiple><small class="muted">エラー画面、機器、配線など。複数選択できます。</small></div><button class="green" type="submit">問い合わせを送信</button></form><div id="ticketMsg" class="notice hidden"></div></section>'+
         listToolbar('ticketList',data,'status','番号・件名',[
           ['priority_desc','優先度が高い順'],['created_desc','作成が新しい順'],['updated_desc','更新が新しい順']
         ])+
@@ -5407,12 +5507,15 @@
         e.preventDefault();
         const btn=e.submitter;if(btn)btn.disabled=true;
         try{
-          await rpc('create_customer_ticket',{
+          const result=await rpc('create_customer_ticket',{
             p_asset_id:null,p_contract_id:null,
             p_subject:$('#subject').value.trim(),
             p_description:$('#description').value.trim()||null
           });
-          notice('#ticketMsg','問い合わせを送信しました。',true);
+          const files=[...($('#customerTicketFiles')?.files||[])];
+          const ticketId=result?.id||result?.ticket_id;
+          if(ticketId && files.length) await uploadSupportAttachments(ticketId,files,'customer');
+          notice('#ticketMsg','問い合わせを送信しました。'+(files.length?' 写真 '+files.length+'件を添付しました。':''),true);
           $('#ticketForm').reset();
           setTimeout(()=>go('support'),450);
         }catch(err){notice('#ticketMsg',err.message||String(err));}
@@ -5442,7 +5545,7 @@
         ['完了',summary.closed||0]
       ])+
       (internal
-        ? '<section class="card section"><div class="row between"><div><h2>新規サポート案件</h2><p class="sectionDesc">顧客を選択し、必要に応じて契約・機器を紐づけます。</p></div><button id="supportCaseCreateToggle" class="primary" type="button">＋ 新規案件</button></div><div id="supportCaseCreateBox" class="hidden" style="margin-top:14px"><form id="supportCaseCreateForm"><div class="modalGrid2"><div class="field"><label>顧客</label><select id="supportCaseCustomer" required><option value="">選択してください</option>'+(customers||[]).map(x=>'<option value="'+esc(x.id)+'">'+esc(x.customer_code||'—')+' / '+esc(x.name||'')+'</option>').join('')+'</select></div><div class="field"><label>優先度</label><select id="supportCasePriority"><option value="normal">通常</option><option value="high">高</option><option value="urgent">緊急</option><option value="low">低</option></select></div></div><div id="supportCaseContextFields"></div><div class="field"><label>件名</label><input id="supportCaseSubject" required></div><div class="field"><label>内容</label><textarea id="supportCaseDescription" rows="4"></textarea></div><button class="primary" type="submit">案件を登録</button></form><div id="supportCaseCreateMsg" class="notice hidden"></div></div></section>'
+        ? '<section class="card section"><div class="row between"><div><h2>新規サポート案件</h2><p class="sectionDesc">顧客を選択し、必要に応じて契約・機器を紐づけます。</p></div><button id="supportCaseCreateToggle" class="primary" type="button">＋ 新規案件</button></div><div id="supportCaseCreateBox" class="hidden" style="margin-top:14px"><form id="supportCaseCreateForm"><div class="modalGrid2"><div class="field"><label>顧客</label><select id="supportCaseCustomer" required><option value="">選択してください</option>'+(customers||[]).map(x=>'<option value="'+esc(x.id)+'">'+esc(x.customer_code||'—')+' / '+esc(x.name||'')+'</option>').join('')+'</select></div><div class="field"><label>優先度</label><select id="supportCasePriority"><option value="normal">通常</option><option value="high">高</option><option value="urgent">緊急</option><option value="low">低</option></select></div></div><div id="supportCaseContextFields"></div><div class="field"><label>件名</label><input id="supportCaseSubject" required></div><div class="field"><label>内容</label><textarea id="supportCaseDescription" rows="4"></textarea></div><div class="field"><label>サポート会社へ送る写真・スクリーンショット</label><input id="supportCaseFiles" type="file" accept="image/*,.pdf" multiple><small class="muted">自社で受け取った写真や、確認してほしい画面を添付できます。</small></div><button class="primary" type="submit">案件を登録</button></form><div id="supportCaseCreateMsg" class="notice hidden"></div></div></section>'
         : '')+
       listToolbar('supportCaseList',data,'status','番号・顧客・件名・機器・契約・担当者',[
         ['priority_desc','優先度が高い順'],['updated_desc','更新が新しい順'],['created_desc','作成が新しい順']
@@ -5511,7 +5614,9 @@
             p_description:$('#supportCaseDescription').value.trim()||null,
             p_priority:$('#supportCasePriority').value
           });
-          notice('#supportCaseCreateMsg','サポート案件を登録しました。',true);
+          const files=[...($('#supportCaseFiles')?.files||[])];
+          if(result?.id && files.length) await uploadSupportAttachments(result.id,files,'support');
+          notice('#supportCaseCreateMsg','サポート案件を登録しました。'+(files.length?' 写真 '+files.length+'件を添付しました。':''),true);
           toast('サポート案件を登録しました');
           if(result?.id) await renderTicketDetail(result.id);
         }catch(err){notice('#supportCaseCreateMsg',err.message||String(err));}
@@ -6349,14 +6454,14 @@
   async function renderSupportNew(){
     const customers=await rpc('support_customer_directory');
     $('#home').innerHTML=
-      pageIntro('新規問い合わせ','電話受付など、担当顧客の問い合わせを手動で登録します。')+
+      pageIntro('問い合わせ受付','CallConnectの入電、顧客または自社からのチャットを案件として登録します。')+
       '<section class="card section">'+
         '<form id="supportNewForm">'+
           '<div class="modalGrid2">'+
             '<div class="field"><label>顧客</label><select id="supportNewCustomer" required><option value="">選択してください</option>'+
               (customers||[]).map(c=>'<option value="'+esc(c.id)+'">'+esc(c.customer_code||'—')+' / '+esc(c.name)+'</option>').join('')+
             '</select></div>'+
-            '<div class="field"><label>受付経路</label><select id="supportNewSource"><option value="callconnect">CallConnect</option><option value="customer_chat">顧客チャット</option><option value="other">その他</option></select></div>'+
+            '<div class="field"><label>受付経路</label><select id="supportNewSource"><option value="callconnect">CallConnect 入電</option><option value="customer_chat">顧客からチャット</option><option value="internal_chat">自社からチャット</option><option value="other">その他</option></select></div>'+
             '<div class="field"><label>優先度</label><select id="supportNewPriority"><option value="normal">通常</option><option value="low">低</option><option value="high">高</option><option value="urgent">緊急</option></select></div>'+
             '<div class="field"><label>対象機器</label><select id="supportNewAsset"><option value="">指定なし</option></select></div>'+
             '<div class="field"><label>対象契約</label><select id="supportNewContract"><option value="">指定なし</option></select></div>'+
@@ -6386,7 +6491,7 @@
     $('#supportNewForm').onsubmit=async e=>{
       e.preventDefault(); const btn=e.submitter; if(btn) btn.disabled=true;
       try{
-        const sourceLabel={callconnect:'CallConnect',customer_chat:'顧客チャット',other:'その他'}[$('#supportNewSource').value]||'その他';
+        const sourceLabel={callconnect:'CallConnect 入電',customer_chat:'顧客からチャット',internal_chat:'自社からチャット',other:'その他'}[$('#supportNewSource').value]||'その他';
         const body=$('#supportNewDescription').value.trim();
         const result=await rpc('create_support_ticket',{
           p_customer_id:$('#supportNewCustomer').value,
