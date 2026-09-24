@@ -5,27 +5,75 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>QuoteFlow Cloud</title>
   <style>
-    :root{--navy:#07162f;--bg:#f5f7fb;--card:#fff;--ink:#172033;--muted:#667085;--line:#dfe6f1;--blue:#2563eb;--orange:#ea580c;--green:#059669;--red:#dc2626}
-    *{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,"Segoe UI","Noto Sans JP",sans-serif;background:var(--bg);color:var(--ink)}
-    header{height:68px;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 22px;position:sticky;top:0;z-index:10}
-    .brand{font-size:19px;font-weight:900}.sub{font-size:11px;opacity:.72;margin-top:2px}.wrap{max-width:1200px;margin:auto;padding:24px}
-    .login{max-width:460px;margin:8vh auto}.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:20px;box-shadow:0 10px 30px rgba(15,23,42,.06)}
-    .field{display:grid;gap:6px;margin:14px 0}.field label{font-size:12px;font-weight:800;color:#475569}.field input,.field textarea{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font:inherit}
-    button{border:0;border-radius:10px;padding:10px 14px;font:inherit;font-weight:800;cursor:pointer}.primary{background:var(--blue);color:#fff}.orange{background:var(--orange);color:#fff}.green{background:var(--green);color:#fff}.ghost{background:#fff;border:1px solid var(--line);color:var(--ink)}
-    .hidden{display:none!important}.muted{color:var(--muted)}.notice{padding:12px 14px;border-radius:10px;background:#eff6ff;color:#1e3a8a;margin:12px 0}.error{background:#fef2f2;color:#991b1b}.ok{background:#ecfdf5;color:#065f46}
-    .row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.between{justify-content:space-between}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:16px 0}
-    .kpi{background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px}.kpi .label{font-size:12px;color:var(--muted);font-weight:800}.kpi .value{font-size:30px;font-weight:900;margin-top:6px}
-    .section{margin-top:18px}.item{border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:10px}.item h3{margin:0 0 5px;font-size:14px}.item p{margin:4px 0;font-size:13px;color:#475569}
-    table{width:100%;border-collapse:collapse}th,td{padding:10px 12px;border-bottom:1px solid #edf1f6;text-align:left;font-size:13px}th{color:#64748b;background:#fafcff}
-    .pill{display:inline-flex;padding:5px 9px;border-radius:999px;background:#f8fafc;border:1px solid var(--line);font-size:12px;font-weight:800}.pill.good{background:#ecfdf5;color:#047857}.pill.bad{background:#fef2f2;color:#b91c1c}
-    #toast{position:fixed;right:18px;bottom:18px;background:#0f172a;color:#fff;padding:11px 14px;border-radius:10px;display:none;z-index:30}
-    @media(max-width:780px){.grid{grid-template-columns:repeat(2,1fr)}.wrap{padding:14px}header{padding:0 14px}}
+    :root{
+      --navy:#07162f;--navy2:#0e2448;--bg:#f5f7fb;--card:#fff;--ink:#172033;--muted:#667085;
+      --line:#dfe6f1;--blue:#2563eb;--blue2:#1d4ed8;--orange:#ea580c;--green:#059669;--red:#dc2626;
+      --soft:#eef4ff;--shadow:0 10px 30px rgba(15,23,42,.06)
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,-apple-system,"Segoe UI","Noto Sans JP",sans-serif;background:var(--bg);color:var(--ink)}
+    header{height:68px;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 22px;position:sticky;top:0;z-index:20}
+    .brand{font-size:19px;font-weight:900}.sub{font-size:11px;opacity:.72;margin-top:2px}
+    .wrap{max-width:1380px;margin:auto;padding:22px}
+    .login{max-width:460px;margin:8vh auto}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:20px;box-shadow:var(--shadow)}
+    .field{display:grid;gap:6px;margin:14px 0}.field label{font-size:12px;font-weight:800;color:#475569}
+    .field input,.field textarea,.field select{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font:inherit;background:#fff}
+    button{border:0;border-radius:10px;padding:10px 14px;font:inherit;font-weight:800;cursor:pointer}
+    button:disabled{opacity:.55;cursor:not-allowed}
+    .primary{background:var(--blue);color:#fff}.primary:hover{background:var(--blue2)}
+    .orange{background:var(--orange);color:#fff}.green{background:var(--green);color:#fff}
+    .ghost{background:#fff;border:1px solid var(--line);color:var(--ink)}
+    .hidden{display:none!important}.muted{color:var(--muted)}
+    .notice{padding:12px 14px;border-radius:10px;background:#eff6ff;color:#1e3a8a;margin:12px 0}
+    .error{background:#fef2f2;color:#991b1b}.ok{background:#ecfdf5;color:#065f46}
+    .row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.between{justify-content:space-between}
+    .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:16px 0}
+    .kpi{background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px}
+    .kpi .label{font-size:12px;color:var(--muted);font-weight:800}.kpi .value{font-size:30px;font-weight:900;margin-top:6px}
+    .section{margin-top:18px}.section h2{margin:0 0 6px}.sectionDesc{margin:0 0 14px;color:var(--muted);font-size:13px}
+    .item{border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:10px}
+    .item h3{margin:0 0 5px;font-size:14px}.item p{margin:4px 0;font-size:13px;color:#475569}
+    .tableWrap{overflow:auto;border:1px solid var(--line);border-radius:14px;background:#fff}
+    table{width:100%;border-collapse:collapse;min-width:720px}
+    th,td{padding:11px 12px;border-bottom:1px solid #edf1f6;text-align:left;font-size:13px;vertical-align:middle}
+    th{color:#64748b;background:#fafcff;position:sticky;top:0}
+    tr:last-child td{border-bottom:0}
+    .pill{display:inline-flex;align-items:center;gap:5px;padding:5px 9px;border-radius:999px;background:#f8fafc;border:1px solid var(--line);font-size:12px;font-weight:800}
+    .pill.good{background:#ecfdf5;color:#047857}.pill.bad{background:#fef2f2;color:#b91c1c}.pill.warn{background:#fff7ed;color:#c2410c}
+    .appShell{display:grid;grid-template-columns:230px minmax(0,1fr);gap:18px;align-items:start}
+    .side{position:sticky;top:90px;background:#fff;border:1px solid var(--line);border-radius:18px;padding:12px;box-shadow:var(--shadow)}
+    .sideTitle{padding:8px 10px 10px;font-size:11px;font-weight:900;color:#94a3b8;letter-spacing:.08em}
+    .navBtn{width:100%;display:flex;align-items:center;justify-content:flex-start;gap:10px;background:transparent;color:#334155;padding:11px 12px;margin:2px 0;border:1px solid transparent}
+    .navBtn:hover{background:#f8fafc}.navBtn.active{background:var(--soft);border-color:#c7d7ff;color:#1d4ed8}
+    .workspace{min-width:0}
+    .workspaceHead{background:#fff;border:1px solid var(--line);border-radius:18px;padding:17px 18px;box-shadow:var(--shadow)}
+    .workspaceHead h1{margin:0 0 4px;font-size:24px}.workspaceHead .meta{font-size:13px;color:var(--muted)}
+    .pageIntro{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin:18px 0 10px}
+    .pageIntro h2{margin:0;font-size:20px}.pageIntro p{margin:4px 0 0;color:var(--muted);font-size:13px}
+    .empty{padding:30px 16px;text-align:center;color:var(--muted);background:#fff;border:1px dashed #cbd5e1;border-radius:14px}
+    .amount{font-variant-numeric:tabular-nums;font-weight:800}
+    .hold{color:#b91c1c;font-weight:900}.normal{color:#047857;font-weight:800}
+    #toast{position:fixed;right:18px;bottom:18px;background:#0f172a;color:#fff;padding:11px 14px;border-radius:10px;display:none;z-index:40;box-shadow:0 12px 30px rgba(15,23,42,.25)}
+    @media(max-width:980px){
+      .appShell{grid-template-columns:1fr}.side{position:static}.sideTitle{display:none}
+      #navMenu{display:flex;gap:6px;overflow:auto}.navBtn{width:auto;white-space:nowrap}
+    }
+    @media(max-width:780px){
+      .grid{grid-template-columns:repeat(2,1fr)}.wrap{padding:12px}header{padding:0 12px}
+      .workspaceHead{padding:14px}.workspaceHead h1{font-size:20px}.pageIntro{align-items:flex-start;flex-direction:column}
+      .card{padding:16px}
+    }
   </style>
 </head>
 <body>
 <header>
   <div><div class="brand">QuoteFlow Cloud</div><div class="sub">PlusAlpha / Supabase Staging</div></div>
-  <div class="row"><span id="dbBadge" class="pill">接続確認中</span><span id="userBadge" class="pill hidden"></span><button id="logoutBtn" class="ghost hidden">ログアウト</button></div>
+  <div class="row">
+    <span id="dbBadge" class="pill">接続確認中</span>
+    <span id="userBadge" class="pill hidden"></span>
+    <button id="logoutBtn" class="ghost hidden">ログアウト</button>
+  </div>
 </header>
 
 <main class="wrap">
@@ -46,20 +94,37 @@
     <div id="mfaMsg" class="notice hidden"></div>
     <div id="mfaEnrollBox">
       <button id="enrollBtn" class="primary" type="button">Authenticatorを登録</button>
-      <div id="qrWrap" class="hidden" style="margin-top:14px"><img id="qr" alt="MFA QR" style="max-width:220px"><p id="secret" class="muted"></p></div>
+      <div id="qrWrap" class="hidden" style="margin-top:14px">
+        <img id="qr" alt="MFA QR" style="max-width:220px">
+        <p id="secret" class="muted"></p>
+      </div>
     </div>
     <div class="field"><label>6桁コード</label><input id="mfaCode" inputmode="numeric" autocomplete="one-time-code"></div>
     <button id="verifyBtn" class="primary" type="button">認証する</button>
   </section>
 
   <section id="appView" class="hidden">
-    <div class="row between">
-      <div><h1 id="pageTitle" style="margin-bottom:4px"></h1><div id="companyName" class="muted"></div></div>
-      <div id="integrations" class="row"></div>
+    <div class="appShell">
+      <aside class="side">
+        <div class="sideTitle">MENU</div>
+        <nav id="navMenu"></nav>
+      </aside>
+      <div class="workspace">
+        <div class="workspaceHead">
+          <div class="row between">
+            <div>
+              <h1 id="pageTitle"></h1>
+              <div class="meta"><span id="companyName"></span><span id="currentPageName"></span></div>
+            </div>
+            <div id="integrations" class="row"></div>
+          </div>
+        </div>
+        <div id="home"></div>
+      </div>
     </div>
-    <div id="home"></div>
   </section>
 </main>
+
 <div id="toast"></div>
 
 <script type="module">
@@ -73,16 +138,61 @@
 
   const $ = (s) => document.querySelector(s);
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const roleLabel = r => ({internal_admin:'自社管理者',internal_staff:'自社スタッフ',support_staff:'サポート会社',customer_user:'顧客会社'}[r] || r || '不明');
-  const toast = (m) => { const e=$('#toast'); e.textContent=m; e.style.display='block'; setTimeout(()=>e.style.display='none',2500); };
-  const show = id => ['loginView','mfaView','appView'].forEach(x => $('#'+x).classList.toggle('hidden',x!==id));
+  const roleLabel = (r) => ({internal_admin:'自社管理者',internal_staff:'自社スタッフ',support_staff:'サポート会社',customer_user:'顧客会社'}[r] || r || '不明');
+  const money = (v) => new Intl.NumberFormat('ja-JP',{style:'currency',currency:'JPY',maximumFractionDigits:0}).format(Number(v || 0));
+  const dateText = (v) => v ? new Intl.DateTimeFormat('ja-JP',{year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(v)) : '—';
+  const statusText = (v) => ({draft:'下書き',sent:'送付済み',accepted:'承認済み',rejected:'却下',open:'未対応',in_progress:'対応中',resolved:'解決',closed:'完了',active:'有効',inactive:'無効'}[v] || v || '—');
+  const toast = (m) => { const e=$('#toast'); e.textContent=m; e.style.display='block'; clearTimeout(window.__toastTimer); window.__toastTimer=setTimeout(()=>e.style.display='none',2500); };
+  const show = (id) => ['loginView','mfaView','appView'].forEach(x => $('#'+x).classList.toggle('hidden',x!==id));
   const notice = (id,msg,ok=false) => { const e=$(id); e.textContent=msg; e.className='notice '+(ok?'ok':'error'); e.classList.remove('hidden'); };
   const rpc = async (name,args={}) => { const {data,error}=await supabase.rpc(name,args); if(error) throw error; return data; };
 
-  let bootData=null, mfaState={};
+  let bootData=null;
+  let mfaState={};
+  let currentPage='home';
+
+  const pageSets = {
+    internal_admin: [
+      ['home','ダッシュボード'],
+      ['customers','顧客'],
+      ['quotes','見積'],
+      ['orders','受注'],
+      ['support','サポート']
+    ],
+    internal_staff: [
+      ['home','ダッシュボード'],
+      ['customers','顧客'],
+      ['quotes','見積'],
+      ['orders','受注'],
+      ['support','サポート']
+    ],
+    support_staff: [
+      ['home','ダッシュボード'],
+      ['support','サポート']
+    ],
+    customer_user: [
+      ['home','ホーム'],
+      ['quotes','見積'],
+      ['assets','契約・機器'],
+      ['support','問い合わせ']
+    ]
+  };
 
   function kpis(items){
     return '<div class="grid">'+items.map(([l,v])=>'<div class="kpi"><div class="label">'+esc(l)+'</div><div class="value">'+esc(v??0)+'</div></div>').join('')+'</div>';
+  }
+
+  function pageIntro(title,desc){
+    return '<div class="pageIntro"><div><h2>'+esc(title)+'</h2><p>'+esc(desc||'')+'</p></div></div>';
+  }
+
+  function dataTable(headers,rows){
+    if(!rows.length) return '<div class="empty">表示できるデータはまだありません。</div>';
+    return '<div class="tableWrap"><table><thead><tr>'+
+      headers.map(h=>'<th>'+esc(h)+'</th>').join('')+
+      '</tr></thead><tbody>'+
+      rows.join('')+
+      '</tbody></table></div>';
   }
 
   function integrations(){
@@ -95,6 +205,22 @@
     }).join('');
   }
 
+  function renderNav(){
+    const role=bootData?.context?.role;
+    const pages=pageSets[role]||[['home','ホーム']];
+    $('#navMenu').innerHTML=pages.map(([id,label])=>'<button class="navBtn" data-page="'+id+'">'+esc(label)+'</button>').join('');
+    document.querySelectorAll('.navBtn').forEach(btn=>{
+      btn.onclick=()=>go(btn.dataset.page);
+    });
+  }
+
+  function setActiveNav(){
+    document.querySelectorAll('.navBtn').forEach(btn=>btn.classList.toggle('active',btn.dataset.page===currentPage));
+    const role=bootData?.context?.role;
+    const found=(pageSets[role]||[]).find(x=>x[0]===currentPage);
+    $('#currentPageName').textContent=found ? ' / '+found[1] : '';
+  }
+
   async function renderHome(){
     const role=bootData.context?.role;
     const home=$('#home');
@@ -102,6 +228,7 @@
     if(role==='internal_admin'||role==='internal_staff'){
       const [cc,q]=await Promise.all([rpc('internal_command_center'),rpc('internal_handoff_queue')]);
       home.innerHTML=
+        pageIntro('ダッシュボード','今日確認が必要な項目をまとめています。')+
         kpis([
           ['緊急問い合わせ',cc.now_action?.urgent_open_tickets],
           ['未割当',cc.now_action?.unassigned_open_tickets],
@@ -111,13 +238,20 @@
         '<section class="card section"><h2>引き継ぎキュー</h2>'+
         ((q||[]).length?(q||[]).map(h=>'<div class="item"><h3>'+esc(h.ticket_number||'')+' '+esc(h.customer_name||'')+'</h3><p>'+esc(h.subject||'')+'</p><p>理由: '+esc(h.reason||'')+'</p><p>次: '+esc(h.next_action||'')+'</p><button class="primary accept" data-id="'+esc(h.id)+'">受理する</button></div>').join(''):'<p class="muted">未処理の引き継ぎはありません。</p>')+
         '</section>';
-      document.querySelectorAll('.accept').forEach(b=>b.onclick=async()=>{try{await rpc('accept_ticket_handoff',{p_handoff_id:b.dataset.id});toast('引き継ぎを受理しました');await renderHome();}catch(e){toast(e.message||String(e));}});
+      document.querySelectorAll('.accept').forEach(b=>b.onclick=async()=>{
+        try{
+          await rpc('accept_ticket_handoff',{p_handoff_id:b.dataset.id});
+          toast('引き継ぎを受理しました');
+          await renderHome();
+        }catch(e){toast(e.message||String(e));}
+      });
       return;
     }
 
     if(role==='support_staff'){
       const h=await rpc('support_home');
       home.innerHTML=
+        pageIntro('サポートダッシュボード','担当案件と緊急度を確認できます。')+
         kpis([
           ['対応中',h.kpis?.open_tickets],
           ['本日新規',h.kpis?.created_today],
@@ -125,7 +259,7 @@
           ['緊急',h.kpis?.urgent_open]
         ])+
         '<section class="card section"><h2>担当案件</h2>'+
-        ((h.recent_tickets||[]).length?'<table><thead><tr><th>番号</th><th>顧客</th><th>件名</th><th>状態</th></tr></thead><tbody>'+(h.recent_tickets||[]).map(t=>'<tr><td>'+esc(t.ticket_number||'—')+'</td><td>'+esc(t.customer_name||'')+'</td><td>'+esc(t.subject||'')+'</td><td>'+esc(t.status||'')+'</td></tr>').join('')+'</tbody></table>':'<p class="muted">担当案件はありません。</p>')+
+        ((h.recent_tickets||[]).length?'<div class="tableWrap"><table><thead><tr><th>番号</th><th>顧客</th><th>件名</th><th>状態</th></tr></thead><tbody>'+(h.recent_tickets||[]).map(t=>'<tr><td>'+esc(t.ticket_number||'—')+'</td><td>'+esc(t.customer_name||'')+'</td><td>'+esc(t.subject||'')+'</td><td>'+esc(statusText(t.status))+'</td></tr>').join('')+'</tbody></table></div>':'<p class="muted">担当案件はありません。</p>')+
         '</section>';
       return;
     }
@@ -133,22 +267,187 @@
     const h=await rpc('customer_portal_home');
     const open=(h.recent_tickets||[]).filter(t=>t.status!=='closed').length;
     home.innerHTML=
+      pageIntro('ホーム','見積・契約・機器・問い合わせの状況をまとめています。')+
       kpis([
         ['対応中',open],
         ['問い合わせ',(h.recent_tickets||[]).length],
         ['登録機器',(h.assets||[]).length],
         ['契約',(h.contracts||[]).length]
       ])+
-      '<section class="card section"><h2>新しく問い合わせる</h2><form id="ticketForm"><div class="field"><label>件名</label><input id="subject" required></div><div class="field"><label>内容</label><textarea id="description" rows="4"></textarea></div><button class="green" type="submit">送信する</button></form><div id="ticketMsg" class="notice hidden"></div></section>';
-    $('#ticketForm').onsubmit=async e=>{
-      e.preventDefault();
-      try{
-        const t=await rpc('create_customer_ticket',{p_asset_id:null,p_contract_id:null,p_subject:$('#subject').value.trim(),p_description:$('#description').value.trim()||null});
-        notice('#ticketMsg','問い合わせを作成しました。',true);
-        $('#ticketForm').reset();
-        await renderHome();
-      }catch(err){notice('#ticketMsg',err.message||String(err));}
-    };
+      '<section class="card section"><h2>最近の問い合わせ</h2>'+
+      ((h.recent_tickets||[]).length?'<div class="tableWrap"><table><thead><tr><th>番号</th><th>件名</th><th>状態</th></tr></thead><tbody>'+(h.recent_tickets||[]).map(t=>'<tr><td>'+esc(t.ticket_number||'—')+'</td><td>'+esc(t.subject||'')+'</td><td>'+esc(statusText(t.status))+'</td></tr>').join('')+'</tbody></table></div>':'<p class="muted">問い合わせはまだありません。</p>')+
+      '</section>';
+  }
+
+  async function renderCustomers(){
+    const {data,error}=await supabase
+      .from('customers')
+      .select('id,customer_code,name,phone,status,manual_hold,updated_at')
+      .order('name',{ascending:true});
+    if(error) throw error;
+    const rows=(data||[]).map(c=>
+      '<tr>'+
+        '<td>'+esc(c.customer_code||'—')+'</td>'+
+        '<td><strong>'+esc(c.name)+'</strong></td>'+
+        '<td>'+esc(c.phone||'—')+'</td>'+
+        '<td>'+esc(statusText(c.status))+'</td>'+
+        '<td>'+(c.manual_hold?'<span class="hold">手動ホールド中</span>':'<span class="normal">通常</span>')+'</td>'+
+        '<td>'+esc(dateText(c.updated_at))+'</td>'+
+      '</tr>'
+    );
+    $('#home').innerHTML=
+      pageIntro('顧客','顧客マスタと取引停止状態を確認します。')+
+      dataTable(['顧客コード','顧客名','電話','状態','取引状態','更新日'],rows);
+  }
+
+  async function customerMap(){
+    const {data,error}=await supabase.from('customers').select('id,name,customer_code');
+    if(error) throw error;
+    const map={};
+    (data||[]).forEach(c=>map[c.id]=c);
+    return map;
+  }
+
+  async function renderQuotes(){
+    const [{data,error},cmap]=await Promise.all([
+      supabase.from('quotes').select('id,customer_id,quote_number,status,subtotal,tax_amount,total_amount,valid_until,created_at').order('created_at',{ascending:false}),
+      customerMap()
+    ]);
+    if(error) throw error;
+    const rows=(data||[]).map(q=>{
+      const c=cmap[q.customer_id]||{};
+      return '<tr>'+
+        '<td><strong>'+esc(q.quote_number||'未採番')+'</strong></td>'+
+        '<td>'+esc(c.name||'—')+'</td>'+
+        '<td>'+esc(statusText(q.status))+'</td>'+
+        '<td class="amount">'+esc(money(q.total_amount))+'</td>'+
+        '<td>'+esc(dateText(q.valid_until))+'</td>'+
+        '<td>'+esc(dateText(q.created_at))+'</td>'+
+      '</tr>';
+    });
+    $('#home').innerHTML=
+      pageIntro('見積','権限のある見積だけが表示されます。')+
+      dataTable(['見積番号','顧客','状態','合計','有効期限','作成日'],rows);
+  }
+
+  async function renderOrders(){
+    const [{data,error},cmap]=await Promise.all([
+      supabase.from('orders').select('id,customer_id,quote_id,order_number,status,total_amount,ordered_at,created_at').order('created_at',{ascending:false}),
+      customerMap()
+    ]);
+    if(error) throw error;
+    const rows=(data||[]).map(o=>{
+      const c=cmap[o.customer_id]||{};
+      return '<tr>'+
+        '<td><strong>'+esc(o.order_number||'未採番')+'</strong></td>'+
+        '<td>'+esc(c.name||'—')+'</td>'+
+        '<td>'+esc(statusText(o.status))+'</td>'+
+        '<td class="amount">'+esc(money(o.total_amount))+'</td>'+
+        '<td>'+esc(dateText(o.ordered_at))+'</td>'+
+        '<td>'+esc(dateText(o.created_at))+'</td>'+
+      '</tr>';
+    });
+    $('#home').innerHTML=
+      pageIntro('受注','自社管理者・自社スタッフのみ閲覧できます。')+
+      dataTable(['受注番号','顧客','状態','合計','受注日','作成日'],rows);
+  }
+
+  async function renderSupport(){
+    const role=bootData.context?.role;
+    const [{data,error},cmap]=await Promise.all([
+      supabase.from('support_tickets').select('id,customer_id,ticket_number,subject,status,priority,created_at,updated_at').order('created_at',{ascending:false}),
+      customerMap()
+    ]);
+    if(error) throw error;
+
+    const rows=(data||[]).map(t=>{
+      const c=cmap[t.customer_id]||{};
+      return '<tr>'+
+        '<td><strong>'+esc(t.ticket_number||'—')+'</strong></td>'+
+        '<td>'+esc(c.name||'—')+'</td>'+
+        '<td>'+esc(t.subject||'')+'</td>'+
+        '<td>'+esc(statusText(t.status))+'</td>'+
+        '<td>'+esc(t.priority||'normal')+'</td>'+
+        '<td>'+esc(dateText(t.created_at))+'</td>'+
+      '</tr>';
+    });
+
+    let createBox='';
+    if(role==='customer_user'){
+      createBox=
+        '<section class="card section">'+
+          '<h2>新しく問い合わせる</h2>'+
+          '<p class="sectionDesc">件名と内容を入力して送信してください。</p>'+
+          '<form id="ticketForm">'+
+            '<div class="field"><label>件名</label><input id="subject" required></div>'+
+            '<div class="field"><label>内容</label><textarea id="description" rows="4"></textarea></div>'+
+            '<button class="green" type="submit">送信する</button>'+
+          '</form>'+
+          '<div id="ticketMsg" class="notice hidden"></div>'+
+        '</section>';
+    }
+
+    $('#home').innerHTML=
+      pageIntro(role==='customer_user'?'問い合わせ':'サポート','問い合わせの状況を確認します。')+
+      createBox+
+      '<section class="section">'+dataTable(['番号','顧客','件名','状態','優先度','作成日'],rows)+'</section>';
+
+    if(role==='customer_user'){
+      $('#ticketForm').onsubmit=async e=>{
+        e.preventDefault();
+        try{
+          await rpc('create_customer_ticket',{
+            p_asset_id:null,
+            p_contract_id:null,
+            p_subject:$('#subject').value.trim(),
+            p_description:$('#description').value.trim()||null
+          });
+          notice('#ticketMsg','問い合わせを作成しました。',true);
+          $('#ticketForm').reset();
+          setTimeout(()=>go('support'),450);
+        }catch(err){
+          notice('#ticketMsg',err.message||String(err));
+        }
+      };
+    }
+  }
+
+  async function renderAssets(){
+    const [assetRes,contractRes]=await Promise.all([
+      supabase.from('assets').select('id,asset_number,serial_number,model_name,status,created_at').order('created_at',{ascending:false}),
+      supabase.from('contracts').select('id,contract_number,status,start_date,end_date,created_at').order('created_at',{ascending:false})
+    ]);
+    if(assetRes.error) throw assetRes.error;
+    if(contractRes.error) throw contractRes.error;
+
+    const assetRows=(assetRes.data||[]).map(a=>
+      '<tr><td><strong>'+esc(a.asset_number||'—')+'</strong></td><td>'+esc(a.model_name||'—')+'</td><td>'+esc(a.serial_number||'—')+'</td><td>'+esc(statusText(a.status))+'</td></tr>'
+    );
+    const contractRows=(contractRes.data||[]).map(c=>
+      '<tr><td><strong>'+esc(c.contract_number||'—')+'</strong></td><td>'+esc(statusText(c.status))+'</td><td>'+esc(dateText(c.start_date))+'</td><td>'+esc(dateText(c.end_date))+'</td></tr>'
+    );
+
+    $('#home').innerHTML=
+      pageIntro('契約・機器','登録されている契約と機器を確認できます。')+
+      '<section class="card section"><h2>契約</h2>'+dataTable(['契約番号','状態','開始日','終了日'],contractRows)+'</section>'+
+      '<section class="card section"><h2>機器</h2>'+dataTable(['機器番号','機種','シリアル','状態'],assetRows)+'</section>';
+  }
+
+  async function go(page){
+    currentPage=page;
+    setActiveNav();
+    $('#home').innerHTML='<div class="card section"><p class="muted">読み込み中...</p></div>';
+    try{
+      if(page==='home') return await renderHome();
+      if(page==='customers') return await renderCustomers();
+      if(page==='quotes') return await renderQuotes();
+      if(page==='orders') return await renderOrders();
+      if(page==='support') return await renderSupport();
+      if(page==='assets') return await renderAssets();
+      return await renderHome();
+    }catch(e){
+      $('#home').innerHTML='<div class="notice error">読み込みに失敗しました: '+esc(e.message||String(e))+'</div>';
+    }
   }
 
   async function prepareMfa(){
@@ -172,6 +471,7 @@
       $('#userBadge').classList.add('hidden');
       return;
     }
+
     $('#logoutBtn').classList.remove('hidden');
     $('#userBadge').textContent=session.user.email||'ログイン中';
     $('#userBadge').classList.remove('hidden');
@@ -190,13 +490,17 @@
     $('#pageTitle').textContent=roleLabel(bootData.context?.role);
     $('#companyName').textContent=bootData.context?.company_name||'';
     integrations();
-    await renderHome();
+    renderNav();
+    await go('home');
   }
 
   $('#loginForm').onsubmit=async e=>{
     e.preventDefault();
     $('#loginMsg').classList.add('hidden');
-    const {error}=await supabase.auth.signInWithPassword({email:$('#email').value.trim(),password:$('#password').value});
+    const {error}=await supabase.auth.signInWithPassword({
+      email:$('#email').value.trim(),
+      password:$('#password').value
+    });
     if(error) return notice('#loginMsg',error.message);
     $('#password').value='';
     await boot();
@@ -219,13 +523,22 @@
       if(ch.error) return notice('#mfaMsg',ch.error.message);
       challengeId=ch.data.id;
     }
-    const v=await supabase.auth.mfa.verify({factorId,challengeId,code:$('#mfaCode').value.trim()});
+    const v=await supabase.auth.mfa.verify({
+      factorId,
+      challengeId,
+      code:$('#mfaCode').value.trim()
+    });
     if(v.error) return notice('#mfaMsg',v.error.message);
     $('#mfaCode').value='';
     await boot();
   };
 
-  $('#logoutBtn').onclick=async()=>{await supabase.auth.signOut();bootData=null;await boot();};
+  $('#logoutBtn').onclick=async()=>{
+    await supabase.auth.signOut();
+    bootData=null;
+    currentPage='home';
+    await boot();
+  };
 
   try{
     const h=await rpc('app_health');
