@@ -88,7 +88,18 @@
     .amountSummary{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-top:10px}
     .amountSummary .summaryBox{padding:12px;border:1px solid var(--line);border-radius:12px;background:#fff}
     .amountSummary .summaryBox span{display:block;color:var(--muted);font-size:11px}.amountSummary .summaryBox strong{display:block;margin-top:5px;font-size:17px}
-    body.modalOpen{overflow:hidden}
+    .side{background:linear-gradient(180deg,var(--navy),var(--navy2));border-color:#19345e;color:#fff;max-height:calc(100vh - 104px);overflow:auto}
+    .sideTitle{color:#8fb4ec}.navBtn{color:#d7e5fb}.navBtn:hover{background:rgba(255,255,255,.07);color:#fff}.navBtn.active{background:#2563eb;border-color:#4f83ef;color:#fff}
+    .workspaceTabs{display:flex;gap:6px;flex-wrap:wrap;margin:16px 0 12px;padding:6px;background:#eaf0f8;border:1px solid #d8e2ef;border-radius:14px}
+    .workspaceTab{background:transparent;color:#526174;border:0;padding:9px 12px;border-radius:10px;font-weight:800}
+    .workspaceTab.active{background:#fff;color:#164b9f;box-shadow:0 2px 10px rgba(15,23,42,.08)}
+    .unifiedToolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+    .metricMini{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:#526174}
+    .formInlineGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+    .profitPositive{color:#047857;font-weight:900}.profitNegative{color:#b91c1c;font-weight:900}
+    @media(max-width:900px){.formInlineGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @media(max-width:640px){.formInlineGrid{grid-template-columns:1fr}}
+        body.modalOpen{overflow:hidden}
     @media(max-width:980px){
       .appShell{grid-template-columns:1fr}.side{position:static}.sideTitle{display:none}
       #navMenu{display:flex;gap:6px;overflow:auto}.navBtn{width:auto;white-space:nowrap}
@@ -255,7 +266,8 @@
     'internal_contract_detail','internal_assets_list','internal_customers_list',
     'internal_customer_detail','internal_customer_contacts','internal_customer_registration_options','support_ticket_workspace',
     'customer_ticket_detail','internal_numbering_settings','internal_accounts_list',
-    'internal_account_companies','internal_audit_workspace','internal_document_profile','internal_demo_seed_status'
+    'internal_account_companies','internal_audit_workspace','internal_document_profile','internal_demo_seed_status',
+    'internal_products_list','internal_lease_rates_list','internal_order_profitability','internal_customer_unified_workspace'
   ]);
 
   function errorStatus(err){
@@ -390,35 +402,33 @@
   const pageSets = {
     internal_admin: [
       ['home','ダッシュボード'],
-      ['customers','顧客'],
-      ['quotes','見積'],
-      ['orders','受注'],
-      ['purchase_orders','発注'],
-      ['deliveries','納品'],
-      ['assets','契約・機器'],
-      ['support','サポート'],
-      ['accounts','アカウント'],
+      ['customers','顧客管理'],
+      ['sales','見積・リース'],
+      ['procurement','仕入・納品'],
+      ['assets','機器台帳'],
+      ['support','問い合わせ・引継ぎ'],
+      ['accounts','ユーザー管理'],
       ['audit','監査ログ'],
       ['security','セキュリティ'],
       ['settings','設定']
     ],
     internal_staff: [
       ['home','ダッシュボード'],
-      ['customers','顧客'],
-      ['quotes','見積'],
-      ['orders','受注'],
-      ['purchase_orders','発注'],
-      ['deliveries','納品'],
-      ['assets','契約・機器'],
-      ['support','サポート'],
+      ['customers','顧客管理'],
+      ['sales','見積・リース'],
+      ['procurement','仕入・納品'],
+      ['assets','機器台帳'],
+      ['support','問い合わせ・引継ぎ'],
       ['security','セキュリティ']
     ],
     support_staff: [
-      ['home','ダッシュボード'],
-      ['support','サポート'],
+      ['home','ホーム'],
+      ['support','担当案件・引継ぎ'],
       ['security','セキュリティ']
     ],
     customer_user: [
+      ['home','ホーム'],
+      ['assets','契約・機器'],
       ['support','問い合わせ'],
       ['security','セキュリティ']
     ]
@@ -684,7 +694,7 @@
     document.querySelectorAll('.customerHomeGo').forEach(b=>b.onclick=()=>go(b.dataset.page));
   }
 
-  async function renderCustomerDetail(customerId){
+  async function renderCustomerDetailLegacy(customerId){
     const [customer,quoteRes,orderRes,contractRes,assetRes,ticketRes,contacts]=await Promise.all([
       rpc('internal_customer_detail',{p_customer_id:customerId}),
       supabase.from('quotes')
@@ -1206,6 +1216,205 @@
         if(btn) btn.disabled=false;
       }
     };
+  }
+
+
+  function unifiedTabs(items,active,handlerName){
+    return '<div class="workspaceTabs">'+items.map(([id,label])=>
+      '<button class="workspaceTab '+(id===active?'active':'')+'" type="button" data-tab="'+esc(id)+'" data-handler="'+esc(handlerName)+'">'+esc(label)+'</button>'
+    ).join('')+'</div>';
+  }
+
+  function bindUnifiedTabs(handler){
+    document.querySelectorAll('.workspaceTab[data-tab]').forEach(btn=>{
+      btn.onclick=()=>handler(btn.dataset.tab);
+    });
+  }
+
+  async function renderCustomerDetail(customerId,tab='overview'){
+    const host=$('#customerDetailHost');
+    const tabs=[
+      ['overview','概要'],['contacts','担当者'],['assets','OA機器'],['tickets','障害履歴'],
+      ['properties','物件・残債'],['monthly','月額支払'],['management','管理情報'],['history','営業対応履歴']
+    ];
+
+    if(tab==='overview'){
+      await renderCustomerDetailLegacy(customerId);
+      const children=[...host.childNodes];
+      host.innerHTML=
+        '<section class="card section"><div class="unifiedToolbar"><div><h2 style="margin:0">顧客カルテ</h2><p class="sectionDesc">顧客情報を1つの正本で確認します。</p></div></div>'+
+        unifiedTabs(tabs,tab,'customer')+'<div id="customerUnifiedTabBody"></div></section>';
+      const body=$('#customerUnifiedTabBody');
+      children.forEach(n=>body.appendChild(n));
+      bindUnifiedTabs(t=>renderCustomerDetail(customerId,t));
+      return;
+    }
+
+    const [base,extra,contacts]=await Promise.all([
+      rpc('internal_customer_detail',{p_customer_id:customerId}),
+      rpc('internal_customer_unified_workspace',{p_customer_id:customerId}),
+      rpc('internal_customer_contacts',{p_customer_id:customerId})
+    ]);
+    const c=base||{};
+    let content='';
+
+    if(tab==='contacts'){
+      const rows=(contacts||[]).map(x=>'<tr><td><strong>'+esc(x.name||'')+'</strong>'+(x.is_primary?' <span class="pill good">主担当</span>':'')+'</td><td>'+esc(x.email||'—')+'</td><td>'+esc(x.phone||'—')+'</td></tr>');
+      content=dataTable(['氏名','メール','電話'],rows);
+    }else if(tab==='assets'){
+      const {data,error}=await supabase.from('assets').select('id,asset_number,model_name,serial_number,status,created_at').eq('customer_id',customerId).order('created_at',{ascending:false});
+      if(error) throw error;
+      const rows=(data||[]).map(x=>'<tr><td>'+esc(x.asset_number||'—')+'</td><td>'+esc(x.model_name||'—')+'</td><td>'+esc(x.serial_number||'—')+'</td><td>'+esc(statusText(x.status))+'</td></tr>');
+      content=dataTable(['機器番号','機種','シリアル','状態'],rows);
+    }else if(tab==='tickets'){
+      const rows=(extra.tickets||[]).map(x=>'<tr><td>'+esc(x.ticket_number||'—')+'</td><td>'+esc(x.subject||'')+'</td><td>'+esc(statusText(x.status))+'</td><td>'+esc(x.priority||'normal')+'</td><td>'+esc(dateText(x.created_at))+'</td></tr>');
+      content=dataTable(['番号','内容','状態','優先度','受付日'],rows);
+    }else if(tab==='properties'){
+      const rows=(extra.properties||[]).map(x=>'<tr><td><strong>'+esc(x.property_name||'')+'</strong></td><td>'+esc(x.model_name||'—')+'</td><td>'+esc(x.installation_location||'—')+'</td><td>'+esc(x.quantity||0)+'</td><td>'+esc(x.remaining_count??'—')+'</td><td class="amount">'+esc(money(x.residual_amount_tax_included||0))+'</td></tr>');
+      content='<div class="notice">物件・残債は、見積の旧物件残債と分離した顧客マスタ情報です。</div>'+dataTable(['物件名','型番','設置場所','数量','残回数','税込残債'],rows);
+    }else if(tab==='monthly'){
+      const rows=(extra.monthly_payments||[]).map(x=>'<tr><td>'+esc(x.category||'—')+'</td><td>'+esc(x.payee||'—')+'</td><td class="amount">'+esc(money(x.monthly_amount||0))+'</td><td class="amount">'+esc(money(x.basic_fee||0))+'</td><td>'+esc(x.start_month?dateText(x.start_month):'—')+'</td></tr>');
+      content=dataTable(['区分','支払先','月額','基本料金','開始月'],rows);
+    }else if(tab==='management'){
+      const rows=(extra.management_info||[]).map(x=>'<tr><td>'+esc(x.category||'—')+'</td><td>'+esc(x.ip_address||'—')+'</td><td>'+esc(x.display_login_id||'—')+'</td><td>'+esc(x.url||'—')+'</td><td>'+esc(x.installation_location||'—')+'</td><td>'+esc(x.secret_reference_id?'Secret参照あり':'—')+'</td></tr>');
+      content='<div class="notice">平文パスワードは保存しません。秘密値はSecret参照IDのみ保持します。</div>'+dataTable(['区分','IP','表示用ID','URL','設置場所','秘密情報'],rows);
+    }else if(tab==='history'){
+      const rows=(extra.sales_history||[]).map(x=>'<tr><td>'+esc(dateText(x.occurred_at))+'</td><td>'+esc(x.activity_type||'—')+'</td><td><strong>'+esc(x.subject||'')+'</strong><br><span class="muted">'+esc(x.body||'')+'</span></td><td>'+esc(x.next_action||'—')+'</td></tr>');
+      content=dataTable(['日時','区分','内容','次アクション'],rows);
+    }
+
+    host.innerHTML=
+      '<section class="card section">'+
+        '<div class="quoteDetailHead"><div><h2>顧客カルテ</h2><p class="sectionDesc">'+esc(c.customer_code||'—')+' / '+esc(c.name||'')+'</p></div><button id="customerDetailClose" class="ghost" type="button">閉じる</button></div>'+
+        unifiedTabs(tabs,tab,'customer')+
+        '<div id="customerUnifiedTabBody">'+content+'</div>'+
+      '</section>';
+    $('#customerDetailClose').onclick=()=>{host.innerHTML='';};
+    bindUnifiedTabs(t=>renderCustomerDetail(customerId,t));
+    host.scrollIntoView({behavior:'smooth',block:'start'});
+  }
+
+  async function renderProductsTab(){
+    const products=await rpc('internal_products_list');
+    const rows=(products||[]).map(p=>
+      '<tr><td>'+esc(p.product_code||'—')+'</td><td><strong>'+esc(p.name||'')+'</strong></td><td>'+esc(p.manufacturer||'—')+'</td><td>'+esc(p.supplier_name||'—')+'</td><td>'+esc(p.unit||'台')+'</td><td class="amount">'+esc(money(p.sale_price))+'</td><td class="amount">'+esc(money(p.cost_price))+'</td><td>'+esc(p.procurement_target?'仕入対象':'対象外')+'</td></tr>'
+    );
+    $('#home').innerHTML=
+      pageIntro('見積・リース','商品マスタ・見積・リース料率・受注粗利を1画面で管理します。')+
+      unifiedTabs([['quotes','見積'],['products','商品マスタ'],['lease_rates','リース料率'],['profit','受注粗利'],['order_ops','受注後処理'],['sales_settings','販売設定']],'products','sales')+
+      '<section class="card section"><div class="unifiedToolbar"><div><h2>商品マスタ</h2><p class="sectionDesc">商品コード、メーカー、仕入先、売価、原価、仕入対象を管理します。</p></div><button id="newProductBtn" class="primary" type="button">＋商品登録</button></div>'+
+      dataTable(['商品コード','商品名','メーカー','仕入先','単位','売価','原価','仕入'],rows)+'</section>';
+    bindUnifiedTabs(t=>renderSalesWorkspace(t));
+    $('#newProductBtn').onclick=()=>openProductModal();
+  }
+
+  async function openProductModal(product=null){
+    const p=product||{};
+    openModal({
+      title:product?'商品を編集':'商品を登録',
+      description:'見積明細から検索して利用する商品マスタです。',
+      wide:false,
+      body:
+        '<div class="modalGrid2">'+
+          '<div class="field"><label>商品コード</label><input id="pmCode" value="'+esc(p.product_code||'')+'"></div>'+
+          '<div class="field"><label>商品名</label><input id="pmName" required value="'+esc(p.name||'')+'"></div>'+
+          '<div class="field"><label>メーカー</label><input id="pmMaker" value="'+esc(p.manufacturer||'')+'"></div>'+
+          '<div class="field"><label>仕入先</label><input id="pmSupplier" value="'+esc(p.supplier_name||'')+'"></div>'+
+          '<div class="field"><label>単位</label><input id="pmUnit" value="'+esc(p.unit||'台')+'"></div>'+
+          '<div class="field"><label>標準納期（日）</label><input id="pmLead" type="number" min="0" value="'+esc(p.lead_time_days??'')+'"></div>'+
+          '<div class="field"><label>販売価格</label><input id="pmSale" type="number" min="0" value="'+esc(p.sale_price||0)+'"></div>'+
+          '<div class="field"><label>仕入価格</label><input id="pmCost" type="number" min="0" value="'+esc(p.cost_price||0)+'"></div>'+
+        '</div>'+
+        '<label class="row"><input id="pmProcure" type="checkbox" '+(p.procurement_target!==false?'checked':'')+'> 仕入対象</label>'+
+        '<label class="row"><input id="pmActive" type="checkbox" '+(p.is_active!==false?'checked':'')+'> 有効</label>'+
+        '<div class="field"><label>タグ（カンマ区切り）</label><input id="pmTags" value="'+esc((p.tags||[]).join(', '))+'"></div>'+
+        '<div class="field"><label>社内メモ</label><textarea id="pmNote" rows="3">'+esc(p.internal_note||'')+'</textarea></div>',
+      confirmLabel:'保存',
+      onSubmit:async()=>{
+        await rpc('save_product',{
+          p_id:p.id||null,p_product_code:$('#pmCode').value.trim()||null,p_name:$('#pmName').value.trim(),
+          p_manufacturer:$('#pmMaker').value.trim()||null,p_supplier_name:$('#pmSupplier').value.trim()||null,
+          p_unit:$('#pmUnit').value.trim()||'台',p_sale_price:Number($('#pmSale').value||0),p_cost_price:Number($('#pmCost').value||0),
+          p_procurement_target:$('#pmProcure').checked,p_lead_time_days:$('#pmLead').value?Number($('#pmLead').value):null,
+          p_tags:$('#pmTags').value.split(',').map(x=>x.trim()).filter(Boolean),p_is_active:$('#pmActive').checked,
+          p_internal_note:$('#pmNote').value.trim()||null
+        });
+        closeModal(); toast('商品を保存しました'); await renderSalesWorkspace('products');
+      }
+    });
+  }
+
+  async function renderLeaseRatesTab(){
+    const rates=await rpc('internal_lease_rates_list');
+    const rows=(rates||[]).map(x=>'<tr><td><strong>'+esc(x.lease_company)+'</strong></td><td>'+esc(x.months)+'か月</td><td>'+esc(x.rate)+'</td><td>'+esc(x.is_active?'有効':'無効')+'</td><td>'+esc(x.note||'—')+'</td></tr>');
+    $('#home').innerHTML=
+      pageIntro('見積・リース','商品マスタ・見積・リース料率・受注粗利を1画面で管理します。')+
+      unifiedTabs([['quotes','見積'],['products','商品マスタ'],['lease_rates','リース料率'],['profit','受注粗利'],['order_ops','受注後処理'],['sales_settings','販売設定']],'lease_rates','sales')+
+      '<section class="card section"><div class="unifiedToolbar"><div><h2>リース料率</h2><p class="sectionDesc">リース会社と期間ごとの料率を管理します。</p></div><button id="newLeaseRateBtn" class="primary" type="button">＋料率登録</button></div>'+
+      dataTable(['リース会社','期間','料率','状態','メモ'],rows)+'</section>';
+    bindUnifiedTabs(t=>renderSalesWorkspace(t));
+    $('#newLeaseRateBtn').onclick=()=>openModal({
+      title:'リース料率を登録',description:'見積の月額概算に利用する料率です。',
+      body:'<div class="modalGrid2"><div class="field"><label>リース会社</label><input id="lrCompany" required></div><div class="field"><label>期間（月）</label><input id="lrMonths" type="number" min="1" required></div><div class="field"><label>料率</label><input id="lrRate" type="number" step="0.0001" min="0" required></div><div class="field"><label>メモ</label><input id="lrNote"></div></div><label class="row"><input id="lrActive" type="checkbox" checked> 有効</label>',
+      confirmLabel:'保存',
+      onSubmit:async()=>{await rpc('save_lease_rate',{p_id:null,p_lease_company:$('#lrCompany').value.trim(),p_months:Number($('#lrMonths').value),p_rate:Number($('#lrRate').value),p_is_active:$('#lrActive').checked,p_note:$('#lrNote').value.trim()||null});closeModal();toast('料率を保存しました');await renderSalesWorkspace('lease_rates');}
+    });
+  }
+
+  async function renderProfitTab(){
+    const data=await rpc('internal_order_profitability');
+    const rows=(data||[]).map(x=>'<tr><td>'+esc(x.order_number||'—')+'</td><td>'+esc(x.customer_name||'')+'</td><td class="amount">'+esc(money(x.sales))+'</td><td class="amount">'+esc(money(x.cost))+'</td><td class="'+(Number(x.gross_profit)>=0?'profitPositive':'profitNegative')+'">'+esc(money(x.gross_profit))+'</td><td>'+esc(x.gross_margin)+'%</td></tr>');
+    $('#home').innerHTML=pageIntro('見積・リース','受注後の売上・原価・粗利を確認します。')+
+      unifiedTabs([['quotes','見積'],['products','商品マスタ'],['lease_rates','リース料率'],['profit','受注粗利'],['order_ops','受注後処理'],['sales_settings','販売設定']],'profit','sales')+
+      '<section class="card section"><h2>受注粗利</h2>'+dataTable(['受注番号','顧客','売上','原価','粗利','粗利率'],rows)+'</section>';
+    bindUnifiedTabs(t=>renderSalesWorkspace(t));
+  }
+
+  async function renderSalesWorkspace(tab='quotes'){
+    if(tab==='products') return renderProductsTab();
+    if(tab==='lease_rates') return renderLeaseRatesTab();
+    if(tab==='profit') return renderProfitTab();
+    if(tab==='order_ops'){
+      await renderOrders();
+      const host=$('#home'); const nodes=[...host.childNodes];
+      host.innerHTML=pageIntro('見積・リース','受注後処理を同じ販売ワークスペースで確認します。')+
+        unifiedTabs([['quotes','見積'],['products','商品マスタ'],['lease_rates','リース料率'],['profit','受注粗利'],['order_ops','受注後処理'],['sales_settings','販売設定']],'order_ops','sales')+
+        '<div id="salesInner"></div>';
+      nodes.forEach(n=>$('#salesInner').appendChild(n)); bindUnifiedTabs(t=>renderSalesWorkspace(t)); return;
+    }
+    if(tab==='sales_settings'){
+      $('#home').innerHTML=pageIntro('見積・リース','販売設定')+
+        unifiedTabs([['quotes','見積'],['products','商品マスタ'],['lease_rates','リース料率'],['profit','受注粗利'],['order_ops','受注後処理'],['sales_settings','販売設定']],'sales_settings','sales')+
+        '<section class="card section"><h2>販売設定</h2><p class="sectionDesc">税率・採番・会社情報・帳票設定は管理者の設定画面と同じ正本を利用します。</p><button id="openMainSettings" class="primary" type="button">設定を開く</button></section>';
+      bindUnifiedTabs(t=>renderSalesWorkspace(t)); $('#openMainSettings').onclick=()=>go('settings'); return;
+    }
+    await renderQuotes();
+    const host=$('#home'); const nodes=[...host.childNodes];
+    host.innerHTML=pageIntro('見積・リース','見積、商品、残債、リース、粗利、受注後処理を統合管理します。')+
+      unifiedTabs([['quotes','見積'],['products','商品マスタ'],['lease_rates','リース料率'],['profit','受注粗利'],['order_ops','受注後処理'],['sales_settings','販売設定']],'quotes','sales')+
+      '<div id="salesInner"></div>';
+    nodes.forEach(n=>$('#salesInner').appendChild(n)); bindUnifiedTabs(t=>renderSalesWorkspace(t));
+  }
+
+  async function renderProcurementWorkspace(tab='purchase'){
+    if(tab==='delivery'){
+      await renderDeliveries();
+    }else{
+      await renderPurchaseOrders();
+    }
+    const host=$('#home'); const nodes=[...host.childNodes];
+    host.innerHTML=pageIntro('仕入・納品','発注・入荷・シリアル・納品を1つの業務フローで管理します。')+
+      unifiedTabs([['purchase','発注'],['receiving','入荷・シリアル'],['delivery','納品'],['ledger','機器台帳'] ],tab,'procurement')+
+      '<div id="procurementInner"></div>';
+    if(tab==='receiving'){
+      $('#procurementInner').innerHTML='<section class="card section"><h2>入荷・シリアル</h2><p class="sectionDesc">発注明細ごとの入荷数量、シリアル番号、保証期限を管理します。入荷登録機能は次の復元工程で発注明細へ統合します。</p></section>';
+    }else if(tab==='ledger'){
+      $('#procurementInner').innerHTML='<section class="card section"><h2>OA機器台帳</h2><p class="sectionDesc">納品完了したシリアル単位の機器を台帳へ連携します。</p><button id="openAssetLedgerBtn" class="primary" type="button">機器台帳を開く</button></section>';
+      $('#openAssetLedgerBtn').onclick=()=>go('assets');
+    }else{
+      nodes.forEach(n=>$('#procurementInner').appendChild(n));
+    }
+    bindUnifiedTabs(t=>renderProcurementWorkspace(t));
   }
 
   async function renderCustomers(){
@@ -3238,6 +3447,8 @@
     try{
       if(page==='home') return await renderHome();
       if(page==='customers') return await renderCustomers();
+      if(page==='sales') return await renderSalesWorkspace();
+      if(page==='procurement') return await renderProcurementWorkspace();
       if(page==='quotes') return await renderQuotes();
       if(page==='orders') return await renderOrders();
       if(page==='purchase_orders') return await renderPurchaseOrders();
