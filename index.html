@@ -312,7 +312,7 @@
     'customer_ticket_detail','internal_numbering_settings','internal_accounts_list',
     'internal_account_companies','internal_audit_workspace','internal_document_profile','internal_demo_seed_status','internal_company_settings','internal_entity_audit_history',
     'internal_products_list','internal_lease_rates_list','internal_order_profitability','internal_customer_unified_workspace','internal_receiving_workspace','internal_order_operation','role_knowledge_articles',
-    'support_customer_directory','support_asset_directory','support_handoff_history','support_customer_context',
+    'support_customer_directory','support_asset_directory','support_handoff_history','support_customer_context','support_workflow_states','support_ticket_workflow_state',
     'internal_case_directory','internal_handoff_history','internal_knowledge_articles'
   ]);
 
@@ -832,6 +832,25 @@
     return '<span class="pill good">'+esc(label)+'</span>';
   }
 
+  function supportStageLabel(v){
+    return ({
+      unhandled:'未対応',
+      in_progress:'対応中',
+      teamviewer_waiting:'TeamViewer待ち',
+      internal_handoff_waiting:'自社引継ぎ待ち',
+      completed:'完了'
+    }[v]||'未対応');
+  }
+
+  function supportStageBadge(v){
+    const label=supportStageLabel(v);
+    if(v==='unhandled') return '<span class="hold">'+esc(label)+'</span>';
+    if(v==='teamviewer_waiting') return '<span class="pill">'+esc(label)+'</span>';
+    if(v==='internal_handoff_waiting') return '<span class="pill">'+esc(label)+'</span>';
+    if(v==='completed') return '<span class="pill good">'+esc(label)+'</span>';
+    return '<span class="pill good">'+esc(label)+'</span>';
+  }
+
   function supportRequestDetailsHtml(type,d={}){
     if(type==='incident'){
       const impact={single_device:'1台のみ',multiple_users:'複数ユーザー',whole_office:'拠点全体',unknown:'不明'}[d.impact_scope]||'不明';
@@ -1100,6 +1119,7 @@
       home.innerHTML=
         pageIntro('サポートダッシュボード','電話・チャット受付から遠隔対応、自社引継ぎまでを同じ流れで処理します。')+
         '<section class="card section"><div class="row between"><div><h2>標準対応フロー</h2><p class="sectionDesc">案件を開いたら左から順番に進めます。</p></div><button id="supportNewFromHome" class="primary" type="button">＋ 問い合わせ受付</button></div>'+
+          supportStageControl+
           '<div class="supportFlow">'+
             '<div class="supportStep active"><span class="supportStepNum">1</span><strong>受付</strong><small>CallConnect / 顧客チャット / 自社チャット</small></div>'+
             '<div class="supportStep"><span class="supportStepNum">2</span><strong>内容・写真確認</strong><small>症状、写真、対象機器、過去履歴</small></div>'+
@@ -5124,11 +5144,12 @@
     const internal=role==='internal_admin'||role==='internal_staff';
     const support=role==='support_staff';
 
-    const [detail,knowledgeArticles]=customer
-      ? [await rpc('customer_ticket_detail',{p_ticket_id:ticketId}),[]]
+    const [detail,knowledgeArticles,supportStage]=customer
+      ? [await rpc('customer_ticket_detail',{p_ticket_id:ticketId}),[],null]
       : await Promise.all([
           rpc('support_ticket_workspace',{p_ticket_id:ticketId}),
-          rpc('role_knowledge_articles')
+          rpc('role_knowledge_articles'),
+          rpc('support_ticket_workflow_state',{p_ticket_id:ticketId})
         ]);
 
     const t=detail?.ticket;
@@ -5160,6 +5181,13 @@
     const teamviewerState=bootData?.integrations?.teamviewer?.state||'disabled';
     const teamviewerStateText={connected:'接続済み',degraded:'一部障害',manual:'手動運用',disabled:'未接続'}[teamviewerState]||teamviewerState;
     const assistSectionNo=internal?'02':'01';
+    const supportStageControl=support && t.status!=='closed'
+      ? '<div class="notice"><div class="row between"><div><strong>現在の対応工程</strong><div style="margin-top:6px">'+supportStageBadge(supportStage)+'</div></div><div class="supportQuickActions">'+
+          (supportStage==='unhandled'?'<button id="ticketStageStart" class="primary" type="button">対応開始</button>':'')+
+          (supportStage==='in_progress'?'<button id="ticketStageRemoteWait" class="orange" type="button">TeamViewer待ちにする</button>':'')+
+          (supportStage==='teamviewer_waiting'?'<button id="ticketStageResume" class="primary" type="button">対応中に戻す</button>':'')+
+        '</div></div></div>'
+      : '<div class="notice"><strong>現在の対応工程：</strong> '+supportStageBadge(supportStage||'completed')+'</div>';
     const firstLineAssist=!customer
       ? '<section class="formSection"><div class="formSectionHead"><span class="sectionNo">'+assistSectionNo+'</span><h3>サポート対応フロー</h3></div>'+
           '<div class="supportFlow">'+
@@ -5261,6 +5289,7 @@
         '<div class="quoteDetailHead"><div><h2>サポート案件カルテ</h2><p class="sectionDesc">'+esc(t.ticket_number||'—')+' / '+supportRequestTypeLabel(t.request_type)+' / '+esc(t.subject||'')+'</p></div><button id="ticketDetailClose" class="ghost" type="button">閉じる</button></div>'+
         kpis([
           ['種別',supportRequestTypeLabel(t.request_type)],
+          ['対応工程',supportStageLabel(supportStage||((t.status==='closed')?'completed':'unhandled'))],
           ['状態',statusText(t.status)],
           ['優先度',t.priority||'normal'],
           ['作成日',dateText(t.created_at)],
@@ -5331,6 +5360,20 @@
     };
 
     if(!customer){
+      const setStage=async(stage)=>{
+        try{
+          await rpc('set_support_workflow_stage',{p_ticket_id:t.id,p_stage:stage});
+          toast('対応工程を「'+supportStageLabel(stage)+'」に変更しました');
+          await renderTicketDetail(t.id);
+        }catch(err){notice('#ticketActionMsg',err.message||String(err));}
+      };
+      const stageStart=$('#ticketStageStart');
+      if(stageStart) stageStart.onclick=()=>setStage('in_progress');
+      const stageRemoteWait=$('#ticketStageRemoteWait');
+      if(stageRemoteWait) stageRemoteWait.onclick=()=>setStage('teamviewer_waiting');
+      const stageResume=$('#ticketStageResume');
+      if(stageResume) stageResume.onclick=()=>setStage('in_progress');
+
       const knowledgeSource=(knowledgeArticles||[]).filter(x=>x.is_active!==false);
       const renderKnowledgeCandidates=()=>{
         const q=($('#ticketKnowledgeSearch')?.value||'').trim().toLowerCase();
@@ -5390,6 +5433,7 @@
         if(!remoteId) return notice('#ticketRemoteMsg','TeamViewer ID / セッションコードを入力してください。');
         if(!action) return notice('#ticketRemoteMsg','遠隔で行う内容を入力してください。');
         try{
+          await rpc('set_support_workflow_stage',{p_ticket_id:t.id,p_stage:'in_progress'});
           await rpc('post_ticket_message',{
             p_ticket_id:t.id,
             p_visibility:'support',
@@ -5555,12 +5599,15 @@
       return;
     }
 
-    const [workspace,customers,staff]=await Promise.all([
+    const [workspace,customers,staff,workflowStates]=await Promise.all([
       rpc('internal_support_cases_list'),
       internal?rpc('internal_customers_list'):rpc('support_customer_directory'),
-      internal?rpc('internal_staff_options'):Promise.resolve([])
+      internal?rpc('internal_staff_options'):Promise.resolve([]),
+      rpc('support_workflow_states')
     ]);
-    const data=workspace?.tickets||[];
+    const workflowMap={};
+    (workflowStates||[]).forEach(x=>workflowMap[x.ticket_id]=x.support_stage);
+    const data=(workspace?.tickets||[]).map(x=>({...x,support_stage:workflowMap[x.id]||((x.status==='closed')?'completed':'unhandled')}));
     const summary=workspace?.summary||{};
     const cmap={};
     (customers||[]).forEach(x=>cmap[x.id]=x);
@@ -5575,6 +5622,24 @@
         ['担当未設定',summary.unassigned||0],
         ['完了',summary.closed||0]
       ])+
+      (support
+        ? '<section class="card section"><div class="row between"><div><h2>担当案件の絞り込み</h2><p class="sectionDesc">依頼種別と対応工程で、今やるべき案件だけを表示できます。</p></div></div>'+
+            '<div id="supportTypeTabs" class="workspaceTabs" data-active="all">'+
+              '<button class="workspaceTab active supportTypeTab" type="button" data-type="all">すべて</button>'+
+              '<button class="workspaceTab supportTypeTab" type="button" data-type="inquiry">顧客問い合わせ</button>'+
+              '<button class="workspaceTab supportTypeTab" type="button" data-type="incident">障害</button>'+
+              '<button class="workspaceTab supportTypeTab" type="button" data-type="setting_request">設定依頼</button>'+
+            '</div>'+
+            '<div id="supportStageTabs" class="workspaceTabs" data-active="all">'+
+              '<button class="workspaceTab active supportStageTab" type="button" data-stage="all">全工程</button>'+
+              '<button class="workspaceTab supportStageTab" type="button" data-stage="unhandled">未対応</button>'+
+              '<button class="workspaceTab supportStageTab" type="button" data-stage="in_progress">対応中</button>'+
+              '<button class="workspaceTab supportStageTab" type="button" data-stage="teamviewer_waiting">TeamViewer待ち</button>'+
+              '<button class="workspaceTab supportStageTab" type="button" data-stage="internal_handoff_waiting">自社引継ぎ待ち</button>'+
+              '<button class="workspaceTab supportStageTab" type="button" data-stage="completed">完了</button>'+
+            '</div>'+
+          '</section>'
+        : '')+
       (internal
         ? '<section class="card section"><div class="row between"><div><h2>障害・設定依頼の登録</h2><p class="sectionDesc">自社で受けた障害・設定依頼をサポート会社へ登録します。</p></div><button id="supportCaseCreateToggle" class="primary" type="button">＋ 障害・設定依頼を登録</button></div><div id="supportCaseCreateBox" class="hidden" style="margin-top:14px"><form id="supportCaseCreateForm"><div class="modalGrid2"><div class="field"><label>依頼種別</label><select id="supportCaseRequestType"><option value="incident">障害登録</option><option value="setting_request">設定依頼</option></select></div><div class="field"><label>顧客</label><select id="supportCaseCustomer" required><option value="">選択してください</option>'+(customers||[]).map(x=>'<option value="'+esc(x.id)+'">'+esc(x.customer_code||'—')+' / '+esc(x.name||'')+'</option>').join('')+'</select></div><div class="field"><label>優先度</label><select id="supportCasePriority"><option value="normal">通常</option><option value="high">高</option><option value="urgent">緊急</option><option value="low">低</option></select></div></div><div id="supportCaseContextFields"></div><div id="supportCaseTypeFields"></div><div class="field"><label>件名</label><input id="supportCaseSubject" required placeholder="例：印刷できない / メール設定変更"></div><div class="field"><label>補足内容</label><textarea id="supportCaseDescription" rows="4" placeholder="補足情報があれば入力してください"></textarea></div><div class="field"><label>サポート会社へ送る写真・スクリーンショット</label><input id="supportCaseFiles" type="file" accept="image/*,.pdf" multiple><small class="muted">自社で受け取った写真や、確認してほしい画面を添付できます。</small></div><button class="primary" type="submit">案件を登録</button></form><div id="supportCaseCreateMsg" class="notice hidden"></div></div></section>'
         : '')+
@@ -5588,6 +5653,12 @@
       const state=listToolbarState('supportCaseList');
       let filtered=data.filter(t=>{
         if(state.status!=='all'&&t.status!==state.status) return false;
+        if(support){
+          const typeFilter=$('#supportTypeTabs')?.dataset.active||'all';
+          const stageFilter=$('#supportStageTabs')?.dataset.active||'all';
+          if(typeFilter!=='all'&&t.request_type!==typeFilter) return false;
+          if(stageFilter!=='all'&&t.support_stage!==stageFilter) return false;
+        }
         return !state.query||[
           t.ticket_number,t.customer_name,t.customer_code,t.subject,t.priority,t.status,supportRequestTypeLabel(t.request_type),
           t.asset_number,t.asset_model_name,t.contract_number,t.assigned_internal_user_name
@@ -5601,11 +5672,12 @@
       });
       updateListCount('supportCaseList',filtered.length,data.length);
       $('#supportCaseListHost').innerHTML=dataTable(
-        ['番号','種別','顧客','件名','状態','優先度','機器/契約','担当','最終対応','操作'],
+        ['番号','種別','対応工程','顧客','件名','状態','優先度','機器/契約','担当','最終対応','操作'],
         filtered.map(t=>
           '<tr>'+
             '<td><strong>'+esc(t.ticket_number||'—')+'</strong></td>'+
             '<td>'+supportRequestTypeBadge(t.request_type)+'</td>'+
+            '<td>'+supportStageBadge(t.support_stage)+'</td>'+
             '<td>'+esc(t.customer_name||'—')+'</td>'+
             '<td>'+esc(t.subject||'')+'</td>'+
             '<td>'+esc(statusText(t.status))+'</td>'+
@@ -5619,6 +5691,20 @@
       );
       document.querySelectorAll('.ticketDetail').forEach(btn=>btn.onclick=async()=>{btn.disabled=true;try{await renderTicketDetail(btn.dataset.id);}catch(err){toast(err.message||String(err));}finally{btn.disabled=false;}});
     };
+    if(support){
+      document.querySelectorAll('.supportTypeTab').forEach(btn=>btn.onclick=()=>{
+        const bar=$('#supportTypeTabs');
+        bar.dataset.active=btn.dataset.type||'all';
+        bar.querySelectorAll('.supportTypeTab').forEach(x=>x.classList.toggle('active',x===btn));
+        renderRows();
+      });
+      document.querySelectorAll('.supportStageTab').forEach(btn=>btn.onclick=()=>{
+        const bar=$('#supportStageTabs');
+        bar.dataset.active=btn.dataset.stage||'all';
+        bar.querySelectorAll('.supportStageTab').forEach(x=>x.classList.toggle('active',x===btn));
+        renderRows();
+      });
+    }
     bindListToolbar('supportCaseList',renderRows);
     renderRows();
 
