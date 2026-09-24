@@ -204,6 +204,7 @@
       ['deliveries','納品'],
       ['assets','契約・機器'],
       ['support','サポート'],
+      ['security','セキュリティ'],
       ['settings','設定']
     ],
     internal_staff: [
@@ -214,11 +215,13 @@
       ['purchase_orders','発注'],
       ['deliveries','納品'],
       ['assets','契約・機器'],
-      ['support','サポート']
+      ['support','サポート'],
+      ['security','セキュリティ']
     ],
     support_staff: [
       ['home','ダッシュボード'],
-      ['support','サポート']
+      ['support','サポート'],
+      ['security','セキュリティ']
     ],
     customer_user: [
       ['home','ホーム'],
@@ -226,7 +229,8 @@
       ['orders','受注'],
       ['deliveries','納品'],
       ['assets','契約・機器'],
-      ['support','問い合わせ']
+      ['support','問い合わせ'],
+      ['security','セキュリティ']
     ]
   };
 
@@ -2077,6 +2081,86 @@
       '<section class="card section"><h2>機器</h2>'+dataTable(['機器番号','機種','シリアル','状態'],assetRows)+'</section>';
   }
 
+  async function renderSecurity(){
+    const [{data:{session}},aal,factors]=await Promise.all([
+      supabase.auth.getSession(),
+      supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
+      supabase.auth.mfa.listFactors()
+    ]);
+
+    if(!session) throw new Error('ログインセッションがありません。');
+    if(aal.error) throw aal.error;
+    if(factors.error) throw factors.error;
+
+    const verified=[...(factors.data?.totp||[]),...(factors.data?.phone||[])].filter(x=>x.status==='verified');
+    const trusted=trustedDevice();
+
+    $('#home').innerHTML=
+      pageIntro('セキュリティ','MFAとログイン状態を確認・管理します。')+
+      kpis([
+        ['認証レベル',aal.data?.currentLevel||'—'],
+        ['MFA登録',verified.length],
+        ['信頼済み端末',trusted?'有効':'無効'],
+        ['ログイン',session.user.email||'—']
+      ])+
+      '<section class="card section">'+
+        '<h2>MFA</h2>'+
+        '<div class="notice '+(aal.data?.currentLevel==='aal2'?'ok':'error')+'">'+
+          (aal.data?.currentLevel==='aal2'
+            ? 'MFA認証済みです。現在のセッションはAAL2です。'
+            : 'MFA認証が必要です。')+
+        '</div>'+
+        '<p class="sectionDesc">登録済みAuthenticator: '+esc(verified.length)+'件</p>'+
+        '<p class="muted">QuoteFlow CloudではMFAを無効化できません。Authenticatorを変更する場合は、新しい端末へ登録を移行してから旧端末を外す運用にします。</p>'+
+      '</section>'+
+      '<section class="card section">'+
+        '<h2>信頼済み端末</h2>'+
+        '<p class="sectionDesc">信頼済みにすると、このブラウザにMFA済みセッションを保持します。共有PCでは無効にしてください。</p>'+
+        '<label class="row" style="margin:12px 0"><input id="securityTrustDevice" type="checkbox" '+(trusted?'checked':'')+'> この端末を信頼する</label>'+
+        '<button id="securityTrustSave" class="primary" type="button">設定を保存</button>'+
+        '<div id="securityTrustMsg" class="notice hidden"></div>'+
+      '</section>'+
+      '<section class="card section">'+
+        '<h2>セッション管理</h2>'+
+        '<p class="sectionDesc">現在の端末は残したまま、他のブラウザ・端末のログインセッションを終了できます。</p>'+
+        '<button id="signOutOthersBtn" class="orange" type="button">他の端末をログアウト</button>'+
+        '<div id="sessionManageMsg" class="notice hidden"></div>'+
+      '</section>';
+
+    $('#securityTrustSave').onclick=()=>{
+      const next=$('#securityTrustDevice').checked;
+      const localValue=localStorage.getItem(AUTH_STORAGE_KEY);
+      const sessionValue=sessionStorage.getItem(AUTH_STORAGE_KEY);
+      const currentValue=localValue||sessionValue;
+
+      if(next){
+        localStorage.setItem(TRUST_DEVICE_KEY,'1');
+        if(currentValue) localStorage.setItem(AUTH_STORAGE_KEY,currentValue);
+        sessionStorage.removeItem(AUTH_STORAGE_KEY);
+        notice('#securityTrustMsg','この端末を信頼済みにしました。次回もログイン状態を保持します。',true);
+      }else{
+        localStorage.removeItem(TRUST_DEVICE_KEY);
+        if(currentValue) sessionStorage.setItem(AUTH_STORAGE_KEY,currentValue);
+        localStorage.removeItem(AUTH_STORAGE_KEY);
+        notice('#securityTrustMsg','信頼済み端末を解除しました。ブラウザ終了後は再ログインとMFAが必要です。',true);
+      }
+    };
+
+    $('#signOutOthersBtn').onclick=async()=>{
+      const btn=$('#signOutOthersBtn');
+      btn.disabled=true;
+      try{
+        const {error}=await supabase.auth.signOut({scope:'others'});
+        if(error) throw error;
+        notice('#sessionManageMsg','他の端末のセッションを終了しました。現在の端末はログインを維持しています。',true);
+      }catch(err){
+        notice('#sessionManageMsg',err.message||String(err));
+      }finally{
+        btn.disabled=false;
+      }
+    };
+  }
+
   async function go(page){
     currentPage=page;
     setActiveNav();
@@ -2089,6 +2173,7 @@
       if(page==='purchase_orders') return await renderPurchaseOrders();
       if(page==='deliveries') return await renderDeliveries();
       if(page==='support') return await renderSupport();
+      if(page==='security') return await renderSecurity();
       if(page==='settings') return await renderSettings();
       if(page==='assets') return await renderAssets();
       return await renderHome();
@@ -2218,7 +2303,7 @@
   };
 
   $('#logoutBtn').onclick=async()=>{
-    await supabase.auth.signOut();
+    await supabase.auth.signOut({scope:'local'});
     localStorage.removeItem(TRUST_DEVICE_KEY);
     localStorage.removeItem(AUTH_STORAGE_KEY);
     sessionStorage.removeItem(AUTH_STORAGE_KEY);
