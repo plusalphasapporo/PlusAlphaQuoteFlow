@@ -1703,14 +1703,289 @@
     ];
 
     if(tab==='overview'){
-      await renderCustomerDetailLegacy(customerId);
-      const children=[...host.childNodes];
+      const [base,extra,contacts]=await Promise.all([
+        rpc('internal_customer_detail',{p_customer_id:customerId}),
+        rpc('internal_customer_unified_workspace',{p_customer_id:customerId}),
+        rpc('internal_customer_contacts',{p_customer_id:customerId})
+      ]);
+      const c=base||{};
+      const primary=(contacts||[]).find(x=>x.is_primary)||(contacts||[])[0]||null;
+      const now=Date.now();
+      const today=new Date();today.setHours(0,0,0,0);
+      const sixtyDays=60*24*60*60*1000;
+      const orderQuoteIds=new Set((extra.orders||[]).map(x=>x.quote_id).filter(Boolean));
+      const poOrderIds=new Set((extra.purchase_orders||[]).map(x=>x.order_id).filter(Boolean));
+      const attention=[];
+
+      if(c.manual_hold){
+        attention.push({
+          severity:'overdue',kind:'customer',id:c.id,
+          title:'手動ホールド中',
+          detail:'この顧客は新規取引を停止する設定になっています。',
+          due:'解除するまで'
+        });
+      }
+
+      (extra.quotes||[]).forEach(x=>{
+        if(x.status==='finalized'){
+          attention.push({severity:'action',kind:'quote',id:x.id,title:'見積の承認待ち',detail:(x.quote_number||'下書き')+' / '+(x.project_name||'案件名なし'),due:'承認待ち'});
+        }else if(x.status==='accepted'&&!orderQuoteIds.has(x.id)){
+          attention.push({severity:'action',kind:'quote',id:x.id,title:'承認済み見積の受注未作成',detail:(x.quote_number||'—')+' / '+(x.project_name||'案件名なし'),due:'受注化待ち'});
+        }
+      });
+
+      (extra.orders||[]).forEach(x=>{
+        if(!poOrderIds.has(x.id)){
+          attention.push({severity:'action',kind:'order',id:x.id,title:'受注の発注未作成',detail:x.order_number||'未採番',due:'発注未作成'});
+        }
+      });
+
+      (extra.purchase_orders||[]).forEach(x=>{
+        const due=timeValue(x.expected_delivery_date);
+        if(!['received','cancelled'].includes(x.status)&&due&&due<today.getTime()){
+          attention.push({severity:'overdue',kind:'purchase_order',id:x.id,title:'入荷予定超過',detail:(x.purchase_order_number||'未採番')+' / '+(x.supplier_name||'仕入先未設定'),due:dateText(x.expected_delivery_date)});
+        }
+      });
+
+      (extra.deliveries||[]).forEach(x=>{
+        const due=timeValue(x.scheduled_at);
+        if(x.status==='planned'&&!x.delivered_at&&due&&due<now){
+          attention.push({severity:'overdue',kind:'delivery',id:x.id,title:'納品予定超過',detail:(x.delivery_number||'未採番')+' / '+(x.installation_location||'設置場所未設定'),due:dateText(x.scheduled_at)});
+        }
+      });
+
+      (extra.tickets||[]).forEach(x=>{
+        if(x.status!=='closed'&&['urgent','high'].includes(x.priority)){
+          attention.push({severity:x.priority==='urgent'?'overdue':'action',kind:'ticket',id:x.id,title:x.priority==='urgent'?'緊急問い合わせ':'高優先度問い合わせ',detail:(x.ticket_number||'—')+' / '+(x.subject||''),due:'対応中'});
+        }
+      });
+
+      (extra.contracts||[]).forEach(x=>{
+        const end=timeValue(x.end_date);
+        if(x.status==='active'&&end){
+          const diff=end-today.getTime();
+          if(diff<0){
+            attention.push({severity:'overdue',kind:'contract',id:x.id,title:'有効契約の終了日超過',detail:x.contract_number||'未採番',due:dateText(x.end_date)});
+          }else if(diff<=sixtyDays){
+            attention.push({severity:'today',kind:'contract',id:x.id,title:'契約終了日が近づいています',detail:x.contract_number||'未採番',due:dateText(x.end_date)});
+          }
+        }
+      });
+
+      (extra.assets||[]).forEach(x=>{
+        const warranty=timeValue(x.warranty_until);
+        if(x.status==='active'&&warranty){
+          const diff=warranty-today.getTime();
+          if(diff<0){
+            attention.push({severity:'action',kind:'asset',id:x.id,title:'保証期限切れ',detail:(x.asset_number||'未採番')+' / '+(x.model_name||'機種未設定'),due:dateText(x.warranty_until)});
+          }else if(diff<=sixtyDays){
+            attention.push({severity:'today',kind:'asset',id:x.id,title:'保証期限が近づいています',detail:(x.asset_number||'未採番')+' / '+(x.model_name||'機種未設定'),due:dateText(x.warranty_until)});
+          }
+        }
+      });
+
+      const severityRank={overdue:0,today:1,action:2};
+      attention.sort((a,b)=>(severityRank[a.severity]??9)-(severityRank[b.severity]??9));
+
+      const activities=[
+        ...(extra.quotes||[]).map(x=>({kind:'quote',id:x.id,at:x.updated_at||x.created_at,title:'見積 '+(x.quote_number||'下書き'),detail:(x.project_name||'案件名なし')+' / '+statusText(x.status)})),
+        ...(extra.orders||[]).map(x=>({kind:'order',id:x.id,at:x.updated_at||x.created_at,title:'受注 '+(x.order_number||'未採番'),detail:statusText(x.status)+' / '+money(x.total_amount)})),
+        ...(extra.purchase_orders||[]).map(x=>({kind:'purchase_order',id:x.id,at:x.updated_at||x.created_at,title:'発注 '+(x.purchase_order_number||'未採番'),detail:(x.supplier_name||'仕入先未設定')+' / '+statusText(x.status)})),
+        ...(extra.deliveries||[]).map(x=>({kind:'delivery',id:x.id,at:x.updated_at||x.created_at,title:'納品 '+(x.delivery_number||'未採番'),detail:statusText(x.status)+' / '+(x.installation_location||'設置場所未設定')})),
+        ...(extra.tickets||[]).map(x=>({kind:'ticket',id:x.id,at:x.updated_at||x.created_at,title:'問い合わせ '+(x.ticket_number||'—'),detail:(x.subject||'')+' / '+statusText(x.status)})),
+        ...(extra.contracts||[]).map(x=>({kind:'contract',id:x.id,at:x.updated_at||x.created_at,title:'契約 '+(x.contract_number||'未採番'),detail:statusText(x.status)})),
+        ...(extra.assets||[]).map(x=>({kind:'asset',id:x.id,at:x.updated_at||x.created_at,title:'機器 '+(x.asset_number||'未採番'),detail:(x.model_name||'機種未設定')+' / '+statusText(x.status)})),
+        ...(extra.sales_history||[]).map(x=>({kind:'history',id:x.id,at:x.occurred_at||x.created_at,title:'営業対応 '+(x.subject||x.activity_type||'記録'),detail:x.next_action||x.body||''}))
+      ].filter(x=>x.at).sort((a,b)=>timeValue(b.at)-timeValue(a.at)).slice(0,10);
+
+      const attentionHtml=attention.length
+        ? attention.map(x=>
+            '<div class="item">'+
+              '<div class="row between" style="gap:12px;align-items:flex-start">'+
+                '<div>'+
+                  (x.severity==='overdue'?'<span class="hold">至急</span> ':x.severity==='today'?'<span class="pill good">期限接近</span> ':'<span class="pill">要対応</span> ')+
+                  '<strong>'+esc(x.title)+'</strong>'+
+                  '<p style="margin:6px 0 0">'+esc(x.detail||'')+'</p>'+
+                  '<p class="muted" style="margin:4px 0 0">期限・状態: '+esc(x.due||'—')+'</p>'+
+                '</div>'+
+                '<button class="ghost customerOverviewAction" type="button" data-kind="'+esc(x.kind)+'" data-id="'+esc(x.id||'')+'">確認</button>'+
+              '</div>'+
+            '</div>'
+          ).join('')
+        : '<div class="notice ok">現在、この顧客で優先対応が必要な項目はありません。</div>';
+
+      const activityHtml=activities.length
+        ? activities.map(x=>
+            '<div class="item">'+
+              '<div class="row between" style="gap:12px;align-items:flex-start">'+
+                '<div><strong>'+esc(x.title)+'</strong><p style="margin:5px 0">'+esc(x.detail||'')+'</p><p class="muted" style="margin:0">'+esc(dateText(x.at))+'</p></div>'+
+                '<button class="linkBtn customerOverviewAction" type="button" data-kind="'+esc(x.kind)+'" data-id="'+esc(x.id||'')+'">開く</button>'+
+              '</div>'+
+            '</div>'
+          ).join('')
+        : '<div class="empty">直近活動はまだありません。</div>';
+
       host.innerHTML=
-        '<section class="card section"><div class="unifiedToolbar"><div><h2 style="margin:0">顧客カルテ</h2><p class="sectionDesc">顧客情報を1つの正本で確認します。</p></div></div>'+
-        unifiedTabs(tabs,tab,'customer')+'<div id="customerUnifiedTabBody"></div></section>';
-      const body=$('#customerUnifiedTabBody');
-      children.forEach(n=>body.appendChild(n));
+        '<section class="card section">'+
+          '<div class="quoteDetailHead">'+
+            '<div><h2>顧客カルテ</h2><p class="sectionDesc">'+esc(c.customer_code||'—')+' / '+esc(c.name||'')+(c.trade_name?' / '+esc(c.trade_name):'')+'</p></div>'+
+            '<div class="row">'+
+              '<button id="customerOverviewNewQuote" class="primary" type="button">＋ この顧客で見積作成</button>'+
+              '<button id="customerOverviewEditToggle" class="ghost" type="button">基本情報を編集</button>'+
+              '<button id="customerDetailClose" class="ghost" type="button">閉じる</button>'+
+            '</div>'+
+          '</div>'+
+          unifiedTabs(tabs,tab,'customer')+
+          '<div id="customerUnifiedTabBody">'+
+            (c.manual_hold?'<div class="notice error"><strong>手動ホールド中</strong><br>新規取引を進める前にホールド理由・解除可否を確認してください。</div>':'')+
+            kpis([
+              ['要確認',attention.length],
+              ['見積',extra.summary?.quotes||0],
+              ['受注',extra.summary?.orders||0],
+              ['発注',extra.summary?.purchase_orders||0],
+              ['納品予定',extra.summary?.planned_deliveries||0],
+              ['有効契約',extra.summary?.active_contracts||0],
+              ['稼働機器',extra.summary?.active_assets||0],
+              ['対応中問合せ',extra.summary?.open_tickets||0]
+            ])+
+            '<div class="modalGrid2">'+
+              '<section class="card section" style="box-shadow:none;margin:0">'+
+                '<h3>重要情報</h3>'+
+                '<div class="item"><strong>所在地</strong><p>'+esc([c.postal_code,c.address1,c.address2].filter(Boolean).join(' ')||'未登録')+'</p></div>'+
+                '<div class="item"><strong>代表連絡先</strong><p>'+esc(c.phone||c.mobile||'未登録')+(c.email?' / '+esc(c.email):'')+'</p></div>'+
+                '<div class="item"><strong>主担当者</strong><p>'+(primary?esc(primary.name||'')+(primary.title?' / '+esc(primary.title):'')+'<br><span class="muted">'+esc(primary.phone||primary.mobile_e164||primary.email||'連絡先未登録')+'</span>':'未登録')+'</p></div>'+
+                '<div class="item"><strong>社内メモ・注意事項</strong><p>'+esc(c.internal_note||'未登録')+'</p></div>'+
+              '</section>'+
+              '<section class="card section" style="box-shadow:none;margin:0">'+
+                '<div class="row between"><div><h3>要確認・未処理</h3><p class="sectionDesc">優先度順に表示しています。</p></div><button id="customerOverviewTransactions" class="ghost" type="button">取引全体</button></div>'+
+                attentionHtml+
+              '</section>'+
+            '</div>'+
+            '<section class="section">'+
+              '<div class="row between"><div><h3>直近活動</h3><p class="sectionDesc">見積・受注・発注・納品・問い合わせ・営業履歴などを新しい順に表示します。</p></div><button id="customerOverviewHistory" class="ghost" type="button">営業履歴</button></div>'+
+              activityHtml+
+            '</section>'+
+            '<section id="customerOverviewEditBox" class="formSection hidden">'+
+              '<div class="formSectionHead"><span class="sectionNo">編集</span><h3>基本情報</h3></div>'+
+              '<form id="customerOverviewEditForm">'+
+                '<div class="modalGrid2">'+
+                  '<div class="field"><label>顧客コード</label><input value="'+esc(c.customer_code||'')+'" readonly></div>'+
+                  '<div class="field"><label>会社名・法人名</label><input id="customerOverviewName" value="'+esc(c.name||'')+'" required></div>'+
+                  '<div class="field"><label>屋号・店舗名</label><input id="customerOverviewTradeName" value="'+esc(c.trade_name||'')+'"></div>'+
+                  '<div class="field"><label>拠点区分</label><select id="customerOverviewBranchType"><option value="head_office" '+(c.branch_type==='head_office'?'selected':'')+'>本店・本社</option><option value="branch" '+(c.branch_type==='branch'?'selected':'')+'>支店・営業所・店舗</option></select></div>'+
+                  '<div class="field"><label>郵便番号</label><input id="customerOverviewPostal" value="'+esc(c.postal_code||'')+'"></div>'+
+                  '<div class="field"><label>電話</label><input id="customerOverviewPhone" value="'+esc(c.phone||'')+'"></div>'+
+                  '<div class="field" style="grid-column:span 2"><label>住所1</label><input id="customerOverviewAddress1" value="'+esc(c.address1||'')+'"></div>'+
+                  '<div class="field" style="grid-column:span 2"><label>住所2</label><input id="customerOverviewAddress2" value="'+esc(c.address2||'')+'"></div>'+
+                  '<div class="field"><label>携帯</label><input id="customerOverviewMobile" value="'+esc(c.mobile||'')+'"></div>'+
+                  '<div class="field"><label>FAX</label><input id="customerOverviewFax" value="'+esc(c.fax||'')+'"></div>'+
+                  '<div class="field"><label>メール</label><input id="customerOverviewEmail" type="email" value="'+esc(c.email||'')+'"></div>'+
+                  '<div class="field"><label>Web</label><input id="customerOverviewWebsite" type="url" value="'+esc(c.website||'')+'"></div>'+
+                '</div>'+
+                '<div class="field"><label>社内メモ・注意事項</label><textarea id="customerOverviewNote" rows="3">'+esc(c.internal_note||'')+'</textarea></div>'+
+                '<label class="row" style="margin:12px 0"><input id="customerOverviewHold" type="checkbox" '+(c.manual_hold?'checked':'')+'> <strong>手動ホールド</strong></label>'+
+                '<button class="primary" type="submit">基本情報を保存</button>'+
+              '</form>'+
+              '<div id="customerOverviewEditMsg" class="notice hidden"></div>'+
+            '</section>'+
+          '</div>'+
+        '</section>';
+
+      $('#customerDetailClose').onclick=()=>{host.innerHTML='';};
+      $('#customerOverviewNewQuote').onclick=()=>renderCustomerQuoteCreate(customerId);
+      $('#customerOverviewTransactions').onclick=()=>renderCustomerDetail(customerId,'transactions');
+      $('#customerOverviewHistory').onclick=()=>renderCustomerDetail(customerId,'history');
+      $('#customerOverviewEditToggle').onclick=()=>{
+        const box=$('#customerOverviewEditBox');
+        box.classList.toggle('hidden');
+        $('#customerOverviewEditToggle').textContent=box.classList.contains('hidden')?'基本情報を編集':'編集を閉じる';
+      };
       bindUnifiedTabs(t=>renderCustomerDetail(customerId,t));
+
+      const openRelated=async(kind,id)=>{
+        if(kind==='customer'){
+          $('#customerOverviewEditBox').classList.remove('hidden');
+          $('#customerOverviewEditToggle').textContent='編集を閉じる';
+          $('#customerOverviewEditBox').scrollIntoView({behavior:'smooth',block:'start'});
+          return;
+        }
+        if(kind==='quote'){
+          const cmap=await customerMap();
+          await renderSalesWorkspace('quotes');
+          return renderQuoteEditor(id,cmap);
+        }
+        if(kind==='order'){
+          await renderSalesWorkspace('order_ops');
+          return renderOrderDetail(id);
+        }
+        if(kind==='purchase_order'){
+          await renderProcurementWorkspace('purchase_orders');
+          return renderPurchaseOrderDetail(id);
+        }
+        if(kind==='delivery'){
+          await renderProcurementWorkspace('delivery');
+          return renderDeliveryDetail(id);
+        }
+        if(kind==='ticket'){
+          await go('support');
+          return renderTicketDetail(id);
+        }
+        if(kind==='asset'){
+          await go('assets');
+          return renderAssetDetail(id);
+        }
+        if(kind==='contract'){
+          await go('assets');
+          return renderInternalContractDetail(id);
+        }
+        if(kind==='history'){
+          return renderCustomerDetail(customerId,'history');
+        }
+      };
+
+      document.querySelectorAll('.customerOverviewAction').forEach(btn=>{
+        btn.onclick=async()=>{
+          btn.disabled=true;
+          try{ await openRelated(btn.dataset.kind,btn.dataset.id); }
+          catch(err){ toast(err.message||String(err)); }
+          finally{ btn.disabled=false; }
+        };
+      });
+
+      $('#customerOverviewEditForm').onsubmit=async e=>{
+        e.preventDefault();
+        const btn=e.submitter;if(btn)btn.disabled=true;
+        try{
+          await rpc('update_customer_full_v2',{
+            p_customer_id:c.id,
+            p_name:$('#customerOverviewName').value.trim(),
+            p_trade_name:$('#customerOverviewTradeName').value.trim()||null,
+            p_branch_type:$('#customerOverviewBranchType').value,
+            p_parent_customer_id:c.parent_customer_id||null,
+            p_postal_code:$('#customerOverviewPostal').value.trim()||null,
+            p_address1:$('#customerOverviewAddress1').value.trim()||null,
+            p_address2:$('#customerOverviewAddress2').value.trim()||null,
+            p_phone:$('#customerOverviewPhone').value.trim()||null,
+            p_mobile:$('#customerOverviewMobile').value.trim()||null,
+            p_fax:$('#customerOverviewFax').value.trim()||null,
+            p_email:$('#customerOverviewEmail').value.trim()||null,
+            p_website:$('#customerOverviewWebsite').value.trim()||null,
+            p_support_company_id:c.support_company_id||null,
+            p_internal_note:$('#customerOverviewNote').value.trim()||null,
+            p_manual_hold:$('#customerOverviewHold').checked
+          });
+          notice('#customerOverviewEditMsg','顧客情報を更新しました。',true);
+          toast('顧客を更新しました');
+          await renderCustomerDetail(customerId,'overview');
+        }catch(err){
+          notice('#customerOverviewEditMsg',err.message||String(err));
+        }finally{
+          if(btn)btn.disabled=false;
+        }
+      };
+
+      await appendEntityAuditHistory('#customerUnifiedTabBody','customer',customerId);
+      host.scrollIntoView({behavior:'smooth',block:'start'});
       return;
     }
 
