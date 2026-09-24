@@ -1906,6 +1906,24 @@
     return x.toISOString().slice(0,10);
   }
 
+  async function syncCustomerToCallConnect(customerId,{silent=false}={}){
+    if(!customerId) return null;
+    const {data,error}=await supabase.functions.invoke('callconnect-contact-sync',{
+      body:{customer_id:customerId}
+    });
+    if(error){
+      if(!silent) toast('CallConnect同期に失敗しました');
+      return {ok:false,error:error.message||String(error)};
+    }
+    if(!silent){
+      if(data?.skipped&&data?.reason==='no_phone') toast('CallConnect同期：電話番号未登録のためスキップしました');
+      else if(data?.failed_count>0) toast('CallConnect同期：一部失敗しました');
+      else if(data?.created_count>0) toast('CallConnectへ顧客情報を同期しました');
+      else if(data?.duplicate_count>0) toast('CallConnect：登録済み電話番号を確認しました');
+    }
+    return data||null;
+  }
+
   async function renderCustomerCreate(){
     const options=await rpc('internal_customer_registration_options');
     const parentOptions=(options?.parents||[]).map(x=>
@@ -2207,6 +2225,12 @@
         localStorage.removeItem(draftKey);
         closeAppModal();
         toast('顧客 '+(created?.customer_code||'')+' を登録しました');
+        if(created?.id){
+          const syncResult=await syncCustomerToCallConnect(created.id,{silent:true});
+          if(syncResult?.failed_count>0) toast('顧客登録は完了しましたが、CallConnect同期で一部失敗しました');
+          else if(syncResult?.created_count>0) toast('CallConnectへ顧客情報を同期しました');
+          else if(syncResult?.duplicate_count>0) toast('CallConnect：登録済み電話番号を確認しました');
+        }
         await renderCustomers();
         if(created?.id) await renderCustomerDetail(created.id,'overview');
       }catch(err){
@@ -2808,6 +2832,7 @@
             '<div><h2>顧客カルテ</h2><p class="sectionDesc">'+esc(c.customer_code||'—')+' / '+esc(c.name||'')+(c.trade_name?' / '+esc(c.trade_name):'')+'</p></div>'+
             '<div class="row">'+
               '<button id="customerOverviewNewQuote" class="primary" type="button">＋ この顧客で見積作成</button>'+
+              '<button id="customerOverviewCallConnectSync" class="ghost" type="button">CallConnectへ同期</button>'+
               '<button id="customerOverviewEditToggle" class="ghost" type="button">基本情報を編集</button>'+
               '<button id="customerDetailClose" class="ghost" type="button">閉じる</button>'+
             '</div>'+
@@ -2889,6 +2914,20 @@
       $('#customerOverviewNewQuote').onclick=()=>renderCustomerQuoteCreate(customerId);
       $('#customerOverviewTransactions').onclick=()=>renderCustomerDetail(customerId,'transactions');
       $('#customerOverviewHistory').onclick=()=>renderCustomerDetail(customerId,'history');
+      $('#customerOverviewCallConnectSync').onclick=async()=>{
+        const btn=$('#customerOverviewCallConnectSync');
+        if(btn) btn.disabled=true;
+        try{
+          const r=await syncCustomerToCallConnect(customerId,{silent:true});
+          if(r?.skipped&&r?.reason==='no_phone') toast('電話番号が未登録のため同期できません');
+          else if(r?.failed_count>0) toast('CallConnect同期で一部失敗しました');
+          else if(r?.created_count>0) toast('CallConnectへ同期しました');
+          else if(r?.duplicate_count>0) toast('CallConnect側に登録済みです');
+          else toast('CallConnect同期を確認しました');
+        }catch(err){ toast(err.message||String(err)); }
+        finally{ if(btn) btn.disabled=false; }
+      };
+
       $('#customerOverviewEditToggle').onclick=()=>{
         const box=$('#customerOverviewEditBox');
         box.classList.toggle('hidden');
@@ -2993,6 +3032,8 @@
           });
           notice('#customerOverviewEditMsg','顧客情報を更新しました。',true);
           toast('顧客を更新しました');
+          const syncResult=await syncCustomerToCallConnect(customerId,{silent:true});
+          if(syncResult?.failed_count>0) toast('顧客更新は完了しましたが、CallConnect同期で一部失敗しました');
           await renderCustomerDetail(customerId,'overview');
         }catch(err){
           notice('#customerOverviewEditMsg',err.message||String(err));
@@ -4384,7 +4425,7 @@
             '<div class="supportStep done"><span class="supportStepNum">1</span><strong>Webhook</strong><small>通話終了後の履歴・顧客照合・案件化</small></div>'+
             '<div class="supportStep '+(callconnectApi?.api_key_configured?'done':'active')+'"><span class="supportStepNum">2</span><strong>REST API Key</strong><small>'+(callconnectApi?.api_key_configured?'登録済み':'未登録')+'</small></div>'+
             '<div class="supportStep '+(callconnectApi?.last_api_check_status==='connected'?'done':((callconnectApi?.api_key_configured&&callconnectApi?.contacts_api_url_configured)?'active':''))+'"><span class="supportStepNum">3</span><strong>API接続確認</strong><small>'+(callconnectApi?.last_api_check_status==='connected'?'接続確認済み':(callconnectApi?.api_key_configured&&callconnectApi?.contacts_api_url_configured?'接続テスト可能':'API KeyとURL設定が必要'))+'</small></div>'+
-            '<div class="supportStep '+(callconnectApi?.contacts_create_api_url_configured?'active':'')+'"><span class="supportStepNum">4</span><strong>顧客同期</strong><small>'+(callconnectApi?.contacts_create_api_url_configured?'Create URL設定済み・同期実装待ち':'Contacts Create API URLが必要')+'</small></div>'+
+            '<div class="supportStep '+(callconnectApi?.last_contacts_sync_at?'done':(callconnectApi?.contacts_create_api_url_configured?'active':''))+'"><span class="supportStepNum">4</span><strong>顧客同期</strong><small>'+(callconnectApi?.last_contacts_sync_at?'同期稼働中 / 最終 '+dateTimeText(callconnectApi.last_contacts_sync_at):(callconnectApi?.contacts_create_api_url_configured?'自動同期を利用可能':'Contacts Create API URLが必要'))+'</small></div>'+
           '</div>'+
         '</section>';
     }else if(tab==='security'){
