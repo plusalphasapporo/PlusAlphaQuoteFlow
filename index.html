@@ -923,7 +923,10 @@
           '<button id="quoteDetailClose" class="ghost" type="button">閉じる</button>'+
         '</div>'+
         (editable
-          ? '<form id="quoteEditForm">'+
+          ? (q.approval_return_reason
+              ? '<div class="notice error"><strong>管理者から差し戻し</strong><br>'+esc(q.approval_return_reason)+(q.approval_returned_at?'<br><span class="muted">'+esc(dateText(q.approval_returned_at))+'</span>':'')+'</div>'
+              : '')+
+            '<form id="quoteEditForm">'+
               '<div class="row">'+
                 '<div class="field" style="flex:1;min-width:180px"><label>有効期限</label><input id="quoteEditValidUntil" type="date" value="'+esc(q.valid_until||'')+'"></div>'+
                 '<div class="field" style="flex:1;min-width:180px"><label>消費税額</label><input id="quoteEditTax" type="number" min="0" step="1" value="'+esc(q.tax_amount??0)+'"></div>'+
@@ -942,8 +945,10 @@
                 '<div class="row" style="margin-top:14px"><button id="quoteToOrderBtn" class="orange" type="button">受注を作成して開く</button><span class="muted">同じ見積から重複受注は作成されません。</span></div><div id="quoteActionMsg" class="notice hidden"></div>'
               : q.status==='finalized'
                 ? (admin
-                    ? '<div class="notice">承認申請されています。内容を確認して承認してください。</div>'+
-                      '<div class="row" style="margin-top:14px"><button id="quoteApproveBtn" class="green" type="button">見積を承認</button></div><div id="quoteActionMsg" class="notice hidden"></div>'
+                    ? '<div class="notice">承認申請されています。内容を確認して承認または差し戻してください。</div>'+
+                      '<div class="row" style="margin-top:14px"><button id="quoteApproveBtn" class="green" type="button">見積を承認</button><button id="quoteReturnToggle" class="ghost" type="button">差し戻し</button></div>'+
+                      '<div id="quoteReturnBox" class="hidden" style="margin-top:12px"><div class="field"><label>差し戻し理由</label><textarea id="quoteReturnReason" rows="3" required placeholder="修正してほしい内容を具体的に入力してください"></textarea></div><button id="quoteReturnBtn" class="orange" type="button">差し戻しを確定</button></div>'+
+                      '<div id="quoteActionMsg" class="notice hidden"></div>'
                     : '<div class="notice">管理者承認待ちです。</div>')
                 : q.status==='rejected'
                   ? '<div class="notice error">却下された見積です。</div>'
@@ -1009,6 +1014,24 @@
           btn.disabled=false;
         }
       };
+
+      $('#quoteReturnToggle').onclick=()=>$('#quoteReturnBox').classList.toggle('hidden');
+      $('#quoteReturnBtn').onclick=async()=>{
+        const btn=$('#quoteReturnBtn');
+        btn.disabled=true;
+        try{
+          const reason=$('#quoteReturnReason').value.trim();
+          if(!reason) throw new Error('差し戻し理由を入力してください。');
+          await rpc('return_quote_for_revision',{p_quote_id:q.id,p_reason:reason});
+          notice('#quoteActionMsg','見積を差し戻しました。担当者が修正して再申請できます。',true);
+          toast('見積を差し戻しました');
+          setTimeout(()=>go('quotes'),450);
+        }catch(err){
+          notice('#quoteActionMsg',err.message||String(err));
+        }finally{
+          btn.disabled=false;
+        }
+      };
     }else if(internal && q.status==='accepted' && $('#quoteToOrderBtn')){
       $('#quoteToOrderBtn').onclick=async()=>{
         const btn=$('#quoteToOrderBtn');
@@ -1022,84 +1045,6 @@
         }catch(err){
           const msg=String(err.message||err);
           notice('#quoteActionMsg',msg.includes('numbering configuration required')?'採番設定が未設定です。管理者の「設定」から受注番号の形式を登録してください。':msg);
-        }finally{
-          btn.disabled=false;
-        }
-      };
-    }
-  }
-
-  async function renderCustomerQuoteDetail(quoteId){
-    const detail=await rpc('customer_quote_detail',{p_quote_id:quoteId});
-    if(!detail?.quote) throw new Error('見積が見つかりません。');
-    const q=detail.quote;
-    const items=detail.items||[];
-    const host=$('#quoteDetailHost');
-    const rows=items.map(i=>
-      '<tr><td>'+esc(i.description)+'</td><td>'+esc(i.quantity)+'</td><td class="amount">'+esc(money(i.unit_price))+'</td><td class="amount">'+esc(money(Number(i.quantity||0)*Number(i.unit_price||0)))+'</td></tr>'
-    );
-
-    const canRespond=q.status==='finalized';
-    const resultNote=q.status==='accepted'
-      ? '<div class="notice ok">この見積は承諾済みです。'+(q.accepted_at?' '+esc(dateText(q.accepted_at)):'')+'</div>'
-      : q.status==='rejected'
-        ? '<div class="notice error">この見積は辞退済みです。'+(q.decline_reason?'<br>理由: '+esc(q.decline_reason):'')+'</div>'
-        : '';
-
-    host.innerHTML=
-      '<section class="card section">'+
-        '<div class="quoteDetailHead">'+
-          '<div><h2>見積詳細</h2><p class="sectionDesc">'+esc(q.quote_number||'')+' / '+esc(statusText(q.status))+'</p></div>'+
-          '<button id="quoteDetailClose" class="ghost" type="button">閉じる</button>'+
-        '</div>'+
-        '<div class="quoteTotals"><span>小計 <strong>'+esc(money(q.subtotal))+'</strong></span><span>税 <strong>'+esc(money(q.tax_amount))+'</strong></span><span>合計 <strong>'+esc(money(q.total_amount))+'</strong></span></div>'+
-        '<p class="sectionDesc">有効期限: '+esc(dateText(q.valid_until))+'</p>'+
-        dataTable(['明細','数量','単価','金額'],rows)+
-        resultNote+
-        (canRespond
-          ? '<div class="row" style="margin-top:16px"><button id="quoteAcceptBtn" class="green" type="button">この見積を承諾</button><button id="quoteRejectToggle" class="ghost" type="button">辞退する</button></div>'+
-            '<div id="quoteRejectBox" class="hidden" style="margin-top:12px">'+
-              '<div class="field"><label>辞退理由（任意）</label><textarea id="quoteDeclineReason" rows="3" placeholder="例：予算都合、時期未定など"></textarea></div>'+
-              '<button id="quoteRejectBtn" class="orange" type="button">辞退を確定</button>'+
-            '</div>'+
-            '<div id="quoteResponseMsg" class="notice hidden"></div>'
-          : '')+
-      '</section>';
-
-    $('#quoteDetailClose').onclick=()=>{ host.innerHTML=''; };
-    host.scrollIntoView({behavior:'smooth',block:'start'});
-
-    if(canRespond){
-      $('#quoteAcceptBtn').onclick=async()=>{
-        const btn=$('#quoteAcceptBtn');
-        btn.disabled=true;
-        try{
-          const r=await rpc('respond_to_quote',{p_quote_id:q.id,p_decision:'accept',p_decline_reason:null});
-          notice('#quoteResponseMsg','見積を承諾しました。',true);
-          toast('見積を承諾しました');
-          setTimeout(()=>go('quotes'),450);
-        }catch(err){
-          notice('#quoteResponseMsg',err.message||String(err));
-        }finally{
-          btn.disabled=false;
-        }
-      };
-
-      $('#quoteRejectToggle').onclick=()=>$('#quoteRejectBox').classList.toggle('hidden');
-      $('#quoteRejectBtn').onclick=async()=>{
-        const btn=$('#quoteRejectBtn');
-        btn.disabled=true;
-        try{
-          await rpc('respond_to_quote',{
-            p_quote_id:q.id,
-            p_decision:'reject',
-            p_decline_reason:$('#quoteDeclineReason').value.trim()||null
-          });
-          notice('#quoteResponseMsg','見積を辞退しました。',true);
-          toast('見積を辞退しました');
-          setTimeout(()=>go('quotes'),450);
-        }catch(err){
-          notice('#quoteResponseMsg',err.message||String(err));
         }finally{
           btn.disabled=false;
         }
@@ -2473,6 +2418,9 @@
       'contact.created':'担当者作成',
       'contact.updated':'担当者更新',
       'quote.finalized':'見積確定',
+      'quote.submitted_for_approval':'見積承認申請',
+      'quote.admin_approved':'見積管理者承認',
+      'quote.returned_for_revision':'見積差し戻し',
       'quote.accepted':'見積承諾',
       'quote.rejected':'見積辞退',
       'order.created':'受注作成',
