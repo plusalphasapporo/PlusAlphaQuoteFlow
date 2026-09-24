@@ -112,6 +112,18 @@
     <button id="verifyBtn" class="primary" type="button">認証する</button>
   </section>
 
+  <section id="passwordSetupView" class="card login hidden">
+    <h1>初期パスワード設定</h1>
+    <p class="muted">招待されたアカウントの初期設定です。パスワード設定後、MFA登録へ進みます。</p>
+    <div id="passwordSetupMsg" class="notice hidden"></div>
+    <form id="initialPasswordForm">
+      <div class="field"><label>新しいパスワード</label><input id="initialPassword" type="password" autocomplete="new-password" minlength="12" required></div>
+      <div class="field"><label>新しいパスワード（確認）</label><input id="initialPasswordConfirm" type="password" autocomplete="new-password" minlength="12" required></div>
+      <p class="muted">12文字以上で、英大文字・英小文字・数字・記号をそれぞれ1文字以上使用してください。</p>
+      <button class="primary" style="width:100%" type="submit">パスワードを設定して次へ</button>
+    </form>
+  </section>
+
   <section id="appView" class="hidden">
     <div class="appShell">
       <aside class="side">
@@ -186,7 +198,7 @@
   const dateText = (v) => v ? new Intl.DateTimeFormat('ja-JP',{year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(v)) : '—';
   const statusText = (v) => ({draft:'下書き',finalized:'確定済み',sent:'送付済み',accepted:'承認済み',rejected:'却下',open:'未対応',in_progress:'対応中',resolved:'解決',closed:'完了',active:'有効',inactive:'無効',planned:'予定',delivered:'納品済み'}[v] || v || '—');
   const toast = (m) => { const e=$('#toast'); e.textContent=m; e.style.display='block'; clearTimeout(window.__toastTimer); window.__toastTimer=setTimeout(()=>e.style.display='none',2500); };
-  const show = (id) => ['loginView','mfaView','appView'].forEach(x => $('#'+x).classList.toggle('hidden',x!==id));
+  const show = (id) => ['loginView','mfaView','passwordSetupView','appView'].forEach(x => $('#'+x).classList.toggle('hidden',x!==id));
   const notice = (id,msg,ok=false) => { const e=$(id); e.textContent=msg; e.className='notice '+(ok?'ok':'error'); e.classList.remove('hidden'); };
   const rpc = async (name,args={}) => { const {data,error}=await supabase.rpc(name,args); if(error) throw error; return data; };
 
@@ -2085,7 +2097,10 @@
   async function renderAccounts(){
     if(bootData.context?.role!=='internal_admin') throw new Error('管理者のみ利用できます。');
 
-    const accounts=await rpc('internal_accounts_list');
+    const [accounts,companies]=await Promise.all([
+      rpc('internal_accounts_list'),
+      rpc('internal_account_companies')
+    ]);
     const roleText=r=>({
       internal_admin:'自社管理者',
       internal_staff:'自社スタッフ',
@@ -2107,12 +2122,78 @@
       '</tr>'
     );
 
+    const companyOptions=(companies||[]).map(c=>
+      '<option value="'+esc(c.id)+'" data-type="'+esc(c.company_type)+'">'+esc(c.name)+' ('+esc(c.company_type)+')</option>'
+    ).join('');
+
     $('#home').innerHTML=
-      pageIntro('アカウント管理','権限、利用状態、MFA登録状況、セッション数を確認します。')+
+      pageIntro('アカウント管理','新規招待、権限、利用状態、MFA登録状況、セッション数を管理します。')+
+      '<section class="card section">'+
+        '<h2>新規アカウント招待</h2>'+
+        '<p class="sectionDesc">初期パスワードは管理者側で設定しません。招待メールから本人が設定し、その後MFAを登録します。</p>'+
+        '<form id="accountInviteForm">'+
+          '<div class="row">'+
+            '<div class="field" style="flex:1;min-width:220px"><label>メールアドレス</label><input id="inviteEmail" type="email" required></div>'+
+            '<div class="field" style="flex:1;min-width:220px"><label>表示名</label><input id="inviteDisplayName" required></div>'+
+          '</div>'+
+          '<div class="row">'+
+            '<div class="field" style="flex:2;min-width:240px"><label>所属会社</label><select id="inviteCompany" required><option value="">選択してください</option>'+companyOptions+'</select></div>'+
+            '<div class="field" style="flex:1;min-width:200px"><label>権限</label><select id="inviteRole" required><option value="">会社を選択してください</option></select></div>'+
+          '</div>'+
+          '<button class="primary" type="submit">招待メールを送信</button>'+
+        '</form>'+
+        '<div id="accountInviteMsg" class="notice hidden"></div>'+
+      '</section>'+
       '<div id="accountEditHost"></div>'+
       '<section class="card section">'+
         dataTable(['表示名','メール','会社','権限','状態','MFA','セッション','最終ログイン','操作'],rows)+
       '</section>';
+
+    function updateInviteRoles(){
+      const select=$('#inviteCompany');
+      const opt=select.options[select.selectedIndex];
+      const type=opt?.dataset?.type||'';
+      let html='<option value="">選択してください</option>';
+      if(type==='internal'){
+        html+='<option value="internal_admin">自社管理者</option><option value="internal_staff">自社スタッフ</option>';
+      }else if(type==='support'){
+        html+='<option value="support_staff">サポート会社</option>';
+      }else if(type==='customer'){
+        html+='<option value="customer_user">顧客会社</option>';
+      }
+      $('#inviteRole').innerHTML=html;
+    }
+    $('#inviteCompany').onchange=updateInviteRoles;
+
+    $('#accountInviteForm').onsubmit=async e=>{
+      e.preventDefault();
+      const btn=e.submitter;
+      if(btn) btn.disabled=true;
+      try{
+        const {data,error}=await supabase.functions.invoke('admin-user',{
+          body:{
+            action:'invite',
+            email:$('#inviteEmail').value.trim(),
+            displayName:$('#inviteDisplayName').value.trim(),
+            companyId:$('#inviteCompany').value,
+            role:$('#inviteRole').value
+          }
+        });
+        if(error) throw error;
+        if(data?.error) throw new Error(data.message||data.error);
+        notice('#accountInviteMsg','招待メールを送信しました。本人が初期パスワード設定とMFA登録を完了すると利用開始できます。',true);
+        $('#accountInviteForm').reset();
+        updateInviteRoles();
+        toast('招待メールを送信しました');
+        setTimeout(()=>go('accounts'),700);
+      }catch(err){
+        const msg=String(err.message||err);
+        const ja=msg.includes('INVITE_FAILED')?'招待メールを送信できませんでした。メールアドレスや既存アカウントを確認してください。':msg;
+        notice('#accountInviteMsg',ja);
+      }finally{
+        if(btn) btn.disabled=false;
+      }
+    };
 
     document.querySelectorAll('.accountEdit').forEach(btn=>{
       btn.onclick=()=>{
@@ -2378,6 +2459,18 @@
     $('#userBadge').textContent=session.user.email||'ログイン中';
     $('#userBadge').classList.remove('hidden');
 
+    try{
+      const onboarding=await rpc('current_auth_onboarding_state');
+      if(onboarding?.must_set_password){
+        show('passwordSetupView');
+        return;
+      }
+    }catch(e){
+      show('loginView');
+      notice('#loginMsg',e.message||String(e));
+      return;
+    }
+
     const aal=await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
     if(aal.error){
       show('loginView');
@@ -2405,6 +2498,33 @@
     renderNav();
     await go('home');
   }
+
+  $('#initialPasswordForm').onsubmit=async e=>{
+    e.preventDefault();
+    const btn=e.submitter;
+    if(btn) btn.disabled=true;
+    try{
+      const password=$('#initialPassword').value;
+      const confirm=$('#initialPasswordConfirm').value;
+      if(password!==confirm) throw new Error('パスワードが一致しません。');
+      if(password.length<12) throw new Error('パスワードは12文字以上にしてください。');
+      if(!/[A-Z]/.test(password)) throw new Error('英大文字を1文字以上含めてください。');
+      if(!/[a-z]/.test(password)) throw new Error('英小文字を1文字以上含めてください。');
+      if(!/[0-9]/.test(password)) throw new Error('数字を1文字以上含めてください。');
+      if(!/[^A-Za-z0-9]/.test(password)) throw new Error('記号を1文字以上含めてください。');
+
+      const {error}=await supabase.auth.updateUser({password});
+      if(error) throw error;
+      await rpc('complete_initial_password_setup');
+      $('#initialPasswordForm').reset();
+      notice('#passwordSetupMsg','パスワードを設定しました。続けてMFAを登録してください。',true);
+      setTimeout(()=>prepareMfa(),450);
+    }catch(err){
+      notice('#passwordSetupMsg',err.message||String(err));
+    }finally{
+      if(btn) btn.disabled=false;
+    }
+  };
 
   $('#loginForm').onsubmit=async e=>{
     e.preventDefault();
