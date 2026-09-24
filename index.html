@@ -294,7 +294,7 @@
   }
 
   async function renderCustomerDetail(customerId){
-    const [customer,quoteRes,orderRes,contractRes,assetRes,ticketRes]=await Promise.all([
+    const [customer,quoteRes,orderRes,contractRes,assetRes,ticketRes,contacts]=await Promise.all([
       rpc('internal_customer_detail',{p_customer_id:customerId}),
       supabase.from('quotes')
         .select('id,quote_number,status,total_amount,valid_until,created_at')
@@ -316,7 +316,8 @@
         .select('id,ticket_number,subject,status,priority,created_at')
         .eq('customer_id',customerId)
         .order('created_at',{ascending:false})
-        .limit(50)
+        .limit(50),
+      rpc('internal_customer_contacts',{p_customer_id:customerId})
     ]);
 
     for(const r of [quoteRes,orderRes,contractRes,assetRes,ticketRes]){
@@ -346,6 +347,14 @@
     const ticketRows=tickets.map(t=>
       '<tr><td>'+esc(t.ticket_number||'—')+'</td><td>'+esc(t.subject||'')+'</td><td>'+esc(statusText(t.status))+'</td><td>'+esc(t.priority||'normal')+'</td></tr>'
     );
+    const contactRows=(contacts||[]).map(ct=>
+      '<tr>'+
+        '<td><strong>'+esc(ct.name||'')+'</strong>'+(ct.is_primary?' <span class="pill good">主担当</span>':'')+'</td>'+
+        '<td>'+esc(ct.email||'—')+'</td>'+
+        '<td>'+esc(ct.phone||'—')+'</td>'+
+        '<td><button class="linkBtn contactEdit" type="button" data-id="'+esc(ct.id)+'">編集</button></td>'+
+      '</tr>'
+    );
 
     $('#customerDetailHost').innerHTML=
       '<section class="card section">'+
@@ -359,12 +368,31 @@
           ['契約',contracts.length],
           ['対応中問い合わせ',openTickets]
         ])+
-        '<div class="row">'+
-          '<span class="pill">電話 '+esc(c.phone||'—')+'</span>'+
-          '<span class="pill">'+esc(statusText(c.status))+'</span>'+
-          (c.manual_hold?'<span class="pill bad">手動ホールド中</span>':'<span class="pill good">取引可能</span>')+
-        '</div>'+
-        (c.internal_note?'<div class="notice">社内メモ: '+esc(c.internal_note)+'</div>':'')+
+        '<form id="customerEditForm">'+
+          '<div class="row">'+
+            '<div class="field" style="flex:1;min-width:180px"><label>顧客コード</label><input id="customerEditCode" value="'+esc(c.customer_code||'')+'"></div>'+
+            '<div class="field" style="flex:2;min-width:240px"><label>顧客名</label><input id="customerEditName" required value="'+esc(c.name||'')+'"></div>'+
+          '</div>'+
+          '<div class="field"><label>電話</label><input id="customerEditPhone" value="'+esc(c.phone||'')+'"></div>'+
+          '<div class="field"><label>社内メモ</label><textarea id="customerEditNote" rows="3">'+esc(c.internal_note||'')+'</textarea></div>'+
+          '<label class="row" style="margin:12px 0"><input id="customerEditHold" type="checkbox" '+(c.manual_hold?'checked':'')+'> <strong>手動ホールド</strong></label>'+
+          '<button class="primary" type="submit">顧客情報を保存</button>'+
+        '</form>'+
+        '<div id="customerEditMsg" class="notice hidden"></div>'+
+        '<section class="section"><h3>担当者</h3>'+
+          '<form id="contactCreateForm" class="card" style="box-shadow:none">'+
+            '<div class="row">'+
+              '<div class="field" style="flex:1;min-width:180px"><label>氏名</label><input id="contactName" required></div>'+
+              '<div class="field" style="flex:1;min-width:180px"><label>メール</label><input id="contactEmail" type="email"></div>'+
+              '<div class="field" style="flex:1;min-width:180px"><label>電話</label><input id="contactPhone"></div>'+
+            '</div>'+
+            '<label class="row" style="margin:10px 0"><input id="contactPrimary" type="checkbox"> 主担当にする</label>'+
+            '<button class="green" type="submit">担当者を追加</button>'+
+          '</form>'+
+          '<div id="contactCreateMsg" class="notice hidden"></div>'+
+          '<div id="contactEditHost"></div>'+
+          dataTable(['氏名','メール','電話','操作'],contactRows)+
+        '</section>'+
         '<section class="section"><h3>見積</h3>'+dataTable(['見積番号','状態','合計','有効期限'],quoteRows)+'</section>'+
         '<section class="section"><h3>受注</h3>'+dataTable(['受注番号','状態','合計','受注日'],orderRows)+'</section>'+
         '<section class="section"><h3>契約</h3>'+dataTable(['契約番号','状態','開始日','終了日'],contractRows)+'</section>'+
@@ -374,6 +402,93 @@
 
     $('#customerDetailClose').onclick=()=>{$('#customerDetailHost').innerHTML='';};
     $('#customerDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
+
+    $('#customerEditForm').onsubmit=async e=>{
+      e.preventDefault();
+      const btn=e.submitter;
+      if(btn) btn.disabled=true;
+      try{
+        await rpc('update_customer',{
+          p_customer_id:c.id,
+          p_customer_code:$('#customerEditCode').value.trim()||null,
+          p_name:$('#customerEditName').value.trim(),
+          p_phone:$('#customerEditPhone').value.trim()||null,
+          p_internal_note:$('#customerEditNote').value.trim()||null,
+          p_manual_hold:$('#customerEditHold').checked
+        });
+        notice('#customerEditMsg','顧客情報を更新しました。',true);
+        toast('顧客を更新しました');
+        setTimeout(()=>go('customers'),400);
+      }catch(err){
+        notice('#customerEditMsg',err.message||String(err));
+      }finally{
+        if(btn) btn.disabled=false;
+      }
+    };
+
+    $('#contactCreateForm').onsubmit=async e=>{
+      e.preventDefault();
+      const btn=e.submitter;
+      if(btn) btn.disabled=true;
+      try{
+        await rpc('create_contact',{
+          p_customer_id:c.id,
+          p_name:$('#contactName').value.trim(),
+          p_email:$('#contactEmail').value.trim()||null,
+          p_phone:$('#contactPhone').value.trim()||null,
+          p_is_primary:$('#contactPrimary').checked
+        });
+        notice('#contactCreateMsg','担当者を追加しました。',true);
+        toast('担当者を追加しました');
+        await renderCustomerDetail(c.id);
+      }catch(err){
+        notice('#contactCreateMsg',err.message||String(err));
+      }finally{
+        if(btn) btn.disabled=false;
+      }
+    };
+
+    document.querySelectorAll('.contactEdit').forEach(btn=>{
+      btn.onclick=()=>{
+        const ct=(contacts||[]).find(x=>x.id===btn.dataset.id);
+        if(!ct) return;
+        $('#contactEditHost').innerHTML=
+          '<form id="contactEditForm" class="card section" style="box-shadow:none">'+
+            '<h4>担当者を編集</h4>'+
+            '<div class="row">'+
+              '<div class="field" style="flex:1;min-width:180px"><label>氏名</label><input id="contactEditName" required value="'+esc(ct.name||'')+'"></div>'+
+              '<div class="field" style="flex:1;min-width:180px"><label>メール</label><input id="contactEditEmail" type="email" value="'+esc(ct.email||'')+'"></div>'+
+              '<div class="field" style="flex:1;min-width:180px"><label>電話</label><input id="contactEditPhone" value="'+esc(ct.phone||'')+'"></div>'+
+            '</div>'+
+            '<label class="row" style="margin:10px 0"><input id="contactEditPrimary" type="checkbox" '+(ct.is_primary?'checked':'')+'> 主担当にする</label>'+
+            '<div class="row"><button class="primary" type="submit">変更を保存</button><button id="contactEditCancel" class="ghost" type="button">キャンセル</button></div>'+
+          '</form>'+
+          '<div id="contactEditMsg" class="notice hidden"></div>';
+
+        $('#contactEditCancel').onclick=()=>{$('#contactEditHost').innerHTML='';};
+        $('#contactEditForm').onsubmit=async e=>{
+          e.preventDefault();
+          const save=e.submitter;
+          if(save) save.disabled=true;
+          try{
+            await rpc('update_contact',{
+              p_contact_id:ct.id,
+              p_name:$('#contactEditName').value.trim(),
+              p_email:$('#contactEditEmail').value.trim()||null,
+              p_phone:$('#contactEditPhone').value.trim()||null,
+              p_is_primary:$('#contactEditPrimary').checked
+            });
+            notice('#contactEditMsg','担当者を更新しました。',true);
+            toast('担当者を更新しました');
+            await renderCustomerDetail(c.id);
+          }catch(err){
+            notice('#contactEditMsg',err.message||String(err));
+          }finally{
+            if(save) save.disabled=false;
+          }
+        };
+      };
+    });
   }
 
   async function renderCustomers(){
@@ -386,13 +501,57 @@
         '<td>'+esc(statusText(c.status))+'</td>'+
         '<td>'+(c.manual_hold?'<span class="hold">手動ホールド中</span>':'<span class="normal">通常</span>')+'</td>'+
         '<td>'+esc(dateText(c.updated_at))+'</td>'+
-        '<td><button class="linkBtn customerDetail" type="button" data-id="'+esc(c.id)+'">詳細</button></td>'+
+        '<td><button class="linkBtn customerDetail" type="button" data-id="'+esc(c.id)+'">詳細・編集</button></td>'+
       '</tr>'
     );
+
     $('#home').innerHTML=
-      pageIntro('顧客','顧客マスタと取引・契約・機器・サポート状況をまとめて確認します。')+
+      pageIntro('顧客','顧客会社・顧客情報・担当者を一元管理します。')+
+      '<section class="card section">'+
+        '<h2>新規顧客</h2>'+
+        '<form id="customerCreateForm">'+
+          '<div class="row">'+
+            '<div class="field" style="flex:1;min-width:180px"><label>顧客コード（任意）</label><input id="customerCode"></div>'+
+            '<div class="field" style="flex:2;min-width:240px"><label>顧客名</label><input id="customerName" required></div>'+
+          '</div>'+
+          '<div class="field"><label>電話</label><input id="customerPhone"></div>'+
+          '<div class="field"><label>社内メモ</label><textarea id="customerNote" rows="3"></textarea></div>'+
+          '<h3>主担当者（任意）</h3>'+
+          '<div class="row">'+
+            '<div class="field" style="flex:1;min-width:180px"><label>氏名</label><input id="customerContactName"></div>'+
+            '<div class="field" style="flex:1;min-width:180px"><label>メール</label><input id="customerContactEmail" type="email"></div>'+
+            '<div class="field" style="flex:1;min-width:180px"><label>電話</label><input id="customerContactPhone"></div>'+
+          '</div>'+
+          '<button class="primary" type="submit">顧客を登録</button>'+
+        '</form>'+
+        '<div id="customerCreateMsg" class="notice hidden"></div>'+
+      '</section>'+
       '<div id="customerDetailHost"></div>'+
-      dataTable(['顧客コード','顧客名','電話','状態','取引状態','更新日','操作'],rows);
+      '<section class="section">'+dataTable(['顧客コード','顧客名','電話','状態','取引状態','更新日','操作'],rows)+'</section>';
+
+    $('#customerCreateForm').onsubmit=async e=>{
+      e.preventDefault();
+      const btn=e.submitter;
+      if(btn) btn.disabled=true;
+      try{
+        await rpc('create_customer',{
+          p_customer_code:$('#customerCode').value.trim()||null,
+          p_name:$('#customerName').value.trim(),
+          p_phone:$('#customerPhone').value.trim()||null,
+          p_internal_note:$('#customerNote').value.trim()||null,
+          p_contact_name:$('#customerContactName').value.trim()||null,
+          p_contact_email:$('#customerContactEmail').value.trim()||null,
+          p_contact_phone:$('#customerContactPhone').value.trim()||null
+        });
+        notice('#customerCreateMsg','顧客を登録しました。',true);
+        toast('顧客を登録しました');
+        setTimeout(()=>go('customers'),400);
+      }catch(err){
+        notice('#customerCreateMsg',err.message||String(err));
+      }finally{
+        if(btn) btn.disabled=false;
+      }
+    };
 
     document.querySelectorAll('.customerDetail').forEach(btn=>{
       btn.onclick=async()=>{
