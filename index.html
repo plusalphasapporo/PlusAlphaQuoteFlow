@@ -322,7 +322,7 @@
     'customer_ticket_detail','internal_numbering_settings','internal_accounts_list',
     'internal_account_companies','internal_audit_workspace','internal_document_profile','internal_demo_seed_status','internal_company_settings','internal_entity_audit_history',
     'internal_products_list','internal_lease_rates_list','internal_order_profitability','internal_customer_unified_workspace','internal_receiving_workspace','internal_order_operation','role_knowledge_articles',
-    'support_customer_directory','support_asset_directory','support_handoff_history','support_customer_context','support_workflow_states','support_ticket_workflow_state',
+    'support_customer_directory','support_asset_directory','support_handoff_history','support_customer_context','support_workflow_states','support_ticket_workflow_state','support_unread_notifications',
     'internal_case_directory','internal_handoff_history','internal_knowledge_articles'
   ]);
 
@@ -479,6 +479,7 @@
   let currentPage='home';
   let manualLogout=false;
   let healthTimer=null;
+  let supportRealtimeChannel=null;
 
   const pageSets = {
     internal_admin: [
@@ -891,6 +892,46 @@
   }
 
 
+  async function refreshSupportUnreadBadge(){
+    if(bootData?.context?.role!=='support_staff') return {count:0,items:[]};
+    try{
+      const unread=await rpc('support_unread_notifications');
+      const count=Number(unread?.count||0);
+      if(count>0){
+        $('#notificationCount').textContent=count>99?'99+':String(count);
+        $('#notificationCount').classList.remove('hidden');
+      }else{
+        $('#notificationCount').classList.add('hidden');
+      }
+      return unread||{count:0,items:[]};
+    }catch(_){
+      return {count:0,items:[]};
+    }
+  }
+
+  async function startSupportRealtime(){
+    if(supportRealtimeChannel){
+      try{await supabase.removeChannel(supportRealtimeChannel);}catch(_){}
+      supportRealtimeChannel=null;
+    }
+    if(bootData?.context?.role!=='support_staff') return;
+    supportRealtimeChannel=supabase
+      .channel('support-ticket-live')
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'support_tickets'},async payload=>{
+        const unread=await refreshSupportUnreadBadge();
+        const item=(unread.items||[]).find(x=>x.id===payload.new?.id);
+        if(item){
+          toast('新着 '+supportRequestTypeLabel(item.request_type)+'：'+(item.customer_name||'')+' '+(item.subject||''));
+          if(currentPage==='home') await renderHome();
+        }
+      })
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'support_tickets'},async()=>{
+        await refreshSupportUnreadBadge();
+        if(currentPage==='home') await renderHome();
+      })
+      .subscribe();
+  }
+
   async function setupGlobalHeader(){
     const role=bootData?.context?.role;
     const context=bootData?.context||{};
@@ -906,8 +947,8 @@
         ]);
         count=Number(biz?.kpis?.urgent_open_tickets||0)+Number((handoffs||[]).length||0);
       }else if(role==='support_staff'){
-        const h=await rpc('support_home');
-        count=Number(h?.kpis?.urgent_open||0);
+        const unread=await rpc('support_unread_notifications');
+        count=Number(unread?.count||0);
       }else if(role==='customer_user'){
         const h=await rpc('customer_portal_home');
         count=(h?.recent_tickets||[]).filter(x=>x.status!=='closed').length;
@@ -919,7 +960,7 @@
     }else{
       $('#notificationCount').classList.add('hidden');
     }
-    $('#notificationBtn').onclick=()=>go(role==='support_staff'?'support_cases':role==='customer_user'?'customer_status':'support');
+    $('#notificationBtn').onclick=()=>go(role==='support_staff'?'home':role==='customer_user'?'customer_status':'support');
 
     const searchWrap=$('#globalSearchWrap');
     if(!(role==='internal_admin'||role==='internal_staff')){
@@ -1125,10 +1166,11 @@
     }
 
     if(role==='support_staff'){
-      const [h,workspace,workflowStates]=await Promise.all([
+      const [h,workspace,workflowStates,unread]=await Promise.all([
         rpc('support_home'),
         rpc('internal_support_cases_list'),
-        rpc('support_workflow_states')
+        rpc('support_workflow_states'),
+        rpc('support_unread_notifications')
       ]);
       const stageMap={};
       (workflowStates||[]).forEach(x=>stageMap[x.ticket_id]=x.support_stage);
@@ -1164,8 +1206,23 @@
           ).join('')
         : '<div class="empty" style="padding:16px">'+esc(emptyText)+'</div>';
 
+      const unreadItems=(unread?.items||[]);
+      const unreadRows=unreadItems.slice(0,8).map(t=>
+        '<tr>'+
+          '<td><span class="hold">NEW</span></td>'+
+          '<td>'+supportRequestTypeBadge(t.request_type)+'</td>'+
+          '<td>'+esc(t.customer_name||'—')+'</td>'+
+          '<td><strong>'+esc(t.subject||'')+'</strong></td>'+
+          '<td>'+esc(dateText(t.created_at))+'</td>'+
+          '<td><button class="linkBtn supportUnreadOpen" type="button" data-id="'+esc(t.id)+'">確認</button></td>'+
+        '</tr>'
+      );
+
       home.innerHTML=
         pageIntro('サポートダッシュボード','優先対応を上から処理し、電話・チャット受付から遠隔対応、自社引継ぎまで一画面で確認します。')+
+        (unreadItems.length
+          ? '<section class="card section"><div class="row between"><div><h2>新着の障害・設定依頼</h2><p class="sectionDesc">まだあなたが開いていない案件です。確認すると既読になります。</p></div><span class="hold">'+esc(unreadItems.length)+'件未読</span></div>'+dataTable(['新着','種別','顧客','件名','登録日','操作'],unreadRows)+'</section>'
+          : '')+
         kpis([
           ['未対応の障害',unhandledIncidents.length],
           ['本日の設定依頼',todaySettings.length],
@@ -1200,6 +1257,14 @@
         '</section>';
       $('#supportNewFromHome').onclick=()=>go('support_new');
       $('#supportCasesFromHome').onclick=()=>go('support_cases');
+      document.querySelectorAll('.supportUnreadOpen').forEach(btn=>btn.onclick=async()=>{
+        btn.disabled=true;
+        try{
+          await go('support_cases');
+          await renderTicketDetail(btn.dataset.id);
+        }catch(err){toast(err.message||String(err));}
+        finally{btn.disabled=false;}
+      });
       document.querySelectorAll('.supportPriorityOpen').forEach(btn=>btn.onclick=async()=>{
         btn.disabled=true;
         try{
@@ -5224,6 +5289,13 @@
     const t=detail?.ticket;
     if(!t) throw new Error('問い合わせが見つかりません。');
 
+    if(support && (t.request_type==='incident'||t.request_type==='setting_request')){
+      try{
+        await rpc('mark_support_ticket_read',{p_ticket_id:t.id});
+        await refreshSupportUnreadBadge();
+      }catch(_){}
+    }
+
     const messages=detail.messages||[];
     const attachments=detail.attachments||[];
     const handoffs=detail.handoffs||[];
@@ -7724,6 +7796,7 @@
     integrations();
     renderNav();
     await setupGlobalHeader();
+    await startSupportRealtime();
     await go('home');
   }
 
@@ -7915,7 +7988,11 @@
       return;
     }
     if(event==='SIGNED_OUT'){
-      setTimeout(()=>{
+      setTimeout(async()=>{
+        if(supportRealtimeChannel){
+          try{await supabase.removeChannel(supportRealtimeChannel);}catch(_){}
+          supportRealtimeChannel=null;
+        }
         bootData=null;
         currentPage='home';
         if(!manualLogout){
