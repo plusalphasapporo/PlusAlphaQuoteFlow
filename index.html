@@ -220,7 +220,7 @@
   const roleLabel = (r) => ({internal_admin:'自社管理者',internal_staff:'自社スタッフ',support_staff:'サポート会社',customer_user:'顧客会社'}[r] || r || '不明');
   const money = (v) => new Intl.NumberFormat('ja-JP',{style:'currency',currency:'JPY',maximumFractionDigits:0}).format(Number(v || 0));
   const dateText = (v) => v ? new Intl.DateTimeFormat('ja-JP',{year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(v)) : '—';
-  const statusText = (v) => ({draft:'下書き',finalized:'確定済み',sent:'送付済み',accepted:'承認済み',rejected:'却下',open:'未対応',in_progress:'対応中',resolved:'解決',closed:'完了',active:'有効',inactive:'無効',planned:'予定',delivered:'納品済み'}[v] || v || '—');
+  const statusText = (v) => ({draft:'下書き',finalized:'管理者承認待ち',sent:'送付済み',accepted:'管理者承認済み',rejected:'却下',open:'未対応',in_progress:'対応中',resolved:'解決',closed:'完了',active:'有効',inactive:'無効',planned:'予定',delivered:'納品済み'}[v] || v || '—');
   const toast = (m) => { const e=$('#toast'); e.textContent=m; e.style.display='block'; clearTimeout(window.__toastTimer); window.__toastTimer=setTimeout(()=>e.style.display='none',2500); };
   const show = (id) => ['loginView','mfaView','passwordRecoveryView','passwordSetupView','appView'].forEach(x => $('#'+x).classList.toggle('hidden',x!==id));
   const notice = (id,msg,ok=false) => { const e=$(id); e.textContent=msg; e.className='notice '+(ok?'ok':'error'); e.classList.remove('hidden'); };
@@ -229,8 +229,8 @@
   const READ_ONLY_RPCS = new Set([
     'app_health','current_auth_onboarding_state','current_app_bootstrap',
     'internal_command_center','internal_handoff_queue','internal_business_dashboard',
-    'support_home','customer_portal_home','customer_operations_home',
-    'customer_order_detail','customer_delivery_detail','customer_quote_detail',
+    'support_home',
+    
     'internal_quote_detail','internal_order_detail','internal_purchase_orders',
     'internal_purchase_order_detail','internal_delivery_detail','internal_asset_detail',
     'internal_contract_detail','internal_assets_list','internal_customers_list',
@@ -396,11 +396,6 @@
       ['security','セキュリティ']
     ],
     customer_user: [
-      ['home','ホーム'],
-      ['quotes','見積'],
-      ['orders','受注'],
-      ['deliveries','納品'],
-      ['assets','契約・機器'],
       ['support','問い合わせ'],
       ['security','セキュリティ']
     ]
@@ -500,8 +495,8 @@
         pageIntro('ダッシュボード','見積から受注・発注・納品・サポートまで、今日確認が必要な項目をまとめています。')+
         kpis([
           ['見積下書き',biz.kpis?.quote_drafts],
-          ['顧客回答待ち',biz.kpis?.quotes_waiting_customer],
-          ['受注化待ち',biz.kpis?.accepted_quotes_without_order],
+          ['管理者承認待ち',biz.kpis?.quotes_waiting_customer],
+          ['承認済・受注化待ち',biz.kpis?.accepted_quotes_without_order],
           ['発注未作成',biz.kpis?.orders_without_purchase_order],
           ['納品未作成',biz.kpis?.orders_without_delivery],
           ['納品予定超過',biz.kpis?.deliveries_overdue],
@@ -509,7 +504,7 @@
           ['手動ホールド',biz.kpis?.manual_hold_customers]
         ])+
         '<section class="card section">'+
-          '<div class="row between"><div><h2>見積キュー</h2><p class="sectionDesc">下書き・顧客回答待ち・承諾済みを確認します。</p></div><button class="ghost dashGo" data-page="quotes" type="button">見積を開く</button></div>'+
+          '<div class="row between"><div><h2>見積キュー</h2><p class="sectionDesc">下書き・管理者承認待ち・管理者承認済みを確認します。</p></div><button class="ghost dashGo" data-page="quotes" type="button">見積を開く</button></div>'+
           dataTable(['見積番号','顧客','状態','合計'],quoteRows)+
         '</section>'+
         '<section class="card section">'+
@@ -906,6 +901,9 @@
   }
 
   async function renderQuoteEditor(quoteId,cmap){
+    const role=bootData.context?.role;
+    const internal=role==='internal_admin'||role==='internal_staff';
+    const admin=role==='internal_admin';
     const detail=await rpc('internal_quote_detail',{p_quote_id:quoteId});
     if(!detail?.quote) throw new Error('見積が見つかりません。');
     const q=detail.quote;
@@ -934,18 +932,21 @@
               '<div id="quoteEditItems" class="quoteItems">'+(items.length?items:[{}]).map(quoteItemRow).join('')+'</div>'+
               '<div class="field"><label>社内メモ</label><textarea id="quoteEditNote" rows="3">'+esc(q.internal_note||'')+'</textarea></div>'+
               '<div class="quoteTotals"><span>小計 <strong>'+esc(money(q.subtotal))+'</strong></span><span>税 <strong>'+esc(money(q.tax_amount))+'</strong></span><span>合計 <strong>'+esc(money(q.total_amount))+'</strong></span></div>'+
-              '<div class="row"><button class="primary" type="submit">変更を保存</button><button id="quoteFinalizeBtn" class="green" type="button">見積を確定</button><span class="muted">確定すると自動採番され、顧客画面に表示されます。</span></div>'+
+              '<div class="row"><button class="primary" type="submit">変更を保存</button><button id="quoteFinalizeBtn" class="green" type="button">承認申請</button><span class="muted">申請すると自動採番され、管理者承認待ちになります。</span></div>'+
             '</form>'+
             '<div id="quoteEditMsg" class="notice hidden"></div>'
           : '<div class="quoteTotals"><span>小計 <strong>'+esc(money(q.subtotal))+'</strong></span><span>税 <strong>'+esc(money(q.tax_amount))+'</strong></span><span>合計 <strong>'+esc(money(q.total_amount))+'</strong></span></div>'+
             dataTable(['明細','数量','単価','金額'],readOnlyRows)+
             (internal && q.status==='accepted'
-              ? '<div class="notice ok">顧客承諾済みです。受注へ進められます。</div>'+
+              ? '<div class="notice ok">管理者承認済みです。受注へ進められます。</div>'+
                 '<div class="row" style="margin-top:14px"><button id="quoteToOrderBtn" class="orange" type="button">受注を作成して開く</button><span class="muted">同じ見積から重複受注は作成されません。</span></div><div id="quoteActionMsg" class="notice hidden"></div>'
               : q.status==='finalized'
-                ? '<div class="notice">顧客の回答待ちです。承諾後に受注を作成できます。</div>'
+                ? (admin
+                    ? '<div class="notice">承認申請されています。内容を確認して承認してください。</div>'+
+                      '<div class="row" style="margin-top:14px"><button id="quoteApproveBtn" class="green" type="button">見積を承認</button></div><div id="quoteActionMsg" class="notice hidden"></div>'
+                    : '<div class="notice">管理者承認待ちです。</div>')
                 : q.status==='rejected'
-                  ? '<div class="notice error">顧客が辞退した見積です。受注には進めません。</div>'
+                  ? '<div class="notice error">却下された見積です。</div>'
                   : '')
         )+
       '</section>';
@@ -983,12 +984,27 @@
         btn.disabled=true;
         try{
           const finalized=await rpc('finalize_quote',{p_quote_id:q.id});
-          notice('#quoteEditMsg','確定しました。見積番号 '+String(finalized?.quote_number||''),true);
-          toast('見積を確定しました');
+          notice('#quoteEditMsg','承認申請しました。見積番号 '+String(finalized?.quote_number||''),true);
+          toast('管理者承認待ちにしました');
           setTimeout(()=>go('quotes'),500);
         }catch(err){
           const msg=String(err.message||err);
           notice('#quoteEditMsg',msg.includes('numbering configuration required')?'採番設定が未設定です。管理者の「設定」から見積番号の形式を登録してください。':msg);
+        }finally{
+          btn.disabled=false;
+        }
+      };
+    }else if(admin && q.status==='finalized' && $('#quoteApproveBtn')){
+      $('#quoteApproveBtn').onclick=async()=>{
+        const btn=$('#quoteApproveBtn');
+        btn.disabled=true;
+        try{
+          const approved=await rpc('approve_quote',{p_quote_id:q.id});
+          notice('#quoteActionMsg','管理者承認しました。見積番号 '+String(approved?.quote_number||''),true);
+          toast('見積を承認しました');
+          setTimeout(()=>go('quotes'),450);
+        }catch(err){
+          notice('#quoteActionMsg',err.message||String(err));
         }finally{
           btn.disabled=false;
         }
@@ -1094,7 +1110,6 @@
   async function renderQuotes(){
     const role=bootData.context?.role;
     const internal=role==='internal_admin'||role==='internal_staff';
-    const customer=role==='customer_user';
     const [{data,error},cmap]=await Promise.all([
       supabase.from('quotes').select('id,customer_id,quote_number,status,subtotal,tax_amount,total_amount,valid_until,created_at').order('created_at',{ascending:false}),
       customerMap()
@@ -1133,7 +1148,7 @@
         '<td class="amount">'+esc(money(q.total_amount))+'</td>'+
         '<td>'+esc(dateText(q.valid_until))+'</td>'+
         '<td>'+esc(dateText(q.created_at))+'</td>'+
-        (internal?'<td><button class="linkBtn quoteEdit" type="button" data-id="'+esc(q.id)+'">詳細・編集</button></td>':customer?'<td><button class="linkBtn quoteCustomerDetail" type="button" data-id="'+esc(q.id)+'">詳細</button></td>':'')+
+        (internal?'<td><button class="linkBtn quoteEdit" type="button" data-id="'+esc(q.id)+'">詳細・編集</button></td>':'')+
       '</tr>';
     });
 
@@ -1142,7 +1157,7 @@
       createBox+
       '<div id="quoteDetailHost"></div>'+
       '<section class="section">'+dataTable(
-        (internal||customer)?['見積番号','顧客','状態','合計','有効期限','作成日','操作']:['見積番号','顧客','状態','合計','有効期限','作成日'],
+        internal?['見積番号','顧客','状態','合計','有効期限','作成日','操作']:['見積番号','顧客','状態','合計','有効期限','作成日'],
         rows
       )+'</section>';
 
@@ -1186,20 +1201,6 @@
       });
     }
 
-    if(customer){
-      document.querySelectorAll('.quoteCustomerDetail').forEach(btn=>{
-        btn.onclick=async()=>{
-          btn.disabled=true;
-          try{
-            await renderCustomerQuoteDetail(btn.dataset.id);
-          }catch(err){
-            toast(err.message||String(err));
-          }finally{
-            btn.disabled=false;
-          }
-        };
-      });
-    }
   }
 
   async function renderSettings(){
@@ -1491,7 +1492,7 @@
       '</tr>';
     });
     $('#home').innerHTML=
-      pageIntro('受注','顧客が承諾した見積から作成された受注を確認します。')+
+      pageIntro('受注','管理者承認済みの見積から作成された受注を確認します。')+
       '<div id="orderDetailHost"></div>'+
       dataTable(['受注番号','顧客','状態','合計','受注日','作成日','操作'],rows);
 
@@ -2008,17 +2009,34 @@
 
   async function renderSupport(){
     const role=bootData.context?.role;
-    const [{data,error},cmap]=await Promise.all([
-      supabase.from('support_tickets').select('id,customer_id,ticket_number,subject,status,priority,created_at,updated_at').order('created_at',{ascending:false}),
-      customerMap()
-    ]);
-    if(error) throw error;
+    const customer=role==='customer_user';
+
+    let data=[];
+    let cmap={};
+
+    if(customer){
+      const res=await supabase.from('support_tickets')
+        .select('id,ticket_number,subject,status,priority,created_at,updated_at')
+        .order('created_at',{ascending:false});
+      if(res.error) throw res.error;
+      data=res.data||[];
+    }else{
+      const [ticketRes,map]=await Promise.all([
+        supabase.from('support_tickets')
+          .select('id,customer_id,ticket_number,subject,status,priority,created_at,updated_at')
+          .order('created_at',{ascending:false}),
+        customerMap()
+      ]);
+      if(ticketRes.error) throw ticketRes.error;
+      data=ticketRes.data||[];
+      cmap=map;
+    }
 
     const rows=(data||[]).map(t=>{
-      const c=cmap[t.customer_id]||{};
+      const c=customer?{}:(cmap[t.customer_id]||{});
       return '<tr>'+
         '<td><strong>'+esc(t.ticket_number||'—')+'</strong></td>'+
-        '<td>'+esc(c.name||'—')+'</td>'+
+        (customer?'':'<td>'+esc(c.name||'—')+'</td>')+
         '<td>'+esc(t.subject||'')+'</td>'+
         '<td>'+esc(statusText(t.status))+'</td>'+
         '<td>'+esc(t.priority||'normal')+'</td>'+
@@ -2027,44 +2045,27 @@
       '</tr>';
     });
 
-    let createBox='';
-    if(role==='customer_user'){
-      const [assetRes,contractRes]=await Promise.all([
-        supabase.from('assets').select('id,asset_number,model_name,status').order('created_at',{ascending:false}),
-        supabase.from('contracts').select('id,contract_number,status').order('created_at',{ascending:false})
-      ]);
-      if(assetRes.error) throw assetRes.error;
-      if(contractRes.error) throw contractRes.error;
-
-      const assetOptions=(assetRes.data||[]).map(a=>
-        '<option value="'+esc(a.id)+'">'+esc(a.asset_number||a.model_name||'機器')+'</option>'
-      ).join('');
-      const contractOptions=(contractRes.data||[]).map(c=>
-        '<option value="'+esc(c.id)+'">'+esc(c.contract_number||'契約')+'</option>'
-      ).join('');
-
-      createBox=
-        '<section class="card section">'+
+    const createBox=customer
+      ? '<section class="card section">'+
           '<h2>新しく問い合わせる</h2>'+
-          '<p class="sectionDesc">必要に応じて対象の契約・機器を選択できます。</p>'+
+          '<p class="sectionDesc">件名と内容を入力してください。</p>'+
           '<form id="ticketForm">'+
-            '<div class="row">'+
-              '<div class="field" style="flex:1;min-width:180px"><label>対象機器（任意）</label><select id="ticketAsset"><option value="">指定なし</option>'+assetOptions+'</select></div>'+
-              '<div class="field" style="flex:1;min-width:180px"><label>対象契約（任意）</label><select id="ticketContract"><option value="">指定なし</option>'+contractOptions+'</select></div>'+
-            '</div>'+
             '<div class="field"><label>件名</label><input id="subject" required></div>'+
-            '<div class="field"><label>内容</label><textarea id="description" rows="4"></textarea></div>'+
-            '<button class="green" type="submit">送信する</button>'+
+            '<div class="field"><label>内容</label><textarea id="description" rows="5"></textarea></div>'+
+            '<button class="green" type="submit">問い合わせを送信</button>'+
           '</form>'+
           '<div id="ticketMsg" class="notice hidden"></div>'+
-        '</section>';
-    }
+        '</section>'
+      : '';
 
     $('#home').innerHTML=
-      pageIntro(role==='customer_user'?'問い合わせ':'サポート','問い合わせの詳細、メッセージ、引き継ぎ状況を確認します。')+
+      pageIntro(customer?'問い合わせ':'サポート',customer?'問い合わせの作成・返信・履歴確認ができます。':'問い合わせの詳細、メッセージ、引き継ぎ状況を確認します。')+
       createBox+
       '<div id="ticketDetailHost"></div>'+
-      '<section class="section">'+dataTable(['番号','顧客','件名','状態','優先度','作成日','操作'],rows)+'</section>';
+      '<section class="section">'+dataTable(
+        customer?['番号','件名','状態','優先度','作成日','操作']:['番号','顧客','件名','状態','優先度','作成日','操作'],
+        rows
+      )+'</section>';
 
     document.querySelectorAll('.ticketDetail').forEach(btn=>{
       btn.onclick=async()=>{
@@ -2075,19 +2076,19 @@
       };
     });
 
-    if(role==='customer_user'){
+    if(customer){
       $('#ticketForm').onsubmit=async e=>{
         e.preventDefault();
         const btn=e.submitter;
         if(btn) btn.disabled=true;
         try{
           await rpc('create_customer_ticket',{
-            p_asset_id:$('#ticketAsset').value||null,
-            p_contract_id:$('#ticketContract').value||null,
+            p_asset_id:null,
+            p_contract_id:null,
             p_subject:$('#subject').value.trim(),
             p_description:$('#description').value.trim()||null
           });
-          notice('#ticketMsg','問い合わせを作成しました。',true);
+          notice('#ticketMsg','問い合わせを送信しました。',true);
           $('#ticketForm').reset();
           setTimeout(()=>go('support'),450);
         }catch(err){
@@ -2715,6 +2716,11 @@
   }
 
   async function go(page){
+    const role=bootData?.context?.role;
+    const allowed=(pageSets[role]||[]).map(x=>x[0]);
+    if(!allowed.includes(page)){
+      page=allowed[0]||'support';
+    }
     currentPage=page;
     setActiveNav();
     $('#home').innerHTML='<div class="card section"><p class="muted">読み込み中...</p></div>';
