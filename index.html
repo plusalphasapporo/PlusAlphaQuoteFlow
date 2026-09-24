@@ -267,7 +267,7 @@
     'internal_customer_detail','internal_customer_contacts','internal_customer_registration_options','support_ticket_workspace',
     'customer_ticket_detail','internal_numbering_settings','internal_accounts_list',
     'internal_account_companies','internal_audit_workspace','internal_document_profile','internal_demo_seed_status',
-    'internal_products_list','internal_lease_rates_list','internal_order_profitability','internal_customer_unified_workspace','internal_receiving_workspace'
+    'internal_products_list','internal_lease_rates_list','internal_order_profitability','internal_customer_unified_workspace','internal_receiving_workspace','internal_order_operation'
   ]);
 
   function errorStatus(err){
@@ -1498,18 +1498,116 @@
     bindUnifiedTabs(t=>renderSalesWorkspace(t));
   }
 
+
+  async function openOrderOperationModal(order,cmap){
+    const data=await rpc('internal_order_operation',{p_order_id:order.id});
+    const op=data.operation||{};
+    const checklist=op.checklist||{};
+    const credits=op.credit_history||[];
+    const labels=[
+      '受注内容を確認する','顧客情報・物件情報を整理する','リース会社へ申込する','与信結果を確認する',
+      'リース契約書を顧客へ案内する','契約書・口座書類を回収する','書類不備を確認する','仕入先へ商品を発注する',
+      '納品・設置日を調整する','設置担当へ作業内容を共有する','納品・設置を完了する','納品書・検収書を回収する',
+      'リース会社へ検収報告する','リース開始日を確認する','保守契約・カウンター登録をする','社内台帳へ登録する'
+    ];
+    const creditRows=credits.map(x=>
+      '<tr><td>'+esc(dateText(x.created_at))+'</td><td>'+esc(x.lease_company||'—')+'</td><td>'+esc(x.result||'—')+'</td><td>'+esc(x.rate??'—')+'</td><td class="amount">'+esc(x.monthly_amount!==null&&x.monthly_amount!==undefined?money(x.monthly_amount):'—')+'</td><td>'+esc(x.note||'—')+'</td></tr>'
+    );
+
+    openModal({
+      title:'受注後処理',
+      description:(order.order_number||'未採番')+' / '+esc(cmap[order.customer_id]?.name||''),
+      wide:true,
+      body:
+        '<section class="formSection">'+
+          '<div class="formSectionHead"><span class="sectionNo">01</span><h3>受注後チェックリスト</h3></div>'+
+          '<div class="modalGrid2">'+labels.map((label,i)=>
+            '<label class="item" style="display:flex;gap:10px;align-items:flex-start;margin:0"><input class="orderOpCheck" type="checkbox" data-no="'+(i+1)+'" '+(checklist[String(i+1)]?'checked':'')+'><span><strong>'+esc(i+1)+'.</strong> '+esc(label)+'</span></label>'
+          ).join('')+'</div>'+
+          '<div class="field"><label>社内メモ</label><textarea id="orderOpNote" rows="3">'+esc(op.internal_note||'')+'</textarea></div>'+
+        '</section>'+
+        '<section class="formSection">'+
+          '<div class="formSectionHead"><span class="sectionNo">02</span><h3>与信履歴</h3></div>'+
+          dataTable(['日付','リース会社','結果','料率','月額','メモ'],creditRows)+
+          '<div class="modalGrid3" style="margin-top:12px">'+
+            '<div class="field"><label>リース会社</label><input id="creditCompany"></div>'+
+            '<div class="field"><label>結果</label><select id="creditResult"><option value="">選択</option><option value="approved">承認</option><option value="conditional">条件付承認</option><option value="declined">否決</option><option value="pending">審査中</option></select></div>'+
+            '<div class="field"><label>料率</label><input id="creditRate" type="number" min="0" step="0.0001"></div>'+
+            '<div class="field"><label>月額</label><input id="creditMonthly" type="number" min="0"></div>'+
+            '<div class="field" style="grid-column:span 2"><label>メモ</label><input id="creditNote"></div>'+
+          '</div>'+
+          '<button id="creditAddBtn" class="ghost" type="button">＋与信履歴を追加</button>'+
+        '</section>'+
+        '<section class="formSection">'+
+          '<div class="formSectionHead"><span class="sectionNo">03</span><h3>仕入・発注</h3></div>'+
+          '<p class="sectionDesc">受注元見積の「仕入対象」明細を仕入先ごとに分割し、発注を生成します。同じ仕入先の発注が既にある場合は重複生成しません。</p>'+
+          '<button id="generatePOBtn" class="orange" type="button">仕入先別に発注を生成</button>'+
+          '<div id="orderOpActionMsg" class="notice hidden"></div>'+
+        '</section>',
+      confirmLabel:'進行状況を保存',
+      onSubmit:async()=>{
+        const next={};
+        document.querySelectorAll('.orderOpCheck').forEach(x=>next[x.dataset.no]=x.checked);
+        await rpc('save_order_operation',{p_order_id:order.id,p_checklist:next,p_internal_note:$('#orderOpNote').value.trim()||null});
+        closeModal();toast('受注後処理を保存しました');await renderSalesWorkspace('order_ops');
+      }
+    });
+
+    $('#creditAddBtn').onclick=async()=>{
+      const btn=$('#creditAddBtn'); btn.disabled=true;
+      try{
+        await rpc('append_order_credit_history',{
+          p_order_id:order.id,
+          p_lease_company:$('#creditCompany').value.trim()||null,
+          p_result:$('#creditResult').value||null,
+          p_rate:$('#creditRate').value?Number($('#creditRate').value):null,
+          p_monthly_amount:$('#creditMonthly').value?Number($('#creditMonthly').value):null,
+          p_note:$('#creditNote').value.trim()||null
+        });
+        closeModal();toast('与信履歴を追加しました');await openOrderOperationModal(order,cmap);
+      }catch(err){ toast(err.message||String(err)); }
+      finally{ btn.disabled=false; }
+    };
+
+    $('#generatePOBtn').onclick=async()=>{
+      const btn=$('#generatePOBtn'); btn.disabled=true;
+      try{
+        const result=await rpc('generate_purchase_orders_for_order',{p_order_id:order.id});
+        notice('#orderOpActionMsg','発注生成を実行しました。新規発注: '+esc(result?.purchase_orders_created||0)+'件',true);
+        toast('仕入先別発注を生成しました');
+      }catch(err){ notice('#orderOpActionMsg',err.message||String(err)); }
+      finally{ btn.disabled=false; }
+    };
+  }
+
+  async function renderOrderOperationsTab(){
+    const [{data,error},cmap]=await Promise.all([
+      supabase.from('orders').select('id,customer_id,quote_id,order_number,status,total_amount,ordered_at,created_at').order('created_at',{ascending:false}),
+      customerMap()
+    ]);
+    if(error) throw error;
+    const rows=(data||[]).map(o=>
+      '<tr><td><strong>'+esc(o.order_number||'未採番')+'</strong></td><td>'+esc(cmap[o.customer_id]?.name||'—')+'</td><td>'+esc(statusText(o.status))+'</td><td class="amount">'+esc(money(o.total_amount))+'</td><td>'+esc(dateText(o.ordered_at))+'</td><td><button class="linkBtn orderOpOpen" type="button" data-id="'+esc(o.id)+'">進行管理</button></td></tr>'
+    );
+    $('#home').innerHTML=
+      pageIntro('見積・リース','受注後の与信・契約・発注・納品・検収・台帳登録を管理します。')+
+      unifiedTabs([['quotes','見積'],['products','商品マスタ'],['lease_rates','リース料率'],['profit','受注粗利'],['order_ops','受注後処理'],['sales_settings','販売設定']],'order_ops','sales')+
+      '<section class="card section"><h2>受注後処理</h2><p class="sectionDesc">1〜16の進行チェックと与信履歴を受注単位で管理します。</p>'+
+      dataTable(['受注番号','顧客','状態','受注金額','受注日','操作'],rows)+'</section>';
+    bindUnifiedTabs(t=>renderSalesWorkspace(t));
+    document.querySelectorAll('.orderOpOpen').forEach(btn=>{
+      btn.onclick=()=>{
+        const o=(data||[]).find(x=>x.id===btn.dataset.id);
+        if(o) openOrderOperationModal(o,cmap);
+      };
+    });
+  }
+
   async function renderSalesWorkspace(tab='quotes'){
     if(tab==='products') return renderProductsTab();
     if(tab==='lease_rates') return renderLeaseRatesTab();
     if(tab==='profit') return renderProfitTab();
-    if(tab==='order_ops'){
-      await renderOrders();
-      const host=$('#home'); const nodes=[...host.childNodes];
-      host.innerHTML=pageIntro('見積・リース','受注後処理を同じ販売ワークスペースで確認します。')+
-        unifiedTabs([['quotes','見積'],['products','商品マスタ'],['lease_rates','リース料率'],['profit','受注粗利'],['order_ops','受注後処理'],['sales_settings','販売設定']],'order_ops','sales')+
-        '<div id="salesInner"></div>';
-      nodes.forEach(n=>$('#salesInner').appendChild(n)); bindUnifiedTabs(t=>renderSalesWorkspace(t)); return;
-    }
+    if(tab==='order_ops') return renderOrderOperationsTab();
     if(tab==='sales_settings'){
       $('#home').innerHTML=pageIntro('見積・リース','販売設定')+
         unifiedTabs([['quotes','見積'],['products','商品マスタ'],['lease_rates','リース料率'],['profit','受注粗利'],['order_ops','受注後処理'],['sales_settings','販売設定']],'sales_settings','sales')+
