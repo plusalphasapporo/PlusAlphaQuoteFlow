@@ -7805,6 +7805,9 @@
             (body?'\n\n過去案件の内容:\n'+(body.length>420?body.slice(0,420)+'…':body):'');
         }
 
+        const stepsSource=(assistAnswer||'').split(/\n+/).map(x=>x.replace(/^[・●\-\d\.\)\s]+/,'').trim()).filter(Boolean);
+        const assistSteps=(stepsSource.length?stepsSource:['内容を確認する','必要な設定・復旧作業を実施する','結果を確認して記録する']).slice(0,6);
+
         const aiAssistHtml=evidenceCount
           ? '<section class="notice ok" style="margin-top:12px">'+
               '<div class="row between" style="gap:10px;align-items:flex-start;flex-wrap:wrap">'+
@@ -7814,6 +7817,18 @@
                 '<span class="pill good">根拠 '+esc(evidenceCount)+'件</span>'+
               '</div>'+
               '<div style="white-space:pre-wrap;margin-top:10px;line-height:1.7">'+esc(assistAnswer||'該当する根拠を確認して対応してください。')+'</div>'+
+              '<div style="margin-top:14px"><strong>実施手順</strong><div class="muted" style="margin-top:4px">完了した項目をチェックしてください。</div>'+
+                '<div id="ticketAssistChecklist" style="margin-top:8px">'+assistSteps.map((step,i)=>
+                  '<label class="item row" style="gap:10px;align-items:flex-start;margin-bottom:8px">'+
+                    '<input class="ticketAssistStepCheck" type="checkbox" data-step="'+esc(i)+'" style="margin-top:4px">'+
+                    '<span><strong>'+(i+1)+'.</strong> '+esc(step)+'</span>'+
+                  '</label>'
+                ).join('')+'</div>'+
+                '<div class="supportQuickActions" style="margin-top:10px">'+
+                  '<button id="ticketAssistSaveProgress" class="ghost" type="button">進捗を記録</button>'+
+                  '<button id="ticketAssistCompleteSteps" class="green" type="button">手順完了</button>'+
+                '</div>'+
+              '</div>'+
               '<div class="supportQuickActions" style="margin-top:12px">'+
                 '<button id="ticketAssistStartWork" class="primary" type="button">この内容で作業開始</button>'+
                 '<button id="ticketAssistReplyCustomer" class="ghost" type="button">顧客へ返信</button>'+
@@ -7861,6 +7876,58 @@
           : '<div class="empty" style="margin-top:12px">類似する過去案件は見つかりませんでした。</div>';
 
         host.innerHTML=aiAssistHtml+knowledgeHtml+ticketHtml;
+
+        const assistStepStateKey='quoteflow:assist-steps:'+String(t.id);
+        try{
+          const saved=JSON.parse(localStorage.getItem(assistStepStateKey)||'[]');
+          document.querySelectorAll('.ticketAssistStepCheck').forEach((el,i)=>{el.checked=!!saved[i];});
+        }catch(_){}
+
+        const readAssistStepState=()=>[...document.querySelectorAll('.ticketAssistStepCheck')].map(el=>!!el.checked);
+        document.querySelectorAll('.ticketAssistStepCheck').forEach(el=>el.addEventListener('change',()=>{
+          try{localStorage.setItem(assistStepStateKey,JSON.stringify(readAssistStepState()));}catch(_){}
+        }));
+
+        const assistSaveProgress=$('#ticketAssistSaveProgress');
+        if(assistSaveProgress) assistSaveProgress.onclick=async()=>{
+          assistSaveProgress.disabled=true;
+          try{
+            const state=readAssistStepState();
+            const done=state.filter(Boolean).length;
+            const lines=assistSteps.map((step,i)=>(state[i]?'☑ ':'☐ ')+(i+1)+'. '+step).join('\n');
+            await rpc('post_ticket_message',{
+              p_ticket_id:t.id,
+              p_visibility:'support',
+              p_body:'【対応手順 進捗】\n'+lines+'\n\n完了 '+done+' / '+assistSteps.length
+            });
+            toast('作業手順の進捗を記録しました');
+          }catch(err){
+            toast(err.message||String(err));
+          }finally{
+            assistSaveProgress.disabled=false;
+          }
+        };
+
+        const assistCompleteSteps=$('#ticketAssistCompleteSteps');
+        if(assistCompleteSteps) assistCompleteSteps.onclick=async()=>{
+          assistCompleteSteps.disabled=true;
+          try{
+            const boxes=[...document.querySelectorAll('.ticketAssistStepCheck')];
+            boxes.forEach(el=>el.checked=true);
+            const lines=assistSteps.map((step,i)=>'☑ '+(i+1)+'. '+step).join('\n');
+            try{localStorage.setItem(assistStepStateKey,JSON.stringify(boxes.map(()=>true)));}catch(_){}
+            await rpc('post_ticket_message',{
+              p_ticket_id:t.id,
+              p_visibility:'support',
+              p_body:'【対応手順 完了】\n'+lines
+            });
+            toast('すべての手順を完了として記録しました');
+          }catch(err){
+            toast(err.message||String(err));
+          }finally{
+            assistCompleteSteps.disabled=false;
+          }
+        };
 
         const assistStartWork=$('#ticketAssistStartWork');
         if(assistStartWork) assistStartWork.onclick=async()=>{
