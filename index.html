@@ -1298,8 +1298,69 @@
           if(currentPage==='home') await renderHome();
         }
       })
-      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'support_tickets'},async()=>{
-        await refreshSupportUnreadBadge();
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'support_tickets'},async payload=>{
+        const unread=await refreshSupportUnreadBadge();
+        const becameTeamViewerWaiting=
+          payload.new?.support_stage==='teamviewer_waiting' &&
+          payload.old?.support_stage!=='teamviewer_waiting';
+
+        if(becameTeamViewerWaiting){
+          const item=(unread.items||[]).find(x=>x.id===payload.new?.id);
+          if(item){
+            let teamviewerSession=null;
+            try{
+              const sessions=await rpc('teamviewer_ticket_sessions',{p_ticket_id:item.id});
+              teamviewerSession=(sessions||[])[0]||null;
+            }catch(_){}
+
+            toast('遠隔サポート開始：'+(item.customer_name||'顧客')+' '+(item.subject||''));
+            mountAppModal(
+              '<div class="appModalHead">'+
+                '<div><h2>顧客が遠隔サポートを開始しました</h2><p>TeamViewerの接続待ちです。</p></div>'+
+                '<button id="supportRemoteNoticeClose" class="ghost" type="button">×</button>'+
+              '</div>'+
+              '<div class="appModalBody">'+
+                '<div class="notice ok"><strong>'+esc(item.customer_name||'顧客')+'</strong><br>'+esc(item.subject||'問い合わせ')+'</div>'+
+                '<div class="modalGrid2">'+
+                  '<div class="item"><strong>案件番号</strong><p>'+esc(item.ticket_number||'—')+'</p></div>'+
+                  '<div class="item"><strong>状態</strong><p>TeamViewer 接続待ち</p></div>'+
+                '</div>'+
+                (teamviewerSession?.session_code
+                  ? '<div class="notice"><strong>TeamViewerセッション</strong><br>'+esc(teamviewerSession.session_code)+'</div>'
+                  : '<div class="notice">TeamViewerセッション情報は案件カルテで確認してください。</div>')+
+              '</div>'+
+              '<div class="appModalFoot">'+
+                '<button id="supportRemoteNoticeLater" class="ghost" type="button">あとで対応</button>'+
+                '<button id="supportRemoteNoticeOpen" class="primary" type="button">'+
+                  (teamviewerSession?.supporter_link?'案件カルテを開いて接続':'案件カルテを開く')+
+                '</button>'+
+              '</div>'
+            );
+
+            $('#supportRemoteNoticeClose').onclick=closeAppModal;
+            $('#supportRemoteNoticeLater').onclick=closeAppModal;
+            $('#supportRemoteNoticeOpen').onclick=async()=>{
+              const supporterLink=teamviewerSession?.supporter_link||'';
+              const tvWindow=supporterLink?window.open('about:blank','_blank'):null;
+              closeAppModal();
+              try{
+                await rpc('claim_support_ticket',{p_ticket_id:item.id}).catch(()=>{});
+                await openTicketWorkspace(item.id);
+                setTimeout(()=>{
+                  $('#supportRemoteWorkspace')?.scrollIntoView({behavior:'smooth',block:'start'});
+                },150);
+                if(supporterLink){
+                  if(tvWindow) tvWindow.location.href=supporterLink;
+                  else window.open(supporterLink,'_blank','noopener,noreferrer');
+                }
+              }catch(err){
+                if(tvWindow) tvWindow.close();
+                toast(err.message||String(err));
+              }
+            };
+          }
+        }
+
         if(currentPage==='home') await renderHome();
       })
       .on('postgres_changes',{event:'UPDATE',schema:'public',table:'support_handoffs'},async payload=>{
