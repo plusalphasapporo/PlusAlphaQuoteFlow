@@ -7825,6 +7825,9 @@
                       '<span><strong>'+(i+1)+'.</strong> '+esc(step)+'</span>'+
                     '</label>'+
                     '<textarea class="ticketAssistStepNote" data-step="'+esc(i)+'" rows="2" placeholder="結果・確認内容を入力" style="width:100%;margin-top:8px"></textarea>'+
+                    '<div class="supportQuickActions" style="margin-top:8px">'+
+                      '<button class="ghost ticketAssistStepFailed" type="button" data-step="'+esc(i)+'">この手順では解決しなかった</button>'+
+                    '</div>'+
                   '</div>'
                 ).join('')+'</div>'+
                 '<div class="supportQuickActions" style="margin-top:10px">'+
@@ -7900,6 +7903,45 @@
         document.querySelectorAll('.ticketAssistStepCheck,.ticketAssistStepNote').forEach(el=>{
           el.addEventListener('change',saveAssistStepState);
           el.addEventListener('input',saveAssistStepState);
+        });
+
+        document.querySelectorAll('.ticketAssistStepFailed').forEach(btn=>btn.onclick=async()=>{
+          const stepIndex=Number(btn.dataset.step);
+          const stepText=assistSteps[stepIndex]||'';
+          const noteEl=document.querySelector('.ticketAssistStepNote[data-step="'+stepIndex+'"]');
+          const resultNote=String(noteEl?.value||'').trim();
+          if(noteEl && !resultNote){
+            noteEl.focus();
+            toast('先に、この手順で確認できた結果を入力してください');
+            return;
+          }
+          btn.disabled=true;
+          try{
+            const search=$('#ticketKnowledgeSearch');
+            const current=String(search?.value||'').trim();
+            const retryTerms=[
+              current,
+              '解決しなかった手順: '+stepText,
+              resultNote?'結果: '+resultNote:'',
+              t.subject||'',
+              displayDescription||''
+            ].filter(Boolean).join(' ');
+            if(search){
+              search.value=retryTerms;
+              search.dispatchEvent(new Event('input',{bubbles:true}));
+              search.scrollIntoView({behavior:'smooth',block:'center'});
+            }
+            await rpc('post_ticket_message',{
+              p_ticket_id:t.id,
+              p_visibility:'support',
+              p_body:'【再検索】\n解決しなかった手順: '+stepText+(resultNote?'\n結果: '+resultNote:'')+'\n次の候補を再検索'
+            }).catch(()=>{});
+            toast('結果を含めて次の候補を再検索しました');
+          }catch(err){
+            toast(err.message||String(err));
+          }finally{
+            btn.disabled=false;
+          }
         });
 
         const assistSaveProgress=$('#ticketAssistSaveProgress');
