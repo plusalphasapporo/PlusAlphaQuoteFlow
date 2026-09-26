@@ -6859,6 +6859,33 @@
       '<div id="ticketDetailHost"></div>';
 
     $('#ticketWorkspaceBack').onclick=()=>go(backPage);
+
+    if(role==='support_staff'){
+      let autoClaimed=false;
+      let autoStarted=false;
+      try{
+        const [assignment,stage]=await Promise.all([
+          rpc('support_ticket_assignment_state',{p_ticket_id:ticketId}),
+          rpc('support_ticket_workflow_state',{p_ticket_id:ticketId})
+        ]);
+        const stageValue=stage?.support_stage||stage||'unhandled';
+        const isFinished=stageValue==='completed';
+        if(!isFinished && !assignment?.support_assigned_user_id){
+          await rpc('claim_support_ticket',{p_ticket_id:ticketId});
+          autoClaimed=true;
+        }
+        if(!isFinished && stageValue==='unhandled'){
+          await rpc('set_support_workflow_stage',{p_ticket_id:ticketId,p_stage:'in_progress'});
+          autoStarted=true;
+        }
+      }catch(err){
+        console.warn('ticket auto-start skipped',err);
+      }
+      if(autoClaimed||autoStarted){
+        toast(autoClaimed&&autoStarted?'担当取得して対応を開始しました':autoClaimed?'この案件を担当しました':'対応を開始しました');
+      }
+    }
+
     await renderTicketDetail(ticketId);
 
     const closeBtn=$('#ticketDetailClose');
