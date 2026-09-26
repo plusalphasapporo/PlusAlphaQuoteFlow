@@ -1824,7 +1824,7 @@
     }
 
     if(role==='support_staff'){
-      const [h,workspace,workflowStates,unread,handoffUpdates,deadlineStates,assignmentStates,callconnectDash]=await Promise.all([
+      const [h,workspace,workflowStates,unread,handoffUpdates,deadlineStates,assignmentStates,callconnectDash,teamviewerPending]=await Promise.all([
         rpc('support_home'),
         rpc('internal_support_cases_list'),
         rpc('support_workflow_states'),
@@ -1832,7 +1832,8 @@
         rpc('support_unread_handoff_updates'),
         rpc('support_deadline_states'),
         rpc('support_assignment_states'),
-        rpc('callconnect_dashboard')
+        rpc('callconnect_dashboard'),
+        rpc('teamviewer_pending_results')
       ]);
       const stageMap={};
       (workflowStates||[]).forEach(x=>stageMap[x.ticket_id]=x.support_stage);
@@ -1863,6 +1864,8 @@
         return preferred.startsWith(todayKey);
       }).sort(queueSort);
       const remoteWaiting=tickets.filter(t=>t.status!=='closed'&&t.support_stage==='teamviewer_waiting').sort(queueSort);
+      const teamviewerPendingItems=(teamviewerPending||[]);
+      const teamviewerPendingIds=new Set(teamviewerPendingItems.map(x=>String(x.ticket_id)));
       const handoffWaiting=tickets.filter(t=>t.status!=='closed'&&t.support_stage==='internal_handoff_waiting').sort(queueSort);
       const internalWorking=tickets.filter(t=>t.status!=='closed'&&t.support_stage==='internal_in_progress').sort(queueSort);
       const supportReview=tickets.filter(t=>t.status!=='closed'&&t.support_stage==='support_review_waiting').sort(queueSort);
@@ -1992,6 +1995,7 @@
               '<button class="supportActionTile supportGoCases" type="button"><span>未対応の障害</span><strong>'+esc(unhandledIncidents.length)+'</strong></button>'+
               '<button class="supportActionTile supportGoCases" type="button"><span>自分の担当</span><strong>'+esc(tickets.filter(t=>t.status!=='closed'&&t.support_assignment?.is_mine).length)+'</strong></button>'+
               '<button class="supportActionTile supportGoCases" type="button"><span>TeamViewer待ち</span><strong>'+esc(remoteWaiting.length)+'</strong></button>'+
+              '<button id="supportTeamViewerPendingTile" class="supportActionTile '+(teamviewerPendingItems.length?'warn':'')+'" type="button"><span>TeamViewer結果未入力</span><strong>'+esc(teamviewerPendingItems.length)+'</strong></button>'+
               '<button class="supportActionTile supportGoCases" type="button"><span>自社引継ぎ待ち</span><strong>'+esc(handoffWaiting.length)+'</strong></button>'+
             '</div>'+
           '</section>'+
@@ -2004,6 +2008,17 @@
             (unreadItems.slice(0,4).map(t=>'<div class="supportCompactItem"><div><strong>'+esc(t.customer_name||'—')+' / '+esc(t.subject||'')+'</strong><small>'+esc(t.source_label||supportRequestTypeLabel(t.request_type))+' / '+esc(dateTimeText(t.created_at))+'</small></div><button class="primary supportUnreadOpen" type="button" data-id="'+esc(t.id)+'">対応開始</button></div>').join(''))+
             (handoffUpdateItems.slice(0,3).map(h=>'<div class="supportCompactItem"><div><strong>'+esc(h.customer_name||'—')+' / '+esc(h.subject||'')+'</strong><small>'+esc(h.handoff_state==='accepted'?'自社対応開始':'自社対応完了')+'</small></div><button class="linkBtn supportHandoffUpdateOpen" type="button" data-handoff-id="'+esc(h.handoff_id)+'" data-ticket-id="'+esc(h.ticket_id)+'">確認</button></div>').join(''))+
           '</section>'
+          : '')+
+        (teamviewerPendingItems.length
+          ? '<section class="card section"><div class="row between"><div><h2>TeamViewer結果未入力</h2><p class="sectionDesc">遠隔対応は終了しています。対応結果を保存するまで案件を完了扱いにしません。</p></div><span class="hold">'+esc(teamviewerPendingItems.length)+'件</span></div>'+
+              teamviewerPendingItems.slice(0,8).map(x=>
+                '<div class="supportCompactItem">'+
+                  '<div><strong>'+esc(x.customer_name||'—')+' / '+esc(x.subject||'')+'</strong>'+
+                    '<small>'+esc(x.ticket_number||'—')+' / セッション '+esc(x.session_code||'—')+' / 終了 '+esc(dateTimeText(x.session_closed_at||x.session_updated_at))+'</small></div>'+
+                  '<button class="primary supportTeamViewerPendingOpen" type="button" data-id="'+esc(x.ticket_id)+'">結果を入力</button>'+
+                '</div>'
+              ).join('')+
+            '</section>'
           : '')+
         '<div class="supportDeskGrid">'+
           '<section class="card" style="margin:0"><div class="row between"><div><h2>今すぐ対応する案件</h2><p class="sectionDesc">期限・障害・緊急度・担当状況から自動で優先表示します。</p></div><span class="pill">'+esc(topWork.length)+'件表示</span></div><div class="supportCompactList">'+topWorkHtml+'</div></section>'+
@@ -2025,6 +2040,20 @@
             '<div class="supportStep"><span class="supportStepNum">5</span><strong>完了 / 引継ぎ</strong><small>解決または自社へ</small></div>'+
           '</div>'+
         '</section>';
+      $('#supportTeamViewerPendingTile')?.addEventListener('click',()=>{
+        const first=document.querySelector('.supportTeamViewerPendingOpen');
+        if(first) first.scrollIntoView({behavior:'smooth',block:'center'});
+        else go('support_cases');
+      });
+      document.querySelectorAll('.supportTeamViewerPendingOpen').forEach(btn=>btn.onclick=async()=>{
+        btn.disabled=true;
+        try{
+          await openTicketWorkspace(btn.dataset.id);
+          setTimeout(()=>$('#supportRemoteWorkspace')?.scrollIntoView({behavior:'smooth',block:'start'}),150);
+        }catch(err){toast(err.message||String(err));}
+        finally{btn.disabled=false;}
+      });
+
       const supportPhoneLookupInput=$('#supportPhoneLookupInput');
       const supportPhoneLookupBtn=$('#supportPhoneLookupBtn');
       const renderPhoneLookupResults=(items)=>{
@@ -7242,13 +7271,14 @@
       return;
     }
 
-    const [workspace,customers,staff,workflowStates,deadlineStates,assignmentStates]=await Promise.all([
+    const [workspace,customers,staff,workflowStates,deadlineStates,assignmentStates,teamviewerPending]=await Promise.all([
       rpc('internal_support_cases_list'),
       internal?rpc('internal_customers_list'):rpc('support_customer_directory'),
       internal?rpc('internal_staff_options'):Promise.resolve([]),
       rpc('support_workflow_states'),
       rpc('support_deadline_states'),
-      rpc('support_assignment_states')
+      rpc('support_assignment_states'),
+      rpc('teamviewer_pending_results')
     ]);
     const workflowMap={};
     (workflowStates||[]).forEach(x=>workflowMap[x.ticket_id]=x.support_stage);
@@ -7256,13 +7286,17 @@
     (deadlineStates||[]).forEach(x=>deadlineMap[x.ticket_id]=x);
     const assignmentMap={};
     (assignmentStates||[]).forEach(x=>assignmentMap[x.ticket_id]=x);
+    const teamviewerPendingMap={};
+    (teamviewerPending||[]).forEach(x=>teamviewerPendingMap[x.ticket_id]=x);
     const data=(workspace?.tickets||[]).map(x=>({
       ...x,
       support_stage:workflowMap[x.id]||((x.status==='closed')?'completed':'unhandled'),
       deadline_state:deadlineMap[x.id]?.deadline_state||'unset',
       first_response_due_at:deadlineMap[x.id]?.first_response_due_at||null,
       resolution_due_at:deadlineMap[x.id]?.resolution_due_at||null,
-      support_assignment:assignmentMap[x.id]||{support_assigned_user_id:null,support_assigned_user_name:null,is_mine:false}
+      support_assignment:assignmentMap[x.id]||{support_assigned_user_id:null,support_assigned_user_name:null,is_mine:false},
+      teamviewer_result_pending:!!teamviewerPendingMap[x.id],
+      teamviewer_pending_session:teamviewerPendingMap[x.id]||null
     }));
     const summary=workspace?.summary||{};
     const cmap={};
@@ -7276,6 +7310,7 @@
         ['緊急',summary.urgent_open||0],
         ['高優先度',summary.high_open||0],
         ['担当未設定',summary.unassigned||0],
+        ['TV結果未入力',(teamviewerPending||[]).length],
         ['完了',summary.closed||0]
       ])+
       (support
@@ -7306,6 +7341,11 @@
         : '')+
       (internal
         ? '<section class="card section"><div class="row between"><div><h2>障害・設定依頼の登録</h2><p class="sectionDesc">自社で受けた障害・設定依頼をサポート会社へ登録します。</p></div><button id="supportCaseCreateToggle" class="primary" type="button">＋ 障害・設定依頼を登録</button></div><div id="supportCaseCreateBox" class="hidden" style="margin-top:14px"><form id="supportCaseCreateForm"><div class="modalGrid2"><div class="field"><label>依頼種別</label><select id="supportCaseRequestType"><option value="incident">障害登録</option><option value="setting_request">設定依頼</option></select></div><div class="field"><label>顧客</label><select id="supportCaseCustomer" required><option value="">選択してください</option>'+(customers||[]).map(x=>'<option value="'+esc(x.id)+'">'+esc(x.customer_code||'—')+' / '+esc(x.name||'')+'</option>').join('')+'</select></div><div class="field"><label>優先度</label><select id="supportCasePriority"><option value="normal">通常</option><option value="high">高</option><option value="urgent">緊急</option><option value="low">低</option></select></div></div><div id="supportCaseContextFields"></div><div id="supportCaseTypeFields"></div><section class="formSection"><div class="formSectionHead"><span class="sectionNo">02</span><h3>対応期限</h3></div><div class="modalGrid2"><div class="field"><label>初動期限</label><input id="supportCaseFirstResponseDue" type="datetime-local"><small class="muted">未設定でも登録できます。</small></div><div class="field"><label>対応完了目標</label><input id="supportCaseResolutionDue" type="datetime-local"><small class="muted">初動期限より後の日時を指定します。</small></div></div></section><div class="field"><label>件名</label><input id="supportCaseSubject" required placeholder="例：印刷できない / メール設定変更"></div><div class="field"><label>補足内容</label><textarea id="supportCaseDescription" rows="4" placeholder="補足情報があれば入力してください"></textarea></div><div class="field"><label>サポート会社へ送る写真・スクリーンショット</label><input id="supportCaseFiles" type="file" accept="image/*,.pdf" multiple><small class="muted">自社で受け取った写真や、確認してほしい画面を添付できます。</small></div><button class="primary" type="submit">案件を登録</button></form><div id="supportCaseCreateMsg" class="notice hidden"></div></div></section>'
+        : '')+
+      ((teamviewerPending||[]).length
+        ? '<section class="card section"><div class="row between"><div><h2>TeamViewer結果未入力</h2><p class="sectionDesc">遠隔対応終了後の記録が残っていない案件です。結果入力後に完了・継続・引継ぎへ進めます。</p></div><span class="hold">'+esc((teamviewerPending||[]).length)+'件</span></div>'+
+            (teamviewerPending||[]).slice(0,6).map(x=>'<div class="supportCompactItem"><div><strong>'+esc(x.customer_name||'—')+' / '+esc(x.subject||'')+'</strong><small>'+esc(x.ticket_number||'—')+' / '+esc(x.session_code||'—')+' / '+esc(dateTimeText(x.session_closed_at||x.session_updated_at))+'</small></div><button class="primary supportPendingResultOpen" type="button" data-id="'+esc(x.ticket_id)+'">結果入力</button></div>').join('')+
+          '</section>'
         : '')+
       listToolbar('supportCaseList',data,'status','番号・顧客・件名・機器・契約・担当者',[
         ['deadline_asc','期限が近い順'],['priority_desc','優先度が高い順'],['updated_desc','更新が新しい順'],['created_desc','作成が新しい順']
@@ -7351,7 +7391,7 @@
             '<td><strong>'+esc(t.ticket_number||'—')+'</strong></td>'+
             '<td>'+supportRequestTypeBadge(t.request_type)+'</td>'+
             '<td>'+supportAssigneeBadge(t.support_assignment)+'</td>'+
-            '<td>'+supportStageBadge(t.support_stage)+'</td>'+
+            '<td>'+supportStageBadge(t.support_stage)+(t.teamviewer_result_pending?'<br><span class="hold">TV結果未入力</span>':'')+'</td>'+
             '<td>'+supportDeadlineBadge(t.deadline_state)+(t.first_response_due_at?'<br><span class="muted">初動 '+esc(dateTimeText(t.first_response_due_at))+'</span>':'')+'</td>'+
             '<td>'+esc(t.customer_name||'—')+'</td>'+
             '<td>'+esc(t.subject||'')+'</td>'+
@@ -7388,6 +7428,14 @@
     }
     bindListToolbar('supportCaseList',renderRows);
     renderRows();
+    document.querySelectorAll('.supportPendingResultOpen').forEach(btn=>btn.onclick=async()=>{
+      btn.disabled=true;
+      try{
+        await openTicketWorkspace(btn.dataset.id);
+        setTimeout(()=>$('#supportRemoteWorkspace')?.scrollIntoView({behavior:'smooth',block:'start'}),150);
+      }catch(err){toast(err.message||String(err));}
+      finally{btn.disabled=false;}
+    });
 
     if(internal){
       $('#supportCaseCreateToggle').onclick=()=>$('#supportCaseCreateBox').classList.toggle('hidden');
