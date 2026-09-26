@@ -471,7 +471,8 @@
     'internal_account_companies','internal_audit_workspace','internal_document_profile','internal_demo_seed_status','internal_company_settings','internal_entity_audit_history',
     'internal_products_list','internal_lease_rates_list','internal_order_profitability','internal_customer_unified_workspace','internal_receiving_workspace','internal_order_operation','role_knowledge_articles',
     'support_customer_directory','support_asset_directory','support_handoff_history','support_customer_context','support_customer_phone_search','support_workflow_states','support_ticket_workflow_state','support_next_action_states','support_ticket_next_action_state','support_unread_notifications','support_unanswered_messages','support_unread_handoff_updates','support_deadline_states','support_ticket_deadline_state','support_assignment_states','support_ticket_assignment_state','callconnect_dashboard','callconnect_api_settings','callconnect_unread_notifications','callconnect_customer_directory',
-    'internal_case_directory','internal_handoff_history','internal_knowledge_articles'
+    'internal_case_directory','internal_handoff_history','internal_knowledge_articles',
+    'internal_support_cases_list','teamviewer_api_settings','teamviewer_ticket_sessions','teamviewer_pending_results'
   ]);
 
   function errorStatus(err){
@@ -604,6 +605,21 @@
       console.warn('[optional rpc failed]',name,err);
       return fallback;
     }
+  }
+
+  async function loadSupportCasesWorkspace(){
+    try{
+      const data=await rpc('internal_support_cases_list');
+      if(data && Array.isArray(data.tickets)) return data;
+    }catch(err){
+      console.warn('[support workspace rpc failed]',err);
+    }
+
+    const fallback=await supabase.from('support_tickets')
+      .select('id,ticket_number,customer_id,asset_id,contract_id,request_type,subject,description,status,priority,assigned_internal_user_id,created_at,updated_at')
+      .order('updated_at',{ascending:false});
+    if(fallback.error) throw fallback.error;
+    return {tickets:fallback.data||[],summary:{}};
   }
 
   async function uploadSupportAttachments(ticketId,files,visibility='customer'){
@@ -8803,7 +8819,7 @@
       return;
     }
 
-    const workspace=await rpc('internal_support_cases_list');
+    const workspace=await loadSupportCasesWorkspace();
     const [customers,staff,workflowStates,nextActionStates,deadlineStates,assignmentStates,teamviewerPending]=await Promise.all([
       internal?rpcOptional('internal_customers_list',{},[]):rpcOptional('support_customer_directory',{},[]),
       internal?rpcOptional('internal_staff_options',{},[]):Promise.resolve([]),
