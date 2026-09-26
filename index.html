@@ -164,6 +164,10 @@
     .messageFilePreview{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;padding:7px 9px;background:#fff;max-width:100%}
     .messageFilePreview img{width:44px;height:44px;object-fit:cover;border-radius:7px}
     .messageFilePreviewMeta{min-width:0}.messageFilePreviewMeta strong{display:block;font-size:12px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.messageFilePreviewMeta small{display:block;color:var(--muted)}
+    .messageVisibilityBanner{border-radius:12px;padding:10px 12px;font-size:13px;font-weight:800;margin:8px 0}
+    .messageVisibilityBanner.customer{background:#fff7ed;border:1px solid #fdba74;color:#9a3412}
+    .messageVisibilityBanner.support{background:#eff6ff;border:1px solid #93c5fd;color:#1d4ed8}
+    .messageVisibilityBanner.internal{background:#f1f5f9;border:1px solid #cbd5e1;color:#334155}
     @media(max-width:1100px){.supportCaseFacts{grid-template-columns:repeat(2,minmax(0,1fr))}}
     @media(max-width:680px){.supportCaseCardHead{grid-template-columns:1fr}.supportCaseFacts{grid-template-columns:1fr}.supportCaseCardActions .primary{width:100%}}
     body[data-role="support_staff"] .workspaceHead{border-color:#dbeafe}
@@ -6918,6 +6922,7 @@
           '<div id="ticketMessageList">'+messagesHtml+'</div>'+
           '<form id="ticketMessageForm" class="card section" style="box-shadow:none">'+
             visibilitySelect+
+            (!customer?'<div id="ticketMessageVisibilityBanner" class="messageVisibilityBanner customer">このメッセージは顧客に表示されます</div>':'')+
             '<div class="row" style="margin:8px 0;gap:6px">'+
               '<button class="ghost ticketMessageTemplate" type="button" data-text="お問い合わせありがとうございます。内容を確認しておりますので、少々お待ちください。">受付連絡</button>'+
               '<button class="ghost ticketMessageTemplate" type="button" data-text="現在、原因を確認しています。確認でき次第ご連絡いたします。">確認中</button>'+
@@ -6946,6 +6951,24 @@
     bindSupportDraftInputs(t.id,'handoff',{reason:'#handoffReason',next_action:'#handoffNextAction'});
 
     const messageBodyEl=$('#ticketMessageBody');
+    const messageVisibilityEl=$('#ticketMessageVisibility');
+    const messageVisibilityBanner=$('#ticketMessageVisibilityBanner');
+    const updateMessageVisibilityBanner=()=>{
+      if(!messageVisibilityEl||!messageVisibilityBanner) return;
+      const v=messageVisibilityEl.value||'customer';
+      const meta={
+        customer:['customer','顧客に表示されます。個人情報・社内情報の誤送信に注意してください。'],
+        support:['support','サポート会社内だけに表示されます。顧客には表示されません。'],
+        internal:['internal','自社内だけに表示されます。顧客・サポート会社には表示されません。']
+      }[v]||['customer','顧客に表示されます。'];
+      messageVisibilityBanner.className='messageVisibilityBanner '+meta[0];
+      messageVisibilityBanner.textContent=meta[1];
+    };
+    if(messageVisibilityEl){
+      updateMessageVisibilityBanner();
+      messageVisibilityEl.addEventListener('change',updateMessageVisibilityBanner);
+    }
+
     const messageFilesEl=$('#ticketMessageFiles');
     const messageFileListEl=$('#ticketMessageFileList');
     const messageDropZone=$('#ticketMessageDropZone');
@@ -7042,6 +7065,7 @@
       if(vis) vis.value=support?'support':'internal';
       if(messageBodyEl && !messageBodyEl.value) messageBodyEl.placeholder=support?'サポート会社内だけに残すメモ':'自社だけに残す社内メモ';
       vis?.dispatchEvent(new Event('change',{bubbles:true}));
+      updateMessageVisibilityBanner();
       messageBodyEl?.focus();
       toast(support?'サポート内メモに切り替えました':'社内メモに切り替えました');
     };
@@ -7572,6 +7596,10 @@
         if(!rawBody && !files.length) throw new Error('メッセージまたは添付ファイルを入力してください。');
 
         const visibility=$('#ticketMessageVisibility').value;
+        if(!customer && visibility==='customer'){
+          const preview=(rawBody||'添付ファイルのみ').replace(/\s+/g,' ').slice(0,120);
+          if(!confirm('この内容は顧客に表示されます。送信してよろしいですか？\n\n'+preview)) return;
+        }
         if(files.length){
           notice('#ticketMessageMsg','添付ファイルをアップロードしています...',true);
           await uploadSupportAttachments(t.id,files,visibility);
