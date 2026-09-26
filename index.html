@@ -6534,10 +6534,10 @@
           '<div id="ticketClassificationPanel" class="supportClassificationPanel hidden"></div>'+
           '<div class="supportFlow">'+
             '<div class="supportStep done"><span class="supportStepNum">1</span><strong>受付</strong><small>'+esc(intakeSource)+'</small></div>'+
-            '<div class="supportStep '+(attachments.length?'done':'active')+'"><span class="supportStepNum">2</span><strong>依頼内容・写真確認</strong><small>'+supportRequestTypeLabel(t.request_type)+' / '+esc(attachments.length)+'件の写真・添付</small></div>'+
-            '<div class="supportStep active"><span class="supportStepNum">3</span><strong>AI・ナレッジ</strong><small>AI・ナレッジ・マニュアルで原因切り分け</small></div>'+
-            '<div class="supportStep"><span class="supportStepNum">4</span><strong>TeamViewer</strong><small>必要時のみ顧客PCへ遠隔接続</small></div>'+
-            '<div class="supportStep"><span class="supportStepNum">5</span><strong>完了 / 自社引継ぎ</strong><small>難しい場合は自社担当へ</small></div>'+
+            '<div class="supportStep '+(supportStage==='unhandled'?'active':'done')+'"><span class="supportStepNum">2</span><strong>依頼内容・写真確認</strong><small>'+supportRequestTypeLabel(t.request_type)+' / '+esc(attachments.length)+'件の写真・添付</small></div>'+
+            '<div class="supportStep '+(supportStage==='in_progress'&&!latestTeamViewerSession?'active':(latestTeamViewerSession||['teamviewer_waiting','internal_handoff_waiting','internal_in_progress','support_review_waiting','completed'].includes(supportStage)?'done':''))+'"><span class="supportStepNum">3</span><strong>AI・ナレッジ</strong><small>AI・ナレッジ・マニュアルで原因切り分け</small></div>'+
+            '<div class="supportStep '+(['teamviewer_waiting'].includes(supportStage)?'active':(latestTeamViewerSession?'done':''))+'"><span class="supportStepNum">4</span><strong>TeamViewer</strong><small>必要時のみ顧客PCへ遠隔接続</small></div>'+
+            '<div class="supportStep '+(['internal_handoff_waiting','internal_in_progress','support_review_waiting'].includes(supportStage)?'active':(supportStage==='completed'?'done':''))+'"><span class="supportStepNum">5</span><strong>完了 / 自社引継ぎ</strong><small>難しい場合は自社担当へ</small></div>'+
           '</div>'+
           '<div class="supportWorkGrid">'+
             '<div>'+
@@ -6672,6 +6672,7 @@
           ? '<div class="supportTicketTopbar">'+
               '<div class="summary"><strong>'+esc(cust?.name||'顧客未登録')+' / '+esc(t.subject||'')+'</strong><small>'+esc(t.ticket_number||'—')+' ・ '+esc(supportStageLabel(supportStage||((t.status==='closed')?'completed':'unhandled')))+' ・ '+esc(supportDeadlineLabel(deadlineState?.deadline_state))+'</small></div>'+
               '<div class="supportQuickActions">'+
+                '<button id="supportTicketContentJump" class="ghost" type="button">内容・写真</button>'+
                 '<button id="supportTicketCustomerJump" class="ghost" type="button">顧客・機器</button>'+
                 '<button id="supportTicketAiJump" class="ghost" type="button">AI・ナレッジ</button>'+
                 '<button id="supportTicketRemoteJump" class="orange" type="button">TeamViewer</button>'+
@@ -6728,6 +6729,7 @@
         const el=$(selector);
         if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
       };
+      const contentJump=$('#supportTicketContentJump');
       const customerJump=$('#supportTicketCustomerJump');
       const actionAi=$('#ticketActionAi');
       const actionRemote=$('#ticketActionRemote');
@@ -6735,6 +6737,7 @@
       const actionIncident=$('#ticketActionIncident');
       const actionSetting=$('#ticketActionSetting');
       const actionFinish=$('#ticketActionFinish');
+      if(contentJump) contentJump.onclick=()=>jump('#ticketAttachmentGallery');
       if(customerJump) customerJump.onclick=()=>jump('#supportTicketCustomerContext');
       const aiJump=$('#supportTicketAiJump');
       if(aiJump) aiJump.onclick=()=>{
