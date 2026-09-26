@@ -157,6 +157,7 @@
     .supportCaseFilterBar{display:flex;gap:6px;flex-wrap:wrap;padding:7px;background:#eaf0f8;border:1px solid #d8e2ef;border-radius:14px;margin:12px 0}
     .supportCaseFilterBtn{background:transparent;color:#526174;padding:9px 12px;border-radius:10px}
     .supportCaseFilterBtn.active{background:#fff;color:#164b9f;box-shadow:0 2px 10px rgba(15,23,42,.08)}
+    .ticketMessageCard.messageNew{border-left:4px solid #2563eb;background:#f8fbff}
     @media(max-width:1100px){.supportCaseFacts{grid-template-columns:repeat(2,minmax(0,1fr))}}
     @media(max-width:680px){.supportCaseCardHead{grid-template-columns:1fr}.supportCaseFacts{grid-template-columns:1fr}.supportCaseCardActions .primary{width:100%}}
     body[data-role="support_staff"] .workspaceHead{border-color:#dbeafe}
@@ -632,6 +633,15 @@
   }
   function clearSupportDraft(ticketId,kind){
     try{localStorage.removeItem(supportDraftKey(ticketId,kind));}catch(_){}
+  }
+  function messageSeenKey(ticketId){
+    return 'qfc_message_seen:'+String(ticketId||'');
+  }
+  function getMessageSeenAt(ticketId){
+    try{return localStorage.getItem(messageSeenKey(ticketId))||'';}catch(_){return '';}
+  }
+  function setMessageSeenAt(ticketId,at){
+    try{localStorage.setItem(messageSeenKey(ticketId),String(at||new Date().toISOString()));}catch(_){}
   }
   function bindSupportDraftInputs(ticketId,kind,fields){
     const draft=loadSupportDraft(ticketId,kind);
@@ -6670,12 +6680,24 @@
       : '';
 
     const visibilityLabel=v=>({customer:'顧客向け',support:'サポート内',internal:'社内のみ'}[v]||v||'顧客向け');
+    const previousMessageSeenAt=getMessageSeenAt(t.id);
+    const previousMessageSeenTs=timeValue(previousMessageSeenAt);
+    const newestMessageAt=messages.reduce((max,m)=>Math.max(max,timeValue(m.created_at)),0);
+    const newMessageCount=messages.filter(m=>timeValue(m.created_at)>previousMessageSeenTs).length;
+    const importantMessages=messages.filter(m=>String(m.body||'').startsWith('【重要】')).slice(-3).reverse();
+    const importantSummaryHtml=importantMessages.length
+      ? '<div class="notice warn" style="margin-top:10px"><div class="row between"><strong>重要メッセージ</strong><span class="pill warn">'+esc(importantMessages.length)+'件</span></div>'+
+          importantMessages.map(m=>'<div style="margin-top:8px"><strong>'+esc(dateTimeText(m.created_at))+'</strong><br><span>'+esc(String(m.body||'').replace(/^【重要】\s*/,'').slice(0,180))+'</span></div>').join('')+
+        '</div>'
+      : '';
+
     const messagesHtml=messages.length
       ? messages.map((m,idx)=>{
           const body=String(m.body||'');
           const important=body.startsWith('【重要】');
           const author=m.sender_name||m.created_by_name||m.author_name||'';
-          return '<article class="item ticketMessageCard" data-visibility="'+esc(m.visibility||'customer')+'" data-body="'+esc(body.toLowerCase())+'">'+
+          const isNew=timeValue(m.created_at)>previousMessageSeenTs;
+          return '<article class="item ticketMessageCard '+(isNew?'messageNew':'')+'" data-visibility="'+esc(m.visibility||'customer')+'" data-body="'+esc(body.toLowerCase())+'" data-important="'+(important?'1':'0')+'">'+
             '<div class="row between"><div class="row">'+
               '<strong>'+(important?'【重要】 ':'')+esc(customer?'メッセージ':visibilityLabel(m.visibility))+'</strong>'+
               (author?'<span class="pill">'+esc(author)+'</span>':'')+
@@ -6843,8 +6865,9 @@
         customerRemoteSupport+
         (!customer?'<section class="section"><div class="row between"><div><h3>対応履歴タイムライン</h3><p class="sectionDesc">受付からTeamViewer・引継ぎ・作業報告までを時系列で確認します。</p></div><span class="pill">'+esc(timelineEvents.length)+'件</span></div>'+timelineHtml+'</section>':'')+
         '<section class="section">'+
-          '<div class="row between"><div><h3>対応履歴・メッセージ</h3><p class="sectionDesc">顧客向け・サポート内・社内メモを案件内で整理します。</p></div><span class="pill">'+esc(messages.length)+'件</span></div>'+
-          (messages.length?'<div class="row" style="margin:10px 0"><input id="ticketMessageSearch" placeholder="メッセージ検索" style="flex:1;min-width:220px;padding:10px 12px;border:1px solid var(--line);border-radius:10px"><select id="ticketMessageFilter" style="min-width:150px;padding:10px 12px;border:1px solid var(--line);border-radius:10px"><option value="all">すべて</option><option value="customer">顧客向け</option><option value="support">サポート内</option>'+(internal?'<option value="internal">社内のみ</option>':'')+'</select></div>':'')+
+          '<div class="row between"><div><h3>対応履歴・メッセージ</h3><p class="sectionDesc">顧客向け・サポート内・社内メモを案件内で整理します。</p></div><div class="row">'+(newMessageCount?'<span class="hold">新着 '+esc(newMessageCount)+'</span>':'')+'<span class="pill">'+esc(messages.length)+'件</span></div></div>'+
+          importantSummaryHtml+
+          (messages.length?'<div class="row" style="margin:10px 0"><input id="ticketMessageSearch" placeholder="メッセージ検索" style="flex:1;min-width:220px;padding:10px 12px;border:1px solid var(--line);border-radius:10px"><select id="ticketMessageFilter" style="min-width:150px;padding:10px 12px;border:1px solid var(--line);border-radius:10px"><option value="all">すべて</option><option value="important">重要のみ</option><option value="customer">顧客向け</option><option value="support">サポート内</option>'+(internal?'<option value="internal">社内のみ</option>':'')+'</select><button id="ticketMessageLatest" class="ghost" type="button">最新へ</button></div>':'')+
           '<div id="ticketMessageList">'+messagesHtml+'</div>'+
           '<form id="ticketMessageForm" class="card section" style="box-shadow:none">'+
             visibilitySelect+
@@ -6911,12 +6934,20 @@
       const vis=$('#ticketMessageFilter')?.value||'all';
       document.querySelectorAll('.ticketMessageCard').forEach(card=>{
         const okQ=!q||String(card.dataset.body||'').includes(q);
-        const okV=vis==='all'||card.dataset.visibility===vis;
+        const okV=vis==='all'||(vis==='important'?card.dataset.important==='1':card.dataset.visibility===vis);
         card.classList.toggle('hidden',!(okQ&&okV));
       });
     };
     $('#ticketMessageSearch')?.addEventListener('input',filterMessages);
     $('#ticketMessageFilter')?.addEventListener('change',filterMessages);
+    $('#ticketMessageLatest')?.addEventListener('click',()=>{
+      const cards=[...document.querySelectorAll('.ticketMessageCard:not(.hidden)')];
+      const target=cards[cards.length-1]||document.querySelector('.ticketMessageCard:last-of-type');
+      target?.scrollIntoView({behavior:'smooth',block:'center'});
+    });
+    if(newestMessageAt){
+      setTimeout(()=>setMessageSeenAt(t.id,new Date(newestMessageAt).toISOString()),600);
+    }
 
     document.querySelectorAll('.ticketMessageReply').forEach(btn=>btn.onclick=()=>{
       const m=messages[Number(btn.dataset.index)];
