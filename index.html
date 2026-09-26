@@ -597,6 +597,15 @@
     throw lastError||new Error('処理に失敗しました。');
   }
 
+  async function rpcOptional(name,args={},fallback=null){
+    try{
+      return await rpc(name,args);
+    }catch(err){
+      console.warn('[optional rpc failed]',name,err);
+      return fallback;
+    }
+  }
+
   async function uploadSupportAttachments(ticketId,files,visibility='customer'){
     const list=[...(files||[])];
     if(!list.length) return 0;
@@ -6904,19 +6913,30 @@
     const internal=role==='internal_admin'||role==='internal_staff';
     const support=role==='support_staff';
 
-    const [detail,knowledgeArticles,caseWorkspace,supportStage,nextActionState,deadlineState,assignmentState,teamviewerApiState,teamviewerSessions]=customer
-      ? [await rpc('customer_ticket_detail',{p_ticket_id:ticketId}),[],{tickets:[]},null,null,null,null,null,[]]
-      : await Promise.all([
-          rpc('support_ticket_workspace',{p_ticket_id:ticketId}),
-          rpc('role_knowledge_articles'),
-          rpc('internal_support_cases_list'),
-          rpc('support_ticket_workflow_state',{p_ticket_id:ticketId}),
-          rpc('support_ticket_next_action_state',{p_ticket_id:ticketId}),
-          rpc('support_ticket_deadline_state',{p_ticket_id:ticketId}),
-          rpc('support_ticket_assignment_state',{p_ticket_id:ticketId}),
-          rpc('teamviewer_api_settings'),
-          rpc('teamviewer_ticket_sessions',{p_ticket_id:ticketId})
-        ]);
+    let detail,knowledgeArticles,caseWorkspace,supportStage,nextActionState,deadlineState,assignmentState,teamviewerApiState,teamviewerSessions;
+    if(customer){
+      detail=await rpc('customer_ticket_detail',{p_ticket_id:ticketId});
+      knowledgeArticles=[];
+      caseWorkspace={tickets:[]};
+      supportStage=null;
+      nextActionState=null;
+      deadlineState=null;
+      assignmentState=null;
+      teamviewerApiState=null;
+      teamviewerSessions=[];
+    }else{
+      detail=await rpc('support_ticket_workspace',{p_ticket_id:ticketId});
+      [knowledgeArticles,caseWorkspace,supportStage,nextActionState,deadlineState,assignmentState,teamviewerApiState,teamviewerSessions]=await Promise.all([
+        rpcOptional('role_knowledge_articles',{},[]),
+        rpcOptional('internal_support_cases_list',{}, {tickets:[]}),
+        rpcOptional('support_ticket_workflow_state',{p_ticket_id:ticketId},null),
+        rpcOptional('support_ticket_next_action_state',{p_ticket_id:ticketId},null),
+        rpcOptional('support_ticket_deadline_state',{p_ticket_id:ticketId},null),
+        rpcOptional('support_ticket_assignment_state',{p_ticket_id:ticketId},null),
+        rpcOptional('teamviewer_api_settings',{},null),
+        rpcOptional('teamviewer_ticket_sessions',{p_ticket_id:ticketId},[])
+      ]);
+    }
 
     const t=detail?.ticket;
     if(!t) throw new Error('問い合わせが見つかりません。');
@@ -8783,15 +8803,15 @@
       return;
     }
 
-    const [workspace,customers,staff,workflowStates,nextActionStates,deadlineStates,assignmentStates,teamviewerPending]=await Promise.all([
-      rpc('internal_support_cases_list'),
-      internal?rpc('internal_customers_list'):rpc('support_customer_directory'),
-      internal?rpc('internal_staff_options'):Promise.resolve([]),
-      rpc('support_workflow_states'),
-      rpc('support_next_action_states'),
-      rpc('support_deadline_states'),
-      rpc('support_assignment_states'),
-      rpc('teamviewer_pending_results')
+    const workspace=await rpc('internal_support_cases_list');
+    const [customers,staff,workflowStates,nextActionStates,deadlineStates,assignmentStates,teamviewerPending]=await Promise.all([
+      internal?rpcOptional('internal_customers_list',{},[]):rpcOptional('support_customer_directory',{},[]),
+      internal?rpcOptional('internal_staff_options',{},[]):Promise.resolve([]),
+      rpcOptional('support_workflow_states',{},[]),
+      rpcOptional('support_next_action_states',{},[]),
+      rpcOptional('support_deadline_states',{},[]),
+      rpcOptional('support_assignment_states',{},[]),
+      rpcOptional('teamviewer_pending_results',{},[])
     ]);
     const workflowMap={};
     (workflowStates||[]).forEach(x=>workflowMap[x.ticket_id]=x.support_stage);
