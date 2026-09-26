@@ -8609,6 +8609,10 @@
           const customerNote=$('#workReportCustomer').value.trim();
           const makeKnowledge=$('#workReportKnowledge').checked;
           if(!action) return notice('#workReportMsg','対応内容・実施した作業を入力してください。');
+          const activeHandoff=(handoffs||[]).find(h=>['pending','accepted'].includes(h.state));
+          if(activeHandoff){
+            return notice('#workReportMsg','自社引継ぎが進行中のため、先に引継ぎを完了してください。作業報告は下書きのまま保持されます。');
+          }
           btn.disabled=true;
           try{
             const reportBody=[
