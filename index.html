@@ -7199,6 +7199,29 @@
         '</section>'
       : '';
 
+    const topAttachmentPreview=(attachments||[]).slice(0,4).map(a=>{
+      const name=a.file_name||a.filename||a.name||'添付ファイル';
+      return '<button class="ghost supportTopAttachmentJump" type="button" style="text-align:left">'+esc(name)+'</button>';
+    }).join('');
+    const supportTopSummary=support
+      ? '<section class="card section" style="box-shadow:none;margin:0 0 14px;background:var(--soft)">'+
+          '<div class="row between" style="gap:12px;align-items:flex-start;flex-wrap:wrap">'+
+            '<div style="min-width:0;flex:1"><span class="pill good">最初に確認</span><h3 style="margin:8px 0 6px">'+esc(t.subject||'問い合わせ')+'</h3><p style="white-space:pre-wrap;margin:0;line-height:1.7">'+esc(displayDescription||'内容なし')+'</p></div>'+
+            '<div class="supportQuickActions">'+
+              '<button id="supportTopCustomer" class="ghost" type="button">顧客・機器</button>'+
+              (attachments.length?'<button id="supportTopAttachments" class="ghost" type="button">写真・添付 '+esc(attachments.length)+'件</button>':'')+
+            '</div>'+
+          '</div>'+
+          '<div class="modalGrid2" style="margin-top:12px">'+
+            '<div class="item"><strong>顧客</strong><p>'+esc(cust?.customer_code||'—')+' / '+esc(cust?.name||'未登録')+'</p></div>'+
+            '<div class="item"><strong>連絡先</strong><p>'+esc(primary?.name||'未登録')+'<br><span class="muted">'+esc(primary?.phone||primary?.email||'連絡先未登録')+'</span></p></div>'+
+            '<div class="item"><strong>対象機器</strong><p>'+(asset?esc(asset.asset_number||'—')+' / '+esc(asset.model_name||''):'未指定')+'</p></div>'+
+            '<div class="item"><strong>契約</strong><p>'+(contract?esc(contract.contract_number||'—'):'未指定')+'</p></div>'+
+          '</div>'+
+          (attachments.length?'<div style="margin-top:12px"><strong>添付</strong><div class="row" style="margin-top:6px">'+topAttachmentPreview+'</div></div>':'')+
+        '</section>'
+      : '';
+
     const actionButtons=!customer
       ? '<div class="row" style="margin-top:14px">'+
           (t.status==='closed'?'<button id="ticketReopenBtn" class="green" type="button">問い合わせを再開</button>':'<button id="ticketCloseBtn" class="green" type="button">作業報告・完了</button>')+
@@ -7236,7 +7259,7 @@
               '<div class="supportTicketFact"><span>担当</span><strong>'+esc(supportAssigneeLabel(assignmentState))+'</strong></div>'+
               '<div class="supportTicketFact"><span>優先度</span><strong>'+esc(t.priority||'normal')+'</strong></div>'+
               '<div class="supportTicketFact"><span>対象機器</span><strong>'+esc(asset?.asset_number||'未指定')+'</strong></div>'+
-            '</div>'
+            '</div>'+supportTopSummary
           : kpis([
               ['種別',supportRequestTypeLabel(t.request_type)],
               ['サポート担当',supportAssigneeLabel(assignmentState)],
@@ -7523,6 +7546,11 @@
         const el=$(selector);
         if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
       };
+      const topCustomer=$('#supportTopCustomer');
+      const topAttachments=$('#supportTopAttachments');
+      if(topCustomer) topCustomer.onclick=()=>jump('#supportTicketCustomerContext');
+      if(topAttachments) topAttachments.onclick=()=>jump('#ticketAttachmentGallery');
+      document.querySelectorAll('.supportTopAttachmentJump').forEach(btn=>btn.onclick=()=>jump('#ticketAttachmentGallery'));
       const contentJump=$('#supportTicketContentJump');
       const customerJump=$('#supportTicketCustomerJump');
       const primaryNext=$('#supportPrimaryNext');
