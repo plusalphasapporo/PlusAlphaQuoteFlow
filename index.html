@@ -7041,7 +7041,7 @@
                 (!customer?'<button id="ticketMessageInternalNote" class="ghost" type="button">'+(support?'サポート内メモ':'社内メモ')+'</button>':'')+
                 '<label class="row" style="gap:6px"><input id="ticketMessageImportant" type="checkbox"> 重要</label>'+
               '</div>'+
-              (support&&messageVisibilityEl!==null
+              (support
                 ? '<div class="row" style="gap:8px"><button id="ticketMessageSendKeep" class="ghost" type="button">送信・継続対応</button><button id="ticketMessageSendRelease" class="primary" type="button">返信完了・担当解除</button></div>'
                 : '<button class="primary" type="submit">メッセージを送信</button>')+
             '</div>'+
@@ -7744,6 +7744,8 @@
     $('#ticketMessageForm').onsubmit=async e=>{
       e.preventDefault();
       const btn=e.submitter;if(btn)btn.disabled=true;
+      $('#ticketMessageSendKeep')?.setAttribute('disabled','disabled');
+      $('#ticketMessageSendRelease')?.setAttribute('disabled','disabled');
       try{
         const rawBody=$('#ticketMessageBody').value.trim();
         const files=[...messagePendingFiles];
