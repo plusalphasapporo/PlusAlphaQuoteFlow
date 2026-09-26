@@ -7006,7 +7006,7 @@
     const assistSectionNo=internal?'02':'01';
     const supportPrimaryStep=(()=>{
       if(t.status==='closed') return {label:'完了済み',button:'対応履歴を確認',hint:'対応履歴・作業報告を確認できます。',target:'history',tone:'ghost'};
-      if(supportStage==='unhandled') return {label:'① 受付内容を確認',button:'受付内容を確認する',hint:'依頼内容・写真・顧客情報を確認して対応を開始します。',target:'content',tone:'primary'};
+      if(supportStage==='unhandled') return {label:'① 受付内容を確認',button:'受付確認して対応開始',hint:'依頼内容・写真・顧客情報を確認後、そのまま対応方法検索へ進みます。',target:'content',tone:'primary'};
       if(latestTeamViewerSession && teamviewerSessionClosed && !latestTeamViewerSession.outcome) return {label:'④ TeamViewer結果を記録',button:'結果を記録する',hint:'遠隔対応の結果を入力して、完了・継続・引継ぎを決めます。',target:'remote',tone:'green'};
       if(supportStage==='teamviewer_waiting'||(latestTeamViewerSession&&!teamviewerSessionClosed)) return {label:'③ TeamViewer対応',button:'TeamViewer対応へ進む',hint:'接続・遠隔確認を進めます。',target:'remote',tone:'orange'};
       if(['internal_handoff_waiting','internal_in_progress','support_review_waiting'].includes(supportStage)) return {label:'引継ぎ状況を確認',button:'引継ぎ状況を確認',hint:'同じ案件カルテのまま対応状況を確認します。',target:'history',tone:'primary'};
@@ -7701,11 +7701,32 @@
         };
       };
 
-      if(primaryNext) primaryNext.onclick=()=>{
+      const startSupportWork=async(button=null)=>{
+        if(button) button.disabled=true;
+        try{
+          if(!assignmentState?.support_assigned_user_id){
+            await rpc('claim_support_ticket',{p_ticket_id:t.id}).catch(()=>{});
+          }
+          if(supportStage==='unhandled'){
+            await rpc('set_support_workflow_stage',{p_ticket_id:t.id,p_stage:'in_progress'});
+          }
+          if(supportStage==='unhandled'){
+            toast('受付確認を完了し、対応を開始しました');
+            await renderTicketDetail(t.id);
+          }
+          jump('#supportAssistWorkspace');
+          setTimeout(()=>$('#ticketKnowledgeSearch')?.focus(),250);
+        }catch(err){
+          notice('#ticketActionMsg',err.message||String(err));
+        }finally{
+          if(button) button.disabled=false;
+        }
+      };
+
+      if(primaryNext) primaryNext.onclick=async()=>{
         const target=supportPrimaryStep.target;
         if(target==='content'){
-          jump('#supportTopOverview');
-          setTimeout(()=>($('#ticketStageStart')||$('#ticketClaimSupport')||$('#supportPrimaryNext'))?.focus(),250);
+          await startSupportWork(primaryNext);
         }else if(target==='remote'){
           jump('#supportRemoteWorkspace');
           setTimeout(()=>($('#ticketRemoteResultNote')||$('#ticketRemoteAction')||$('#ticketTeamViewerCreate'))?.focus(),250);
@@ -7875,7 +7896,7 @@
         }catch(err){notice('#ticketActionMsg',err.message||String(err));}
       };
       const stageStart=$('#ticketStageStart');
-      if(stageStart) stageStart.onclick=()=>setStage('in_progress');
+      if(stageStart) stageStart.onclick=()=>startSupportWork(stageStart);
       const stageRemoteWait=$('#ticketStageRemoteWait');
       if(stageRemoteWait) stageRemoteWait.onclick=()=>setStage('teamviewer_waiting');
       const stageResume=$('#ticketStageResume');
