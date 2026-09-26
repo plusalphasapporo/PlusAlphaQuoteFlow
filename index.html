@@ -575,6 +575,7 @@
   let internalHandoffRealtimeChannel=null;
   let callconnectNotificationChannel=null;
   let callconnectNotificationPollTimer=null;
+  let teamviewerStatusTimer=null;
   let lastCallConnectPopupId='';
   let pendingCallConnectIntake=null;
 
@@ -6420,6 +6421,10 @@
   }
 
   async function renderTicketDetail(ticketId){
+    if(teamviewerStatusTimer){
+      clearInterval(teamviewerStatusTimer);
+      teamviewerStatusTimer=null;
+    }
     const role=bootData.context?.role;
     const customer=role==='customer_user';
     const internal=role==='internal_admin'||role==='internal_staff';
@@ -6478,6 +6483,14 @@
     const teamviewerState=teamviewerApiState?.integration_state||bootData?.integrations?.teamviewer?.state||'disabled';
     const teamviewerStateText={connected:'接続済み',degraded:'一部障害',manual:'設定済み・未確認',disabled:'未接続'}[teamviewerState]||teamviewerState;
     const latestTeamViewerSession=(teamviewerSessions||[])[0]||null;
+    const teamviewerSessionClosed=latestTeamViewerSession && ['closed','ended','expired','deleted'].includes(String(latestTeamViewerSession.state||'').toLowerCase());
+    const teamviewerDurationText=latestTeamViewerSession?(()=>{
+      const start=timeValue(latestTeamViewerSession.created_at);
+      const end=timeValue(latestTeamViewerSession.closed_at||latestTeamViewerSession.completed_at);
+      if(!start||!end||end<start) return '—';
+      const mins=Math.max(1,Math.round((end-start)/60000));
+      return mins<60?mins+'分':Math.floor(mins/60)+'時間'+(mins%60?String(mins%60)+'分':'');
+    })():'—';
     const assistSectionNo=internal?'02':'01';
     const supportStageControl=support && t.status!=='closed'
       ? '<div class="notice"><div class="row between"><div><strong>現在の対応工程</strong><div style="margin-top:6px">'+supportStageBadge(supportStage)+'</div><div style="margin-top:8px"><strong>サポート担当：</strong> '+supportAssigneeBadge(assignmentState)+'</div></div><div class="supportQuickActions">'+
@@ -6521,17 +6534,40 @@
                 '<h4>TeamViewer 遠隔対応</h4>'+
                 '<div class="hint">API連携: '+esc(teamviewerStateText)+'</div>'+
                 '<p class="muted">顧客の同意を確認してから有人サポートセッションを発行します。</p>'+
-                (teamviewerApiState?.token_configured
+                (teamviewerApiState?.token_configured && !latestTeamViewerSession
                   ? '<div class="field"><label>遠隔で行う内容</label><textarea id="ticketRemoteAction" rows="3" placeholder="例：プリンター設定変更、共有フォルダ接続確認"></textarea></div>'+
                     '<div class="supportQuickActions"><button id="ticketTeamViewerCreate" class="orange" type="button">TeamViewerセッションを発行</button></div>'
-                  : '<div class="notice error"><strong>TeamViewer API未設定</strong><br>管理者の「設定 → 外部連携」からAPIトークンを登録してください。</div>')+
+                  : (!teamviewerApiState?.token_configured
+                    ? '<div class="notice error"><strong>TeamViewer API未設定</strong><br>管理者の「設定 → 外部連携」からAPIトークンを登録してください。</div>'
+                    : ''))+
                 (latestTeamViewerSession
-                  ? '<div class="item" style="margin-top:12px"><strong>最新セッション '+esc(latestTeamViewerSession.session_code||'')+'</strong><p>状態: '+esc(latestTeamViewerSession.state||'open')+(latestTeamViewerSession.valid_until?'<br>有効期限: '+esc(dateTimeText(latestTeamViewerSession.valid_until)):'')+'</p>'+
-                    '<div class="supportQuickActions">'+
-                      (latestTeamViewerSession.end_customer_link?'<button id="ticketTeamViewerCopyCustomer" class="ghost" type="button">顧客用リンクをコピー</button>':'')+
-                      (latestTeamViewerSession.supporter_link?'<button id="ticketTeamViewerOpenSupporter" class="primary" type="button">TeamViewerで接続</button>':'')+
-                      (t.status!=='closed'?'<button id="ticketRemoteSolved" class="green" type="button">遠隔で解決 → 完了</button>':'')+
-                    '</div></div>'
+                  ? '<div class="item" style="margin-top:12px">'+
+                      '<div class="row between" style="gap:10px;align-items:flex-start;flex-wrap:wrap"><div><strong>セッション '+esc(latestTeamViewerSession.session_code||'')+'</strong><p>状態: '+esc(latestTeamViewerSession.state||'open')+
+                        (latestTeamViewerSession.closed_at?'<br>終了: '+esc(dateTimeText(latestTeamViewerSession.closed_at)):'')+
+                        (teamviewerSessionClosed?'<br>対応時間（概算）: '+esc(teamviewerDurationText):'')+
+                      '</p></div><span class="pill '+(teamviewerSessionClosed?'good':'warn')+'">'+(teamviewerSessionClosed?'終了':'接続中・待機中')+'</span></div>'+
+                      '<div class="supportQuickActions">'+
+                        (!teamviewerSessionClosed && latestTeamViewerSession.end_customer_link?'<button id="ticketTeamViewerCopyCustomer" class="ghost" type="button">顧客用リンクをコピー</button>':'')+
+                        (!teamviewerSessionClosed && latestTeamViewerSession.supporter_link?'<button id="ticketTeamViewerOpenSupporter" class="primary" type="button">TeamViewerで接続</button>':'')+
+                        (!teamviewerSessionClosed?'<button id="ticketTeamViewerRefresh" class="ghost" type="button">接続状態を更新</button>':'')+
+                        (!teamviewerSessionClosed?'<button id="ticketTeamViewerFinish" class="orange" type="button">遠隔対応を終了</button>':'')+
+                      '</div>'+
+                    '</div>'+
+                    (teamviewerSessionClosed && !latestTeamViewerSession.outcome && t.status!=='closed'
+                      ? '<div class="item" style="margin-top:12px"><strong>遠隔対応の結果を記録</strong>'+
+                          '<div class="field"><label>対応内容・結果</label><textarea id="ticketRemoteResultNote" rows="4" placeholder="例：プリンター設定を修正し、テスト印刷まで確認"></textarea></div>'+
+                          '<div class="supportQuickActions">'+
+                            '<button class="green ticketRemoteOutcome" data-outcome="resolved" type="button">解決して完了</button>'+
+                            '<button class="primary ticketRemoteOutcome" data-outcome="continue" type="button">継続対応</button>'+
+                            '<button class="orange ticketRemoteOutcome" data-outcome="escalate" type="button">自社へ引継ぎ</button>'+
+                          '</div>'+
+                        '</div>'
+                      : '')+
+                    (latestTeamViewerSession.outcome
+                      ? '<div class="notice ok" style="margin-top:12px"><strong>対応結果: '+esc({resolved:'解決',continue:'継続対応',escalate:'自社引継ぎ'}[latestTeamViewerSession.outcome]||latestTeamViewerSession.outcome)+'</strong>'+
+                          (latestTeamViewerSession.work_note?'<br>'+esc(latestTeamViewerSession.work_note):'')+
+                        '</div>'
+                      : '')
                   : '')+
                 '<div id="ticketRemoteMsg" class="notice hidden"></div>'+
               '</section>'+
@@ -6941,21 +6977,100 @@
         };
       }
 
-      const remoteSolved=$('#ticketRemoteSolved');
-      if(remoteSolved) remoteSolved.onclick=async()=>{
-        remoteSolved.disabled=true;
+      const refreshTeamViewerSession=async(showToast=true)=>{
         try{
-          await rpc('post_ticket_message',{
-            p_ticket_id:t.id,
-            p_visibility:'support',
-            p_body:'【TeamViewer遠隔対応】遠隔対応で解決'
-          }).catch(()=>{});
-          await rpc('close_support_ticket',{p_ticket_id:t.id});
-          toast('TeamViewer対応で解決・完了しました');
+          const {data,error}=await supabase.functions.invoke('teamviewer-api',{
+            body:{action:'refresh_session',ticket_id:t.id}
+          });
+          if(error) throw error;
+          if(showToast) toast('TeamViewer接続状態を更新しました');
+          return data?.session||null;
+        }catch(err){
+          notice('#ticketRemoteMsg',err.message||String(err));
+          return null;
+        }
+      };
+
+      const refreshTv=$('#ticketTeamViewerRefresh');
+      if(refreshTv) refreshTv.onclick=async()=>{
+        refreshTv.disabled=true;
+        const session=await refreshTeamViewerSession(true);
+        refreshTv.disabled=false;
+        if(session) await renderTicketDetail(t.id);
+      };
+
+      const finishTv=$('#ticketTeamViewerFinish');
+      if(finishTv) finishTv.onclick=async()=>{
+        if(!confirm('TeamViewerの遠隔対応を終了しますか？')) return;
+        finishTv.disabled=true;
+        try{
+          const {data,error}=await supabase.functions.invoke('teamviewer-api',{
+            body:{action:'finish_session',ticket_id:t.id}
+          });
+          if(error) throw error;
+          if(!data?.ok) throw new Error('TeamViewerセッションを終了できませんでした。');
+          toast('TeamViewer遠隔対応を終了しました');
           await renderTicketDetail(t.id);
         }catch(err){notice('#ticketRemoteMsg',err.message||String(err));}
-        finally{remoteSolved.disabled=false;}
+        finally{finishTv.disabled=false;}
       };
+
+      document.querySelectorAll('.ticketRemoteOutcome').forEach(btn=>{
+        btn.onclick=async()=>{
+          const outcome=btn.dataset.outcome;
+          const note=($('#ticketRemoteResultNote')?.value||'').trim();
+          if(!note) return notice('#ticketRemoteMsg','対応内容・結果を入力してください。');
+          document.querySelectorAll('.ticketRemoteOutcome').forEach(x=>x.disabled=true);
+          try{
+            const {data,error}=await supabase.functions.invoke('teamviewer-api',{
+              body:{action:'record_result',ticket_id:t.id,outcome,work_note:note}
+            });
+            if(error) throw error;
+            if(!data?.ok) throw new Error('TeamViewer対応結果を保存できませんでした。');
+
+            const resultLabel={resolved:'解決',continue:'継続対応',escalate:'自社引継ぎ'}[outcome]||outcome;
+            await rpc('post_ticket_message',{
+              p_ticket_id:t.id,
+              p_visibility:'support',
+              p_body:'【TeamViewer遠隔対応】\n結果: '+resultLabel+'\n対応時間（概算）: '+teamviewerDurationText+'\n対応内容: '+note
+            }).catch(()=>{});
+
+            if(outcome==='resolved'){
+              await rpc('close_support_ticket',{p_ticket_id:t.id});
+              toast('遠隔対応の結果を保存し、案件を完了しました');
+            }else if(outcome==='continue'){
+              await rpc('set_support_workflow_stage',{p_ticket_id:t.id,p_stage:'in_progress'}).catch(()=>{});
+              toast('遠隔対応の結果を保存し、継続対応に戻しました');
+            }else if(outcome==='escalate'){
+              await rpc('handoff_ticket_to_internal',{
+                p_ticket_id:t.id,
+                p_reason:'TeamViewer遠隔対応後も解決できないため\n'+note,
+                p_next_action:'自社担当者で詳細調査・現地対応要否を判断'
+              });
+              toast('遠隔対応の結果を保存し、自社へ引き継ぎました');
+            }
+            await renderTicketDetail(t.id);
+          }catch(err){notice('#ticketRemoteMsg',err.message||String(err));}
+          finally{document.querySelectorAll('.ticketRemoteOutcome').forEach(x=>x.disabled=false);}
+        };
+      });
+
+      if(latestTeamViewerSession && !teamviewerSessionClosed){
+        teamviewerStatusTimer=setInterval(async()=>{
+          if(!document.querySelector('#supportRemoteWorkspace')){
+            clearInterval(teamviewerStatusTimer);
+            teamviewerStatusTimer=null;
+            return;
+          }
+          const session=await refreshTeamViewerSession(false);
+          if(session && ['closed','ended','expired','deleted'].includes(String(session.state||'').toLowerCase())){
+            clearInterval(teamviewerStatusTimer);
+            teamviewerStatusTimer=null;
+            toast('TeamViewer遠隔対応が終了しました。対応結果を記録してください。');
+            await renderTicketDetail(t.id);
+          }
+        },15000);
+      }
     }
 
     if(internal){
