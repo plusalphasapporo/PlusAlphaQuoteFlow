@@ -10002,6 +10002,27 @@
     const published=(data||[]).filter(k=>k.is_active!==false);
     const rejected=(data||[]).filter(k=>k.is_active===false&&isRejected(k));
 
+    const knowledgeSimilarity=(a,b)=>{
+      const norm=v=>String(v||'').toLowerCase().replace(/[\s　、。・,\/\\\-_:;()（）【】\[\]]+/g,' ').trim();
+      const tokens=v=>new Set(norm(v).split(' ').filter(x=>x.length>=2));
+      const at=tokens([a.title,a.category,(a.tags||[]).join(' '),a.body].join(' '));
+      const bt=tokens([b.title,b.category,(b.tags||[]).join(' '),b.body].join(' '));
+      if(!at.size||!bt.size) return 0;
+      let hit=0; at.forEach(x=>{if(bt.has(x)) hit++;});
+      const base=Math.min(at.size,bt.size)||1;
+      let score=Math.round((hit/base)*100);
+      if(norm(a.title)===norm(b.title) && norm(a.title)) score=Math.max(score,95);
+      else if(norm(a.title).includes(norm(b.title))||norm(b.title).includes(norm(a.title))) score=Math.max(score,80);
+      if(a.category&&b.category&&norm(a.category)===norm(b.category)) score=Math.min(100,score+10);
+      return Math.min(100,score);
+    };
+    const duplicateForCandidate=k=>{
+      const pool=(data||[]).filter(x=>String(x.id)!==String(k.id)&&!isRejected(x));
+      return pool.map(x=>({x,score:knowledgeSimilarity(k,x)}))
+        .filter(v=>v.score>=55)
+        .sort((a,b)=>b.score-a.score)[0]||null;
+    };
+
     const candidateCards=candidates.length?candidates.map(k=>
       '<article class="item" style="margin-bottom:10px">'+
         '<div class="row between" style="gap:10px;align-items:flex-start;flex-wrap:wrap">'+
@@ -10010,8 +10031,19 @@
         '</div>'+
         '<p style="white-space:pre-wrap;max-height:180px;overflow:auto">'+esc(String(k.body||'').slice(0,1200))+'</p>'+
         ((k.tags||[]).length?'<div class="row" style="margin-top:8px">'+k.tags.filter(x=>x!=='却下').map(t=>'<span class="pill">'+esc(t)+'</span>').join('')+'</div>':'')+
+        (()=>{
+          const dup=duplicateForCandidate(k);
+          return dup
+            ? '<div class="notice warn" style="margin-top:10px"><strong>類似ナレッジ候補あり</strong><br>'+
+                '<span class="muted">'+esc(dup.x.title||'')+' / 類似度 '+esc(dup.score)+'%</span>'+
+                '<div class="supportQuickActions" style="margin-top:8px">'+
+                  '<button class="primary knowledgeCandidateMerge" type="button" data-id="'+esc(k.id)+'" data-target-id="'+esc(dup.x.id)+'">既存に追記</button>'+
+                  '<button class="ghost knowledgeAdminEdit" type="button" data-id="'+esc(k.id)+'">内容を比較・修正</button>'+
+                '</div></div>'
+            : '';
+        })()+
         '<div class="supportQuickActions" style="margin-top:10px">'+
-          '<button class="green knowledgeCandidatePublish" type="button" data-id="'+esc(k.id)+'">公開</button>'+
+          '<button class="green knowledgeCandidatePublish" type="button" data-id="'+esc(k.id)+'">新規として公開</button>'+
           '<button class="primary knowledgeAdminEdit" type="button" data-id="'+esc(k.id)+'">修正</button>'+
           '<button class="ghost knowledgeCandidateReject" type="button" data-id="'+esc(k.id)+'">却下</button>'+
         '</div>'+
@@ -10057,6 +10089,42 @@
 
     $('#knowledgeAdminNew').onclick=()=>openEditor();
     document.querySelectorAll('.knowledgeAdminEdit').forEach(btn=>btn.onclick=()=>openEditor((data||[]).find(x=>String(x.id)===String(btn.dataset.id))||{}));
+
+    document.querySelectorAll('.knowledgeCandidateMerge').forEach(btn=>btn.onclick=async()=>{
+      const source=(data||[]).find(x=>String(x.id)===String(btn.dataset.id));
+      const target=(data||[]).find(x=>String(x.id)===String(btn.dataset.targetId));
+      if(!source||!target) return;
+      btn.disabled=true;
+      try{
+        const mergedBody=[
+          String(target.body||'').trim(),
+          '【追記 '+dateText(source.updated_at||new Date().toISOString())+'】',
+          String(source.body||'').trim()
+        ].filter(Boolean).join('\n\n');
+        const mergedTags=[...(target.tags||[]),...(source.tags||[])].filter(x=>x!=='候補'&&x!=='却下'&&x!=='統合済み');
+        await rpc('save_knowledge_article',{
+          p_id:target.id,
+          p_title:target.title,
+          p_category:target.category||source.category||null,
+          p_body:mergedBody,
+          p_audience:target.audience||source.audience||'support',
+          p_tags:[...new Set(mergedTags)],
+          p_is_active:target.is_active!==false
+        });
+        await rpc('save_knowledge_article',{
+          p_id:source.id,
+          p_title:source.title,
+          p_category:source.category||null,
+          p_body:source.body,
+          p_audience:source.audience,
+          p_tags:[...(source.tags||[]).filter(x=>x!=='候補'&&x!=='却下'),'統合済み','却下'],
+          p_is_active:false
+        });
+        toast('既存ナレッジへ追記し、重複候補を統合済みにしました');
+        await renderKnowledgeAdmin();
+      }catch(err){toast(err.message||String(err));}
+      finally{btn.disabled=false;}
+    });
 
     document.querySelectorAll('.knowledgeCandidatePublish').forEach(btn=>btn.onclick=async()=>{
       const k=(data||[]).find(x=>String(x.id)===String(btn.dataset.id));
