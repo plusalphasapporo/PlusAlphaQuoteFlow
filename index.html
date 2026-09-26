@@ -6877,11 +6877,12 @@
     const internal=role==='internal_admin'||role==='internal_staff';
     const support=role==='support_staff';
 
-    const [detail,knowledgeArticles,supportStage,nextActionState,deadlineState,assignmentState,teamviewerApiState,teamviewerSessions]=customer
-      ? [await rpc('customer_ticket_detail',{p_ticket_id:ticketId}),[],null,null,null,null,null,[]]
+    const [detail,knowledgeArticles,caseWorkspace,supportStage,nextActionState,deadlineState,assignmentState,teamviewerApiState,teamviewerSessions]=customer
+      ? [await rpc('customer_ticket_detail',{p_ticket_id:ticketId}),[],{tickets:[]},null,null,null,null,null,[]]
       : await Promise.all([
           rpc('support_ticket_workspace',{p_ticket_id:ticketId}),
           rpc('role_knowledge_articles'),
+          rpc('internal_support_cases_list'),
           rpc('support_ticket_workflow_state',{p_ticket_id:ticketId}),
           rpc('support_ticket_next_action_state',{p_ticket_id:ticketId}),
           rpc('support_ticket_deadline_state',{p_ticket_id:ticketId}),
@@ -6905,6 +6906,7 @@
       await refreshSupportUnreadBadge();
     }
 
+    const allSupportTickets=caseWorkspace?.tickets||[];
     const messages=detail.messages||[];
     const attachments=detail.attachments||[];
     const handoffs=detail.handoffs||[];
@@ -7743,10 +7745,12 @@
       if(stageResume) stageResume.onclick=()=>setStage('in_progress');
 
       const knowledgeSource=(knowledgeArticles||[]).filter(x=>x.is_active!==false);
+      const similarTicketSource=(allSupportTickets||[]).filter(x=>String(x.id)!==String(t.id));
       const renderKnowledgeCandidates=()=>{
         const q=($('#ticketKnowledgeSearch')?.value||'').trim().toLowerCase();
         const terms=q.split(/[\s　、。・,\/\\\-]+/).map(x=>x.trim()).filter(x=>x.length>=2);
-        const scored=knowledgeSource.map(x=>{
+
+        const scoredKnowledge=knowledgeSource.map(x=>{
           const title=String(x.title||'').toLowerCase();
           const category=String(x.category||'').toLowerCase();
           const tags=(x.tags||[]).join(' ').toLowerCase();
@@ -7760,17 +7764,64 @@
           });
           return {x,score};
         }).filter(v=>!q||v.score>0).sort((a,b)=>b.score-a.score).slice(0,5);
+
+        const scoredTickets=similarTicketSource.map(x=>{
+          const subject=String(x.subject||'').toLowerCase();
+          const description=String(x.description||'').toLowerCase();
+          const customerName=String(x.customer_name||'').toLowerCase();
+          const asset=String((x.asset_model_name||'')+' '+(x.asset_number||'')).toLowerCase();
+          const type=String(supportRequestTypeLabel(x.request_type)||'').toLowerCase();
+          let score=0;
+          terms.forEach(term=>{
+            if(subject.includes(term)) score+=10;
+            if(type.includes(term)) score+=5;
+            if(asset.includes(term)) score+=5;
+            if(description.includes(term)) score+=2;
+            if(customerName.includes(term)) score+=1;
+          });
+          if(String(x.customer_id||'')===String(t.customer_id||'')) score+=3;
+          if(x.status==='closed') score+=1;
+          return {x,score};
+        }).filter(v=>v.score>0).sort((a,b)=>{
+          if(b.score!==a.score) return b.score-a.score;
+          return timeValue(b.x.updated_at||b.x.created_at)-timeValue(a.x.updated_at||a.x.created_at);
+        }).slice(0,5);
+
         const host=$('#ticketKnowledgeCandidates');
         if(!host) return;
-        host.innerHTML=scored.length
-          ? '<div class="row between" style="margin:10px 0"><strong>候補ナレッジ</strong><span class="muted">'+scored.length+'件表示</span></div>'+
-            scored.map(v=>{
+
+        const knowledgeHtml=scoredKnowledge.length
+          ? '<div class="row between" style="margin:10px 0"><strong>候補ナレッジ</strong><span class="muted">'+scoredKnowledge.length+'件 / 根拠を表示</span></div>'+
+            scoredKnowledge.map(v=>{
               const x=v.x;
               const body=String(x.body||'');
               const preview=body.length>240?body.slice(0,240)+'…':body;
-              return '<article class="item"><div class="row between"><div><strong>'+esc(x.title||'')+'</strong><br><span class="muted">'+esc(x.category||'')+'</span></div><button class="linkBtn ticketKnowledgeUse" type="button" data-id="'+esc(x.id)+'">返信欄に下書き</button></div><p style="white-space:pre-wrap">'+esc(preview)+'</p></article>';
+              return '<article class="item"><div class="row between"><div><strong>'+esc(x.title||'')+'</strong><br><span class="muted">根拠: ナレッジ / '+esc(x.category||'未分類')+'</span></div><button class="linkBtn ticketKnowledgeUse" type="button" data-id="'+esc(x.id)+'">返信欄に下書き</button></div><p style="white-space:pre-wrap">'+esc(preview)+'</p></article>';
             }).join('')
-          : '<div class="empty">一致するナレッジはありません。検索語を変えるか、自社へ引き継いでください。</div>';
+          : '<div class="empty">一致するナレッジはありません。</div>';
+
+        const ticketHtml=scoredTickets.length
+          ? '<div class="row between" style="margin:16px 0 10px"><strong>類似する過去案件</strong><span class="muted">'+scoredTickets.length+'件 / 症状・機器・顧客・種別から検索</span></div>'+
+            scoredTickets.map(v=>{
+              const x=v.x;
+              const raw=String(x.description||'').replace(/^【受付経路】[^\n]*\n?/,'').trim();
+              const preview=raw.length>220?raw.slice(0,220)+'…':raw;
+              const sameCustomer=String(x.customer_id||'')===String(t.customer_id||'');
+              return '<article class="item">'+
+                '<div class="row between" style="gap:10px;align-items:flex-start">'+
+                  '<div><strong>'+esc(x.ticket_number||'—')+' / '+esc(x.subject||'')+'</strong><br>'+
+                    '<span class="muted">根拠: 過去案件'+(sameCustomer?' / 同一顧客':'')+' / '+esc(supportRequestTypeLabel(x.request_type))+' / '+esc(statusText(x.status))+'</span>'+
+                  '</div>'+
+                  '<button class="linkBtn ticketSimilarOpen" type="button" data-id="'+esc(x.id)+'">案件カルテを開く</button>'+
+                '</div>'+
+                '<p style="white-space:pre-wrap">'+esc(preview||'内容記録なし')+'</p>'+
+                '<div class="muted">更新: '+esc(dateTimeText(x.updated_at||x.created_at))+' / 類似スコア '+esc(v.score)+'</div>'+
+              '</article>';
+            }).join('')
+          : '<div class="empty" style="margin-top:12px">類似する過去案件は見つかりませんでした。</div>';
+
+        host.innerHTML=knowledgeHtml+ticketHtml;
+
         document.querySelectorAll('.ticketKnowledgeUse').forEach(btn=>btn.onclick=()=>{
           const article=knowledgeSource.find(x=>String(x.id)===String(btn.dataset.id));
           if(!article) return;
@@ -7780,6 +7831,17 @@
           body.focus();
           body.scrollIntoView({behavior:'smooth',block:'center'});
           toast('返信欄にナレッジを下書きしました');
+        });
+
+        document.querySelectorAll('.ticketSimilarOpen').forEach(btn=>btn.onclick=async()=>{
+          btn.disabled=true;
+          try{
+            await openTicketWorkspace(btn.dataset.id);
+          }catch(err){
+            toast(err.message||String(err));
+          }finally{
+            btn.disabled=false;
+          }
         });
       };
       const knowledgeSearch=$('#ticketKnowledgeSearch');
