@@ -7515,11 +7515,18 @@
         ['完了',summary.closed||0]
       ])+
       (support
-        ? '<section class="card section"><div class="row between"><div><h2>案件一覧</h2><p class="sectionDesc">最初は「要対応」だけ表示します。必要なときだけ範囲を広げてください。</p></div></div>'+
-            '<div id="supportViewTabs" class="supportCaseFilterBar" data-active="attention">'+
-              '<button class="supportCaseFilterBtn active supportViewTab" type="button" data-view="attention">要対応</button>'+
-              '<button class="supportCaseFilterBtn supportViewTab" type="button" data-view="mine">自分の担当</button>'+
-              '<button class="supportCaseFilterBtn supportViewTab" type="button" data-view="unhandled">未対応</button>'+
+        ? '<section class="card section"><div class="row between"><div><h2>作業キュー</h2><p class="sectionDesc">「次に何をするか」で案件を分けています。まず未対応、その後は自分の対応中を確認してください。</p></div></div>'+
+            '<div class="supportTodayGrid" style="margin-top:12px">'+
+              '<button class="supportTodayTile danger supportQueueJump" type="button" data-view="unhandled"><span>受付待ち</span><strong>'+esc(data.filter(x=>x.status!=="closed"&&x.support_stage==="unhandled").length)+'</strong><em>まだ誰も対応開始していない</em></button>'+
+              '<button class="supportTodayTile supportQueueJump" type="button" data-view="mine"><span>自分の対応中</span><strong>'+esc(data.filter(x=>x.status!=="closed"&&x.support_assignment?.is_mine).length)+'</strong><em>今、自分が進める案件</em></button>'+
+              '<button class="supportTodayTile warn supportQueueJump" type="button" data-view="teamviewer"><span>TeamViewer</span><strong>'+esc(data.filter(x=>x.status!=="closed"&&(x.support_stage==="teamviewer_waiting"||x.teamviewer_result_pending)).length)+'</strong><em>接続待ち・結果入力待ち</em></button>'+
+              '<button class="supportTodayTile supportQueueJump" type="button" data-view="handoff"><span>自社引継ぎ</span><strong>'+esc(data.filter(x=>x.status!=="closed"&&["internal_handoff_waiting","internal_in_progress","support_review_waiting"].includes(x.support_stage)).length)+'</strong><em>自社対応中・戻り待ち</em></button>'+
+              '<button class="supportTodayTile supportQueueJump" type="button" data-view="closed"><span>完了</span><strong>'+esc(data.filter(x=>x.status==="closed").length)+'</strong><em>対応済み</em></button>'+
+            '</div>'+
+            '<div id="supportViewTabs" class="supportCaseFilterBar" data-active="unhandled">'+
+              '<button class="supportCaseFilterBtn active supportViewTab" type="button" data-view="unhandled">受付待ち</button>'+
+              '<button class="supportCaseFilterBtn supportViewTab" type="button" data-view="mine">自分の対応中</button>'+
+              '<button class="supportCaseFilterBtn supportViewTab" type="button" data-view="attention">要注意</button>'+
               '<button class="supportCaseFilterBtn supportViewTab" type="button" data-view="teamviewer">TeamViewer</button>'+
               '<button class="supportCaseFilterBtn supportViewTab" type="button" data-view="handoff">自社引継ぎ</button>'+
               '<button class="supportCaseFilterBtn supportViewTab" type="button" data-view="all_open">対応中すべて</button>'+
@@ -7546,7 +7553,7 @@
       let filtered=data.filter(t=>{
         if(state.status!=='all'&&t.status!==state.status) return false;
         if(support){
-          const view=$('#supportViewTabs')?.dataset.active||'attention';
+          const view=$('#supportViewTabs')?.dataset.active||'unhandled';
           if(view==='attention' && !(t.status!=='closed' && (t.teamviewer_result_pending||t.deadline_state==='overdue'||t.deadline_state==='due_today'||t.support_stage==='unhandled'||t.priority==='urgent'||t.support_stage==='teamviewer_waiting'||t.support_stage==='support_review_waiting'))) return false;
           if(view==='mine' && !(t.status!=='closed'&&t.support_assignment?.is_mine)) return false;
           if(view==='unhandled' && !(t.status!=='closed'&&t.support_stage==='unhandled')) return false;
@@ -7627,11 +7634,17 @@
       document.querySelectorAll('.ticketDetail').forEach(btn=>btn.onclick=async()=>{btn.disabled=true;try{if(bootData?.context?.role==='customer_user') await renderTicketDetail(btn.dataset.id); else await openTicketWorkspace(btn.dataset.id);}catch(err){toast(err.message||String(err));}finally{btn.disabled=false;}});
     };
     if(support){
-      document.querySelectorAll('.supportViewTab').forEach(btn=>btn.onclick=()=>{
+      const setSupportQueueView=(view)=>{
         const bar=$('#supportViewTabs');
-        bar.dataset.active=btn.dataset.view||'attention';
-        bar.querySelectorAll('.supportViewTab').forEach(x=>x.classList.toggle('active',x===btn));
+        if(!bar) return;
+        bar.dataset.active=view||'unhandled';
+        bar.querySelectorAll('.supportViewTab').forEach(x=>x.classList.toggle('active',x.dataset.view===bar.dataset.active));
         renderRows();
+      };
+      document.querySelectorAll('.supportViewTab').forEach(btn=>btn.onclick=()=>setSupportQueueView(btn.dataset.view));
+      document.querySelectorAll('.supportQueueJump').forEach(btn=>btn.onclick=()=>{
+        setSupportQueueView(btn.dataset.view);
+        $('#supportCaseListHost')?.scrollIntoView({behavior:'smooth',block:'start'});
       });
     }
     bindListToolbar('supportCaseList',renderRows);
