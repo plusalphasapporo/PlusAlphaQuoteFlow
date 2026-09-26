@@ -2219,7 +2219,7 @@
           handoffUpdateItems.slice(0,3).map(h=>'<div class="supportPriorityCase"><div><div class="title">'+esc(h.customer_name||'—')+' / '+esc(h.subject||'')+'</div><div class="sub">'+esc(h.handoff_state==='accepted'?'自社対応開始':'自社対応完了')+'</div></div><button class="ghost supportHandoffUpdateOpen" type="button" data-handoff-id="'+esc(h.handoff_id)+'" data-ticket-id="'+esc(h.ticket_id)+'">確認</button></div>').join('')+
         '</section>':'')+
         (unansweredItems.length?'<section id="supportUnansweredSection" class="supportHomeSection"><div class="supportHomeSectionHead"><div><h2>未返信</h2><p>2時間超 → 緊急、1時間超 → 警告、30分超 → 注意。長時間未返信を上に表示します。</p></div><span class="hold">'+esc(unansweredCount)+'件</span></div>'+ 
-          unansweredItems.slice(0,8).map(x=>{const mins=Number.isFinite(Number(x.waiting_minutes))?Number(x.waiting_minutes):Math.max(0,Math.floor((Date.now()-timeValue(x.last_customer_message_at))/60000));const wait=mins<60?mins+'分前':Math.floor(mins/60)+'時間'+(mins%60?String(mins%60)+'分':'')+'前';const level=x.wait_level||'normal';const levelLabel={critical:'緊急',warning:'警告',attention:'注意',normal:'未返信'}[level]||'未返信';const levelClass=level==='critical'?'hold':level==='warning'?'pill warn':level==='attention'?'pill warn':'pill';return '<div class="supportPriorityCase"><div><div class="title"><span class="'+levelClass+'">'+esc(levelLabel)+'</span> '+(x.is_important?'<span class="hold">重要</span> ':'')+esc(x.customer_name||'—')+' / '+esc(x.subject||'')+'</div><div class="sub">'+esc(x.ticket_number||'—')+' / '+esc(wait)+'</div><div class="muted" style="margin-top:4px">'+esc(x.message_excerpt||'')+'</div></div><button class="primary supportUnansweredOpen" type="button" data-id="'+esc(x.ticket_id)+'">返信する</button></div>'}).join('')+
+          unansweredItems.slice(0,8).map(x=>{const mins=Number.isFinite(Number(x.waiting_minutes))?Number(x.waiting_minutes):Math.max(0,Math.floor((Date.now()-timeValue(x.last_customer_message_at))/60000));const wait=mins<60?mins+'分前':Math.floor(mins/60)+'時間'+(mins%60?String(mins%60)+'分':'')+'前';const level=x.wait_level||'normal';const levelLabel={critical:'緊急',warning:'警告',attention:'注意',normal:'未返信'}[level]||'未返信';const levelClass=level==='critical'?'hold':level==='warning'?'pill warn':level==='attention'?'pill warn':'pill';const assigned=!!x.support_assigned_user_id;const mine=!!x.is_mine;const assignee=mine?'自分が返信対応中':assigned?(String(x.support_assigned_user_name||'他担当者')+' が返信対応中'):'未担当';const btnText=mine?'返信を続ける':assigned?'案件を確認':'自分が返信する';const btnClass=assigned&&!mine?'ghost':'primary';return '<div class="supportPriorityCase"><div><div class="title"><span class="'+levelClass+'">'+esc(levelLabel)+'</span> '+(x.is_important?'<span class="hold">重要</span> ':'')+esc(x.customer_name||'—')+' / '+esc(x.subject||'')+'</div><div class="sub">'+esc(x.ticket_number||'—')+' / '+esc(wait)+' / <strong>'+esc(assignee)+'</strong></div><div class="muted" style="margin-top:4px">'+esc(x.message_excerpt||'')+'</div></div><button class="'+btnClass+' supportUnansweredOpen" type="button" data-id="'+esc(x.ticket_id)+'" data-assigned="'+(assigned?'1':'0')+'" data-mine="'+(mine?'1':'0')+'" data-assignee="'+esc(x.support_assigned_user_name||'')+'">'+esc(btnText)+'</button></div>'}).join('')+
         '</section>':'')+
         (teamviewerPendingItems.length?'<section class="supportHomeSection"><div class="supportHomeSectionHead"><div><h2>TeamViewer結果未入力</h2><p>遠隔対応終了済み。結果だけ記録してください。</p></div><span class="hold">'+esc(teamviewerPendingItems.length)+'件</span></div>'+
           teamviewerPendingItems.slice(0,5).map(x=>'<div class="supportPriorityCase"><div><div class="title">'+esc(x.customer_name||'—')+' / '+esc(x.subject||'')+'</div><div class="sub">'+esc(x.ticket_number||'—')+' / 終了 '+esc(dateTimeText(x.session_closed_at||x.session_updated_at))+'</div></div><button class="primary supportTeamViewerPendingOpen" type="button" data-id="'+esc(x.ticket_id)+'">結果入力</button></div>').join('')+
@@ -2236,6 +2236,19 @@
       document.querySelectorAll('.supportUnansweredOpen').forEach(btn=>btn.onclick=async()=>{
         btn.disabled=true;
         try{
+          const assigned=btn.dataset.assigned==='1';
+          const mine=btn.dataset.mine==='1';
+          const assignee=btn.dataset.assignee||'他の担当者';
+          if(assigned&&!mine){
+            toast(assignee+' が返信対応中です');
+            await openTicketWorkspace(btn.dataset.id);
+            setTimeout(()=>$('#ticketReplyLockNotice')?.scrollIntoView({behavior:'smooth',block:'center'}),180);
+            return;
+          }
+          if(!assigned){
+            await rpc('claim_support_ticket',{p_ticket_id:btn.dataset.id});
+            toast('返信担当を確保しました');
+          }
           await openTicketWorkspace(btn.dataset.id);
           setTimeout(()=>{const el=$('#ticketMessageBody');el?.scrollIntoView({behavior:'smooth',block:'center'});el?.focus();},180);
         }catch(err){toast(err.message||String(err));}
@@ -7005,6 +7018,13 @@
           (messages.length?'<div class="row" style="margin:10px 0"><input id="ticketMessageSearch" placeholder="メッセージ検索" style="flex:1;min-width:220px;padding:10px 12px;border:1px solid var(--line);border-radius:10px"><select id="ticketMessageFilter" style="min-width:150px;padding:10px 12px;border:1px solid var(--line);border-radius:10px"><option value="all">すべて</option><option value="important">重要のみ</option><option value="customer">顧客向け</option><option value="support">サポート内</option>'+(internal?'<option value="internal">社内のみ</option>':'')+'</select><button id="ticketMessageLatest" class="ghost" type="button">最新へ</button></div>':'')+
           '<div id="ticketMessageList">'+messagesHtml+'</div>'+
           '<form id="ticketMessageForm" class="card section" style="box-shadow:none">'+
+            (support?'<div id="ticketReplyLockNotice" class="notice '+(assignmentState?.support_assigned_user_id&&!assignmentState?.is_mine?'error':assignmentState?.is_mine?'ok':'')+'">'+
+              (assignmentState?.support_assigned_user_id
+                ? (assignmentState?.is_mine
+                    ? '<strong>返信担当：自分</strong><br>この案件の顧客向け返信を担当しています。'
+                    : '<strong>返信担当：'+esc(assignmentState?.support_assigned_user_name||'他担当者')+'</strong><br>別の職員が対応中です。顧客向け返信は送信できません。')
+                : '<strong>返信担当：未担当</strong><br>「自分が返信する」または顧客向け送信時に担当を確保します。')+
+            '</div>':'')+
             visibilitySelect+
             (!customer?'<div id="ticketMessageVisibilityBanner" class="messageVisibilityBanner customer">このメッセージは顧客に表示されます</div>':'')+
             '<div id="ticketMessageReplyContext" class="messageReplyContext hidden"></div>'+
@@ -7719,6 +7739,17 @@
         if(!rawBody && !files.length) throw new Error('メッセージまたは添付ファイルを入力してください。');
 
         const visibility=$('#ticketMessageVisibility').value;
+        if(support && visibility==='customer'){
+          const latestAssignment=await rpc('support_ticket_assignment_state',{p_ticket_id:t.id});
+          if(latestAssignment?.support_assigned_user_id && !latestAssignment?.is_mine){
+            const name=latestAssignment.support_assigned_user_name||'他の担当者';
+            throw new Error(name+' が返信対応中です。担当者の返信完了または担当解除後に送信してください。');
+          }
+          if(!latestAssignment?.support_assigned_user_id){
+            await rpc('claim_support_ticket',{p_ticket_id:t.id});
+            toast('返信担当を確保しました');
+          }
+        }
         if(messageReplyContext && visibility!==messageReplyContext.visibility){
           const from=visibilityLabel(messageReplyContext.visibility);
           const to=visibilityLabel(visibility);
