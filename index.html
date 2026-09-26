@@ -6918,7 +6918,8 @@
               '<button class="ghost ticketMessageTemplate" type="button" data-text="遠隔で確認するため、TeamViewerでの接続をお願いいたします。">TeamViewer案内</button>'+
               '<button class="ghost ticketMessageTemplate" type="button" data-text="対応が完了しました。ご確認をお願いいたします。">完了案内</button>'+
             '</div>'+
-            '<div class="field"><label>返信</label><textarea id="ticketMessageBody" rows="5" required placeholder="対応内容を入力してください"></textarea><div class="row between"><small class="muted">Ctrl + Enter で送信</small><small id="ticketMessageCount" class="muted">0文字</small></div></div>'+
+            '<div class="field"><label>返信</label><textarea id="ticketMessageBody" rows="5" placeholder="対応内容を入力してください"></textarea><div class="row between"><small class="muted">Ctrl + Enter で送信</small><small id="ticketMessageCount" class="muted">0文字</small></div></div>'+
+            '<div class="field"><label>写真・ファイルを添付</label><input id="ticketMessageFiles" type="file" accept="image/*,.pdf,.txt,.csv,.doc,.docx,.xls,.xlsx" multiple><small class="muted">写真・PDF・Officeファイルなどをこのメッセージと一緒に送れます。</small><div id="ticketMessageFileList" class="muted" style="margin-top:6px"></div></div>'+
             '<div class="row between" style="gap:8px">'+
               '<div class="row">'+
                 (!customer?'<button id="ticketMessageInternalNote" class="ghost" type="button">'+(support?'サポート内メモ':'社内メモ')+'</button>':'')+
@@ -6939,6 +6940,17 @@
     bindSupportDraftInputs(t.id,'handoff',{reason:'#handoffReason',next_action:'#handoffNextAction'});
 
     const messageBodyEl=$('#ticketMessageBody');
+    const messageFilesEl=$('#ticketMessageFiles');
+    const messageFileListEl=$('#ticketMessageFileList');
+    const refreshMessageFileList=()=>{
+      if(!messageFileListEl) return;
+      const files=[...(messageFilesEl?.files||[])];
+      messageFileListEl.textContent=files.length
+        ? files.map(f=>f.name+' ('+Math.max(1,Math.round((f.size||0)/1024))+'KB)').join(' / ')
+        : '';
+    };
+    if(messageFilesEl) messageFilesEl.addEventListener('change',refreshMessageFileList);
+
     const messageCountEl=$('#ticketMessageCount');
     const refreshMessageCount=()=>{if(messageCountEl) messageCountEl.textContent=String((messageBodyEl?.value||'').length)+'文字';};
     if(messageBodyEl){
@@ -7492,14 +7504,28 @@
       const btn=e.submitter;if(btn)btn.disabled=true;
       try{
         const rawBody=$('#ticketMessageBody').value.trim();
-        if(!rawBody) throw new Error('メッセージを入力してください。');
-        const body=$('#ticketMessageImportant')?.checked?'【重要】\n'+rawBody:rawBody;
+        const files=[...($('#ticketMessageFiles')?.files||[])];
+        if(!rawBody && !files.length) throw new Error('メッセージまたは添付ファイルを入力してください。');
+
+        const visibility=$('#ticketMessageVisibility').value;
+        if(files.length){
+          notice('#ticketMessageMsg','添付ファイルをアップロードしています...',true);
+          await uploadSupportAttachments(t.id,files,visibility);
+        }
+
+        const attachmentNote=files.length
+          ? '【添付】\n'+files.map(f=>'・'+f.name).join('\n')
+          : '';
+        const baseBody=rawBody || '添付ファイルを送信しました。';
+        const composed=[baseBody,attachmentNote].filter(Boolean).join('\n\n');
+        const body=$('#ticketMessageImportant')?.checked?'【重要】\n'+composed:composed;
+
         await rpc('post_ticket_message',{
-          p_ticket_id:t.id,p_visibility:$('#ticketMessageVisibility').value,p_body:body
+          p_ticket_id:t.id,p_visibility:visibility,p_body:body
         });
         clearSupportDraft(t.id,'message');
-        notice('#ticketMessageMsg','メッセージを送信しました。',true);
-        toast('メッセージを送信しました');
+        notice('#ticketMessageMsg','メッセージを送信しました。'+(files.length?' 添付 '+files.length+'件を追加しました。':''),true);
+        toast(files.length?'メッセージと添付を送信しました':'メッセージを送信しました');
         await renderTicketDetail(t.id);
       }catch(err){notice('#ticketMessageMsg',err.message||String(err));}
       finally{if(btn)btn.disabled=false;}
