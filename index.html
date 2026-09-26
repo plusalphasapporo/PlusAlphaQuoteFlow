@@ -470,7 +470,7 @@
     'customer_ticket_detail','internal_numbering_settings','internal_accounts_list',
     'internal_account_companies','internal_audit_workspace','internal_document_profile','internal_demo_seed_status','internal_company_settings','internal_entity_audit_history',
     'internal_products_list','internal_lease_rates_list','internal_order_profitability','internal_customer_unified_workspace','internal_receiving_workspace','internal_order_operation','role_knowledge_articles',
-    'support_customer_directory','support_asset_directory','support_handoff_history','support_customer_context','support_customer_phone_search','support_workflow_states','support_ticket_workflow_state','support_unread_notifications','support_unanswered_messages','support_unread_handoff_updates','support_deadline_states','support_ticket_deadline_state','support_assignment_states','support_ticket_assignment_state','callconnect_dashboard','callconnect_api_settings','callconnect_unread_notifications','callconnect_customer_directory',
+    'support_customer_directory','support_asset_directory','post_support_ticket_message','support_handoff_history','support_customer_context','support_customer_phone_search','support_workflow_states','support_ticket_workflow_state','support_unread_notifications','support_unanswered_messages','support_unread_handoff_updates','support_deadline_states','support_ticket_deadline_state','support_assignment_states','support_ticket_assignment_state','callconnect_dashboard','callconnect_api_settings','callconnect_unread_notifications','callconnect_customer_directory',
     'internal_case_directory','internal_handoff_history','internal_knowledge_articles'
   ]);
 
@@ -7041,7 +7041,9 @@
                 (!customer?'<button id="ticketMessageInternalNote" class="ghost" type="button">'+(support?'サポート内メモ':'社内メモ')+'</button>':'')+
                 '<label class="row" style="gap:6px"><input id="ticketMessageImportant" type="checkbox"> 重要</label>'+
               '</div>'+
-              '<button class="primary" type="submit">メッセージを送信</button>'+
+              (support&&messageVisibilityEl!==null
+                ? '<div class="row" style="gap:8px"><button id="ticketMessageSendKeep" class="ghost" type="button">送信・継続対応</button><button id="ticketMessageSendRelease" class="primary" type="button">返信完了・担当解除</button></div>'
+                : '<button class="primary" type="submit">メッセージを送信</button>')+
             '</div>'+
           '</form><div id="ticketMessageMsg" class="notice hidden"></div></section>'+
         (!customer?'<section class="section"><h3>引き継ぎ履歴</h3>'+dataTable(internal?['状態','理由','次の対応','作成日','操作']:['状態','理由','次の対応','作成日'],handoffRows)+'</section>':'')+
@@ -7177,6 +7179,7 @@
       messageBodyEl.addEventListener('keydown',e=>{
         if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){
           e.preventDefault();
+          messageReleaseAfter=false;
           $('#ticketMessageForm')?.requestSubmit();
         }
       });
@@ -7730,6 +7733,14 @@
       };
     }
 
+    let messageReleaseAfter=false;
+    const sendMessageForm=(releaseAfter)=>{
+      messageReleaseAfter=!!releaseAfter;
+      $('#ticketMessageForm')?.requestSubmit();
+    };
+    $('#ticketMessageSendKeep')?.addEventListener('click',()=>sendMessageForm(false));
+    $('#ticketMessageSendRelease')?.addEventListener('click',()=>sendMessageForm(true));
+
     $('#ticketMessageForm').onsubmit=async e=>{
       e.preventDefault();
       const btn=e.submitter;if(btn)btn.disabled=true;
@@ -7774,15 +7785,31 @@
         const composed=[replyNote,baseBody,attachmentNote].filter(Boolean).join('\n\n');
         const body=$('#ticketMessageImportant')?.checked?'【重要】\n'+composed:composed;
 
-        await rpc('post_ticket_message',{
-          p_ticket_id:t.id,p_visibility:visibility,p_body:body
-        });
+        const useRelease=support && visibility==='customer' && messageReleaseAfter;
+        if(support){
+          await rpc('post_support_ticket_message',{
+            p_ticket_id:t.id,
+            p_visibility:visibility,
+            p_body:body,
+            p_release_after:useRelease
+          });
+        }else{
+          await rpc('post_ticket_message',{
+            p_ticket_id:t.id,p_visibility:visibility,p_body:body
+          });
+        }
         clearSupportDraft(t.id,'message');
-        notice('#ticketMessageMsg','メッセージを送信しました。'+(files.length?' 添付 '+files.length+'件を追加しました。':''),true);
-        toast(files.length?'メッセージと添付を送信しました':'メッセージを送信しました');
+        notice('#ticketMessageMsg','メッセージを送信しました。'+(useRelease?' 担当を解除しました。':'')+(files.length?' 添付 '+files.length+'件を追加しました。':''),true);
+        toast(useRelease?'返信完了・担当を解除しました':(files.length?'メッセージと添付を送信しました':'メッセージを送信しました'));
+        messageReleaseAfter=false;
         await renderTicketDetail(t.id);
       }catch(err){notice('#ticketMessageMsg',err.message||String(err));}
-      finally{if(btn)btn.disabled=false;}
+      finally{
+        messageReleaseAfter=false;
+        if(btn)btn.disabled=false;
+        $('#ticketMessageSendKeep')?.removeAttribute('disabled');
+        $('#ticketMessageSendRelease')?.removeAttribute('disabled');
+      }
     };
 
     if(!customer){
