@@ -8722,12 +8722,52 @@
             try{localStorage.removeItem('quoteflow:assist-steps:'+String(t.id));}catch(_){}
             clearSupportDraft(t.id,'handoff');
             clearSupportDraft(t.id,'message');
-            closeAppModal();
             toast(makeKnowledge?'作業報告を保存し、案件を完了しました':'作業報告を保存して案件を完了しました');
             if(support){
-              supportQueueView='immediate';
-              await go('support_cases');
+              const customerMessages=(messages||[]).filter(m=>m.visibility==='customer');
+              const latestCustomerMessage=customerMessages.length
+                ? [...customerMessages].sort((a,b)=>timeValue(b.created_at)-timeValue(a.created_at))[0]
+                : null;
+              mountAppModal(
+                '<div class="appModalHead">'+
+                  '<div><h2>案件を完了しました</h2><p>対応内容を確認して、次の案件へ進めます。</p></div>'+
+                  '<button id="supportCompleteClose" class="ghost" type="button">×</button>'+
+                '</div>'+
+                '<div class="appModalBody">'+
+                  '<div class="notice ok"><strong>'+esc(t.ticket_number||'—')+' / '+esc(t.subject||'件名なし')+'</strong><br>'+
+                    esc(cust?.name||'顧客未登録')+'</div>'+
+                  '<section class="formSection" style="margin-top:12px">'+
+                    '<div class="formSectionHead"><span class="sectionNo">01</span><h3>作業報告</h3></div>'+
+                    '<div><strong>結果：</strong>'+esc(result)+'</div>'+
+                    '<div style="white-space:pre-wrap;margin-top:8px">'+esc(action)+'</div>'+
+                    (cause?'<div class="muted" style="white-space:pre-wrap;margin-top:8px"><strong>原因・確認事項</strong><br>'+esc(cause)+'</div>':'')+
+                    (pendingSteps.length?'<div class="notice warn" style="margin-top:10px"><strong>未完了・残課題</strong><br>'+pendingSteps.map(x=>esc(x)).join('<br>')+'</div>':'')+
+                  '</section>'+
+                  '<section class="formSection">'+
+                    '<div class="formSectionHead"><span class="sectionNo">02</span><h3>顧客向けメッセージ</h3></div>'+
+                    '<div><strong>'+esc(customerMessages.length)+'件</strong> の顧客向けメッセージがあります。</div>'+
+                    (latestCustomerMessage?'<div class="muted" style="margin-top:6px">最終送信：'+esc(dateTimeText(latestCustomerMessage.created_at))+'</div>':'<div class="muted" style="margin-top:6px">顧客向けメッセージは記録されていません。</div>')+
+                    (customerNote?'<div class="notice" style="white-space:pre-wrap;margin-top:8px"><strong>今回の顧客案内</strong><br>'+esc(customerNote)+'</div>':'')+
+                  '</section>'+
+                  '<section class="formSection">'+
+                    '<div class="formSectionHead"><span class="sectionNo">03</span><h3>ナレッジ</h3></div>'+
+                    '<div>'+(
+                      makeKnowledge
+                        ? (internal?'サポート会社向けナレッジとして保存しました。':'自社へナレッジ候補として共有しました。')
+                        : '今回はナレッジ保存を行っていません。'
+                    )+'</div>'+
+                  '</section>'+
+                '</div>'+
+                '<div class="appModalFoot">'+
+                  '<button id="supportCompleteHistory" class="ghost" type="button">完了した案件を見る</button>'+
+                  '<button id="supportCompleteNext" class="primary" type="button">次の案件へ</button>'+
+                '</div>'
+              );
+              $('#supportCompleteClose').onclick=async()=>{closeAppModal();supportQueueView='immediate';await go('support_cases');};
+              $('#supportCompleteNext').onclick=async()=>{closeAppModal();supportQueueView='immediate';await go('support_cases');};
+              $('#supportCompleteHistory').onclick=async()=>{closeAppModal();await renderTicketDetail(t.id);};
             }else{
+              closeAppModal();
               await renderTicketDetail(t.id);
             }
           }catch(err){
