@@ -8398,10 +8398,7 @@
                 }).catch(()=>{});
               }
 
-              await rpc('complete_support_ticket_with_report',{
-              p_ticket_id:t.id,
-              p_report_body:reportBody
-            });
+              await rpc('close_support_ticket',{p_ticket_id:t.id});
               toast(internal?'遠隔対応の結果を保存し、ナレッジ候補を作成して案件を完了しました':'遠隔対応の結果を保存し、ナレッジ候補を共有して案件を完了しました');
               if(support){
                 supportQueueView='immediate';
@@ -8658,7 +8655,10 @@
               }
             }
 
-            await rpc('close_support_ticket',{p_ticket_id:t.id});
+            await rpc('complete_support_ticket_with_report',{
+              p_ticket_id:t.id,
+              p_report_body:reportBody
+            });
             clearSupportDraft(t.id,'work_report');
             try{localStorage.removeItem('quoteflow:assist-steps:'+String(t.id));}catch(_){}
             clearSupportDraft(t.id,'handoff');
