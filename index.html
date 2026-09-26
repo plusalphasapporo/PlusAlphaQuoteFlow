@@ -8258,8 +8258,35 @@
             }).catch(()=>{});
 
             if(outcome==='resolved'){
+              const knowledgeBody=[
+                '症状・依頼: '+(t.subject||''),
+                displayDescription?'問い合わせ内容: '+displayDescription:'',
+                asset?.asset_number||asset?.model_name?'対象機器: '+[asset?.asset_number,asset?.model_name].filter(Boolean).join(' / '):'',
+                'TeamViewer対応内容: '+note,
+                '結果: 解決',
+                '対応時間（概算）: '+teamviewerDurationText
+              ].filter(Boolean).join('\n\n');
+
+              if(internal){
+                await rpc('save_knowledge_article',{
+                  p_id:null,
+                  p_title:(t.subject||'TeamViewer対応')+' - 解決手順',
+                  p_category:supportRequestTypeLabel(t.request_type),
+                  p_body:knowledgeBody,
+                  p_audience:'support',
+                  p_tags:[supportRequestTypeLabel(t.request_type),'TeamViewer','解決'],
+                  p_is_active:false
+                }).catch(()=>{});
+              }else{
+                await rpc('post_ticket_message',{
+                  p_ticket_id:t.id,
+                  p_visibility:'internal',
+                  p_body:'【ナレッジ候補】\n'+knowledgeBody
+                }).catch(()=>{});
+              }
+
               await rpc('close_support_ticket',{p_ticket_id:t.id});
-              toast('遠隔対応の結果を保存し、案件を完了しました');
+              toast(internal?'遠隔対応の結果を保存し、ナレッジ候補を作成して案件を完了しました':'遠隔対応の結果を保存し、ナレッジ候補を共有して案件を完了しました');
             }else if(outcome==='continue'){
               await rpc('set_support_workflow_stage',{p_ticket_id:t.id,p_stage:'in_progress'}).catch(()=>{});
               toast('遠隔対応の結果を保存し、継続対応に戻しました');
