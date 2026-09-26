@@ -990,7 +990,7 @@
       teamviewer_waiting:'TeamViewer待ち',
       internal_handoff_waiting:'自社引継ぎ待ち',
       internal_in_progress:'自社対応中',
-      support_review_waiting:'サポート会社確認待ち',
+      support_review_waiting:'自社対応完了・確認待ち',
       completed:'完了'
     }[v]||'未対応');
   }
@@ -2179,6 +2179,7 @@
           await refreshSupportUnreadBadge();
           await go('support_cases');
           await renderTicketDetail(btn.dataset.ticketId);
+          setTimeout(()=>$('#supportAssistWorkspace')?.scrollIntoView({behavior:'smooth',block:'start'}),150);
         }catch(err){toast(err.message||String(err));}
         finally{btn.disabled=false;}
       });
@@ -6632,8 +6633,9 @@
             '</div>'+
           '</div>'+
           '<div class="supportQuickActions">'+
-            (t.status!=='closed'?'<button id="ticketAssistSolved" class="green" type="button">案内で解決 → 完了</button>':'')+
-            (support&&t.status!=='closed'?'<button id="ticketAssistEscalate" class="orange" type="button">解決できない → 自社担当へ引継ぎ</button>':'')+
+            (support&&supportStage==='support_review_waiting'&&t.status!=='closed'?'<button id="ticketReturnContinue" class="primary" type="button">追加対応を続ける</button>':'')+
+            (t.status!=='closed'?'<button id="ticketAssistSolved" class="green" type="button">作業報告 → 完了</button>':'')+
+            (support&&t.status!=='closed'&&supportStage!=='support_review_waiting'?'<button id="ticketAssistEscalate" class="orange" type="button">解決できない → 自社担当へ引継ぎ</button>':'')+
           '</div>'+
         '</section>'
       : '';
@@ -6715,9 +6717,11 @@
                 '<button id="supportTicketAiJump" class="ghost" type="button">AI・ナレッジ</button>'+
                 '<button id="supportTicketRemoteJump" class="orange" type="button">TeamViewer</button>'+
                 (t.status!=='closed'
-                  ? (['internal_handoff_waiting','internal_in_progress','support_review_waiting'].includes(supportStage)
+                  ? (['internal_handoff_waiting','internal_in_progress'].includes(supportStage)
                       ? '<button class="ghost" type="button" disabled>引継ぎ中</button>'
-                      : '<button id="supportTicketInstantHandoff" class="orange" type="button">即引き継ぎ</button>')
+                      : supportStage==='support_review_waiting'
+                        ? '<button id="supportTicketReturnReview" class="ghost" type="button">戻り内容を確認</button>'
+                        : '<button id="supportTicketInstantHandoff" class="orange" type="button">即引き継ぎ</button>')
                   : '')+
                 (t.status!=='closed'?'<button id="supportTicketCompleteQuick" class="green" type="button">作業報告</button>':'')+
               '</div>'+
@@ -6789,6 +6793,23 @@
       };
       const quickComplete=$('#supportTicketCompleteQuick');
       if(quickComplete) quickComplete.onclick=()=>$('#ticketCloseBtn')?.click();
+
+      const returnReview=$('#supportTicketReturnReview');
+      if(returnReview) returnReview.onclick=()=>jump('#supportAssistWorkspace');
+
+      const returnContinue=$('#ticketReturnContinue');
+      if(returnContinue) returnContinue.onclick=async()=>{
+        returnContinue.disabled=true;
+        try{
+          await rpc('set_support_workflow_stage',{p_ticket_id:t.id,p_stage:'in_progress'});
+          toast('追加対応を開始しました');
+          await renderTicketDetail(t.id);
+        }catch(err){
+          toast(err.message||String(err));
+        }finally{
+          returnContinue.disabled=false;
+        }
+      };
 
       const instantHandoff=$('#supportTicketInstantHandoff');
       if(instantHandoff) instantHandoff.onclick=()=>{
