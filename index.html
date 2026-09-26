@@ -469,7 +469,7 @@
     'customer_ticket_detail','internal_numbering_settings','internal_accounts_list',
     'internal_account_companies','internal_audit_workspace','internal_document_profile','internal_demo_seed_status','internal_company_settings','internal_entity_audit_history',
     'internal_products_list','internal_lease_rates_list','internal_order_profitability','internal_customer_unified_workspace','internal_receiving_workspace','internal_order_operation','role_knowledge_articles',
-    'support_customer_directory','support_asset_directory','support_handoff_history','support_customer_context','support_customer_phone_search','support_workflow_states','support_ticket_workflow_state','support_unread_notifications','support_unread_handoff_updates','support_deadline_states','support_ticket_deadline_state','support_assignment_states','support_ticket_assignment_state','callconnect_dashboard','callconnect_api_settings','callconnect_unread_notifications','callconnect_customer_directory',
+    'support_customer_directory','support_asset_directory','support_handoff_history','support_customer_context','support_customer_phone_search','support_workflow_states','support_ticket_workflow_state','support_unread_notifications','support_unanswered_messages','support_unread_handoff_updates','support_deadline_states','support_ticket_deadline_state','support_assignment_states','support_ticket_assignment_state','callconnect_dashboard','callconnect_api_settings','callconnect_unread_notifications','callconnect_customer_directory',
     'internal_case_directory','internal_handoff_history','internal_knowledge_articles'
   ]);
 
@@ -1130,6 +1130,7 @@
     try{
       const [unread,handoffUpdates,deadlineStates,callUnread]=await Promise.all([
         rpc('support_unread_notifications'),
+        rpc('support_unanswered_messages'),
         rpc('support_unread_handoff_updates'),
         rpc('support_deadline_states'),
         rpc('callconnect_unread_notifications')
@@ -1997,7 +1998,7 @@
     }
 
     if(role==='support_staff'){
-      const [h,workspace,workflowStates,unread,handoffUpdates,deadlineStates,assignmentStates,callconnectDash,teamviewerPending]=await Promise.all([
+      const [h,workspace,workflowStates,unread,unanswered,handoffUpdates,deadlineStates,assignmentStates,callconnectDash,teamviewerPending]=await Promise.all([
         rpc('support_home'),
         rpc('internal_support_cases_list'),
         rpc('support_workflow_states'),
@@ -2037,6 +2038,9 @@
         return preferred.startsWith(todayKey);
       }).sort(queueSort);
       const remoteWaiting=tickets.filter(t=>t.status!=='closed'&&t.support_stage==='teamviewer_waiting').sort(queueSort);
+      const unansweredItems=(unanswered?.items||[]);
+      const unansweredCount=Number(unanswered?.count||0);
+      const unansweredImportantCount=Number(unanswered?.important_count||0);
       const teamviewerPendingItems=(teamviewerPending||[]);
       const teamviewerPendingIds=new Set(teamviewerPendingItems.map(x=>String(x.ticket_id)));
       const handoffWaiting=tickets.filter(t=>t.status!=='closed'&&t.support_stage==='internal_handoff_waiting').sort(queueSort);
@@ -2148,12 +2152,16 @@
           '<button class="supportTodayTile danger supportGoCases" type="button"><span>未対応の障害</span><strong>'+esc(unhandledIncidents.length)+'</strong><em>まず確認</em></button>'+
           '<button class="supportTodayTile supportGoCases" type="button"><span>自分の担当</span><strong>'+esc(tickets.filter(t=>t.status!=='closed'&&t.support_assignment?.is_mine).length)+'</strong><em>対応中</em></button>'+
           '<button class="supportTodayTile '+(overdueTickets.length?'danger':'')+' supportGoCases" type="button"><span>期限超過</span><strong>'+esc(overdueTickets.length)+'</strong><em>期限確認</em></button>'+
+          '<button id="supportUnansweredTile" class="supportTodayTile '+(unansweredCount?'danger':'')+'" type="button"><span>未返信</span><strong>'+esc(unansweredCount)+'</strong><em>'+(unansweredImportantCount?'重要 '+esc(unansweredImportantCount)+'件':'顧客への返信待ち')+'</em></button>'+ 
           '<button class="supportTodayTile warn supportGoCases" type="button"><span>TeamViewer待ち</span><strong>'+esc(remoteWaiting.length)+'</strong><em>接続待ち</em></button>'+
           '<button id="supportTeamViewerPendingTile" class="supportTodayTile '+(teamviewerPendingItems.length?'danger':'')+'" type="button"><span>TV結果未入力</span><strong>'+esc(teamviewerPendingItems.length)+'</strong><em>終了後の記録</em></button>'+
         '</div></section>'+
         ((unreadItems.length||handoffUpdateItems.length)?'<section class="supportHomeSection"><div class="supportHomeSectionHead"><div><h2>新着</h2><p>未確認だけ表示します。</p></div><span class="hold">'+esc(unreadItems.length+handoffUpdateItems.length)+'件</span></div>'+
           unreadItems.slice(0,4).map(t=>'<div class="supportPriorityCase"><div><div class="title">'+esc(t.customer_name||'—')+' / '+esc(t.subject||'')+'</div><div class="sub">'+esc(t.source_label||supportRequestTypeLabel(t.request_type))+' / '+esc(dateTimeText(t.created_at))+'</div></div><button class="primary supportUnreadOpen" type="button" data-id="'+esc(t.id)+'">対応開始</button></div>').join('')+
           handoffUpdateItems.slice(0,3).map(h=>'<div class="supportPriorityCase"><div><div class="title">'+esc(h.customer_name||'—')+' / '+esc(h.subject||'')+'</div><div class="sub">'+esc(h.handoff_state==='accepted'?'自社対応開始':'自社対応完了')+'</div></div><button class="ghost supportHandoffUpdateOpen" type="button" data-handoff-id="'+esc(h.handoff_id)+'" data-ticket-id="'+esc(h.ticket_id)+'">確認</button></div>').join('')+
+        '</section>':'')+
+        (unansweredItems.length?'<section id="supportUnansweredSection" class="supportHomeSection"><div class="supportHomeSectionHead"><div><h2>未返信</h2><p>顧客からの最新メッセージ以降、顧客向け返信がない案件です。</p></div><span class="hold">'+esc(unansweredCount)+'件</span></div>'+ 
+          unansweredItems.slice(0,8).map(x=>{const mins=Math.max(0,Math.floor((Date.now()-timeValue(x.last_customer_message_at))/60000));const wait=mins<60?mins+'分前':Math.floor(mins/60)+'時間'+(mins%60?String(mins%60)+'分':'')+'前';return '<div class="supportPriorityCase"><div><div class="title">'+(x.is_important?'<span class="hold">重要</span> ':'')+esc(x.customer_name||'—')+' / '+esc(x.subject||'')+'</div><div class="sub">'+esc(x.ticket_number||'—')+' / '+esc(wait)+'</div><div class="muted" style="margin-top:4px">'+esc(x.message_excerpt||'')+'</div></div><button class="primary supportUnansweredOpen" type="button" data-id="'+esc(x.ticket_id)+'">返信する</button></div>'}).join('')+
         '</section>':'')+
         (teamviewerPendingItems.length?'<section class="supportHomeSection"><div class="supportHomeSectionHead"><div><h2>TeamViewer結果未入力</h2><p>遠隔対応終了済み。結果だけ記録してください。</p></div><span class="hold">'+esc(teamviewerPendingItems.length)+'件</span></div>'+
           teamviewerPendingItems.slice(0,5).map(x=>'<div class="supportPriorityCase"><div><div class="title">'+esc(x.customer_name||'—')+' / '+esc(x.subject||'')+'</div><div class="sub">'+esc(x.ticket_number||'—')+' / 終了 '+esc(dateTimeText(x.session_closed_at||x.session_updated_at))+'</div></div><button class="primary supportTeamViewerPendingOpen" type="button" data-id="'+esc(x.ticket_id)+'">結果入力</button></div>').join('')+
@@ -2162,6 +2170,20 @@
           (topWork.length?topWork.map(t=>'<div class="supportPriorityCase"><div><div class="title">'+esc(t.customer_name||'—')+' / '+esc(t.subject||'')+'</div><div class="sub">'+esc(t.ticket_number||'—')+' / '+supportAssigneeLabel(t.support_assignment)+'</div><div class="badges">'+supportRequestTypeBadge(t.request_type)+supportStageBadge(t.support_stage)+supportDeadlineBadge(t.deadline_state)+'</div></div><button class="primary supportPriorityOpen" type="button" data-id="'+esc(t.id)+'">案件を開く</button></div>').join(''):'<div class="empty">現在、対応が必要な案件はありません。</div>')+
         '</section>'+
         '<section class="supportHomeSection"><div class="supportHomeSectionHead"><div><h2>最近の電話</h2><p>CallConnectの直近履歴です。</p></div><button id="supportCallHistoryMore" class="ghost" type="button">すべて見る</button></div>'+recentCallHtml+'</section>';
+      $('#supportUnansweredTile')?.addEventListener('click',()=>{
+        const section=$('#supportUnansweredSection');
+        if(section) section.scrollIntoView({behavior:'smooth',block:'start'});
+        else go('support_cases');
+      });
+      document.querySelectorAll('.supportUnansweredOpen').forEach(btn=>btn.onclick=async()=>{
+        btn.disabled=true;
+        try{
+          await openTicketWorkspace(btn.dataset.id);
+          setTimeout(()=>{const el=$('#ticketMessageBody');el?.scrollIntoView({behavior:'smooth',block:'center'});el?.focus();},180);
+        }catch(err){toast(err.message||String(err));}
+        finally{btn.disabled=false;}
+      });
+
       $('#supportTeamViewerPendingTile')?.addEventListener('click',()=>{
         const first=document.querySelector('.supportTeamViewerPendingOpen');
         if(first) first.scrollIntoView({behavior:'smooth',block:'center'});
