@@ -6528,6 +6528,15 @@
           '</form><div id="ticketProfileMsg" class="notice hidden"></div></section>'
       : '';
 
+    const customerRemoteSupport=customer && t.status!=='closed'
+      ? '<section class="card section" style="box-shadow:none">'+
+          '<h3>遠隔サポート</h3>'+
+          '<p class="sectionDesc">ID・パスワード入力は不要です。ボタンを押すだけでTeamViewerを準備します。</p>'+
+          '<button id="customerTicketRemoteStart" class="primary" type="button">遠隔サポートを開始</button>'+
+          '<div id="customerTicketRemoteMsg" class="notice hidden"></div>'+
+        '</section>'
+      : '';
+
     const actionButtons=!customer
       ? '<div class="row" style="margin-top:14px">'+
           (t.status==='closed'?'<button id="ticketReopenBtn" class="green" type="button">問い合わせを再開</button>':'<button id="ticketCloseBtn" class="green" type="button">問い合わせを完了</button>')+
@@ -6580,6 +6589,7 @@
         (!customer?'<section class="formSection"><div class="formSectionHead"><span class="sectionNo">'+(internal?'02':'01')+'</span><h3>対応期限</h3></div><div class="modalGrid2"><div class="item"><strong>初動期限</strong><p>'+supportDeadlineBadge(deadlineState?.first_response_overdue?'overdue':(deadlineState?.first_response_due_at?'scheduled':'unset'))+'<br>'+esc(dateTimeText(deadlineState?.first_response_due_at))+'</p></div><div class="item"><strong>対応完了目標</strong><p>'+supportDeadlineBadge(deadlineState?.resolution_overdue?'overdue':(deadlineState?.resolution_due_at?'scheduled':'unset'))+'<br>'+esc(dateTimeText(deadlineState?.resolution_due_at))+'</p></div></div><div class="item"><strong>初動実施</strong><p>'+esc(deadlineState?.first_response_at?dateTimeText(deadlineState.first_response_at):'未実施')+'</p></div>'+(internal&&t.status!=='closed'?'<div class="modalGrid2"><div class="field"><label>初動期限を変更</label><input id="ticketFirstResponseDue" type="datetime-local"></div><div class="field"><label>対応完了目標を変更</label><input id="ticketResolutionDue" type="datetime-local"></div></div><button id="ticketDeadlineSave" class="primary" type="button">期限を保存</button><div id="ticketDeadlineMsg" class="notice hidden"></div>':'')+'</section>':'')+
         (!support?firstLineAssist:'')+
         actionButtons+
+        customerRemoteSupport+
         '<section class="section"><h3>対応履歴・メッセージ</h3>'+messagesHtml+
           '<form id="ticketMessageForm" class="card section" style="box-shadow:none">'+visibilitySelect+'<div class="field"><label>返信</label><textarea id="ticketMessageBody" rows="4" required></textarea></div><button class="primary" type="submit">メッセージを送信</button></form><div id="ticketMessageMsg" class="notice hidden"></div></section>'+
         (!customer?'<section class="section"><h3>引き継ぎ履歴</h3>'+dataTable(internal?['状態','理由','次の対応','作成日','操作']:['状態','理由','次の対応','作成日'],handoffRows)+'</section>':'')+
@@ -6670,6 +6680,27 @@
         jump('#supportAssistWorkspace');
         setTimeout(()=>$('#ticketAssistSolved')?.focus()||$('#ticketAssistEscalate')?.focus(),250);
       };
+    }
+
+    if(customer){
+      const customerRemoteStart=$('#customerTicketRemoteStart');
+      if(customerRemoteStart){
+        customerRemoteStart.onclick=async()=>{
+          customerRemoteStart.disabled=true;
+          try{
+            notice('#customerTicketRemoteMsg','遠隔サポートを準備しています...',true);
+            const {data,error}=await supabase.functions.invoke('teamviewer-api',{
+              body:{action:'create_session',ticket_id:t.id,action_text:'顧客から遠隔サポート開始'}
+            });
+            if(error) throw error;
+            if(!data?.ok||!data?.session?.end_customer_link) throw new Error('遠隔サポートを開始できませんでした。');
+            toast('遠隔サポートを開始しました');
+            window.open(data.session.end_customer_link,'_blank','noopener,noreferrer');
+            await renderTicketDetail(t.id);
+          }catch(err){notice('#customerTicketRemoteMsg',err.message||String(err));}
+          finally{customerRemoteStart.disabled=false;}
+        };
+      }
     }
 
     const attachmentGallery=$('#ticketAttachmentGallery');
@@ -8458,7 +8489,59 @@
       try{
         const d=await rpc('customer_ticket_detail',{p_ticket_id:btn.dataset.id});
         const messages=(d.messages||[]).map(m=>'<div class="item"><div class="row between"><strong>メッセージ</strong><span class="muted">'+esc(dateText(m.created_at))+'</span></div><p style="white-space:pre-wrap">'+esc(m.body||'')+'</p></div>').join('');
-        $('#customerStatusDetail').innerHTML='<section class="card section"><h2>'+esc(d.ticket?.ticket_number||'')+' '+esc(d.ticket?.subject||'')+'</h2><div class="notice">'+esc(d.ticket?.description||'')+'</div><h3>対応履歴</h3>'+(messages||'<div class="empty">メッセージはありません。</div>')+'</section>';
+        let remoteHtml='';
+        if(d.ticket?.status!=='closed'){
+          let remoteStatus=null;
+          try{
+            const {data,error}=await supabase.functions.invoke('teamviewer-api',{body:{action:'status',ticket_id:d.ticket?.id}});
+            if(!error) remoteStatus=data;
+          }catch(_){}
+          if(remoteStatus?.session?.end_customer_link){
+            remoteHtml=
+              '<section class="card section" style="box-shadow:none;border:1px solid var(--line)">'+
+                '<h3>遠隔サポート</h3>'+
+                '<div class="notice ok"><strong>遠隔サポートを開始できます。</strong><br>担当者が接続するまでこの画面を閉じずにお待ちください。</div>'+
+                '<button id="customerRemoteOpen" class="primary" type="button">TeamViewerを開く</button>'+
+                '<div id="customerRemoteMsg" class="notice hidden"></div>'+
+              '</section>';
+          }else if(remoteStatus?.available){
+            remoteHtml=
+              '<section class="card section" style="box-shadow:none;border:1px solid var(--line)">'+
+                '<h3>遠隔サポート</h3>'+
+                '<p class="sectionDesc">IDやパスワードの入力は不要です。ボタンを押すと接続用のTeamViewerを準備します。</p>'+
+                '<button id="customerRemoteStart" class="primary" type="button">遠隔サポートを開始</button>'+
+                '<div id="customerRemoteMsg" class="notice hidden"></div>'+
+              '</section>';
+          }
+          setTimeout(()=>{
+            const openBtn=$('#customerRemoteOpen');
+            if(openBtn && remoteStatus?.session?.end_customer_link){
+              openBtn.onclick=()=>window.open(remoteStatus.session.end_customer_link,'_blank','noopener,noreferrer');
+            }
+            const startBtn=$('#customerRemoteStart');
+            if(startBtn){
+              startBtn.onclick=async()=>{
+                startBtn.disabled=true;
+                try{
+                  notice('#customerRemoteMsg','遠隔サポートを準備しています...',true);
+                  const {data,error}=await supabase.functions.invoke('teamviewer-api',{
+                    body:{action:'create_session',ticket_id:d.ticket?.id,action_text:'顧客から遠隔サポート開始'}
+                  });
+                  if(error) throw error;
+                  if(!data?.ok||!data?.session?.end_customer_link) throw new Error('遠隔サポートを開始できませんでした。');
+                  toast('遠隔サポートを開始しました');
+                  window.open(data.session.end_customer_link,'_blank','noopener,noreferrer');
+                  await renderCustomerStatus(showClosed);
+                }catch(err){
+                  notice('#customerRemoteMsg',err.message||String(err));
+                }finally{
+                  startBtn.disabled=false;
+                }
+              };
+            }
+          },0);
+        }
+        $('#customerStatusDetail').innerHTML='<section class="card section"><h2>'+esc(d.ticket?.ticket_number||'')+' '+esc(d.ticket?.subject||'')+'</h2><div class="notice">'+esc(d.ticket?.description||'')+'</div>'+remoteHtml+'<h3>対応履歴</h3>'+(messages||'<div class="empty">メッセージはありません。</div>')+'</section>';
       }catch(err){ toast(err.message||String(err)); }
     });
   }
