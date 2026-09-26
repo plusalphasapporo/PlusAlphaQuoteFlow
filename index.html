@@ -8398,7 +8398,10 @@
                 }).catch(()=>{});
               }
 
-              await rpc('close_support_ticket',{p_ticket_id:t.id});
+              await rpc('complete_support_ticket_with_report',{
+              p_ticket_id:t.id,
+              p_report_body:reportBody
+            });
               toast(internal?'遠隔対応の結果を保存し、ナレッジ候補を作成して案件を完了しました':'遠隔対応の結果を保存し、ナレッジ候補を共有して案件を完了しました');
               if(support){
                 supportQueueView='immediate';
@@ -8627,12 +8630,6 @@
               cause?'原因・確認事項: '+cause:'',
               customerNote?'顧客案内: '+customerNote:''
             ].filter(Boolean).join('\n');
-
-            await rpc('post_ticket_message',{
-              p_ticket_id:t.id,
-              p_visibility:'support',
-              p_body:reportBody
-            });
 
             if(makeKnowledge){
               const knowledgeBody=[
