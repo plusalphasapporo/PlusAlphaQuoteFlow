@@ -7790,6 +7790,41 @@
         const host=$('#ticketKnowledgeCandidates');
         if(!host) return;
 
+        const topKnowledge=scoredKnowledge[0]?.x||null;
+        const topTicket=scoredTickets[0]?.x||null;
+        const evidenceCount=scoredKnowledge.length+scoredTickets.length;
+        let assistAnswer='';
+        if(topKnowledge){
+          const body=String(topKnowledge.body||'').trim();
+          assistAnswer=body
+            ? (body.length>520?body.slice(0,520)+'…':body)
+            : '「'+String(topKnowledge.title||'ナレッジ')+'」を確認してください。';
+        }else if(topTicket){
+          const body=String(topTicket.description||'').replace(/^【受付経路】[^\n]*\n?/,'').trim();
+          assistAnswer='類似する過去案件「'+String(topTicket.ticket_number||'—')+' / '+String(topTicket.subject||'')+'」があります。'+
+            (body?'\n\n過去案件の内容:\n'+(body.length>420?body.slice(0,420)+'…':body):'');
+        }
+
+        const aiAssistHtml=evidenceCount
+          ? '<section class="notice ok" style="margin-top:12px">'+
+              '<div class="row between" style="gap:10px;align-items:flex-start;flex-wrap:wrap">'+
+                '<div><strong>対応候補</strong><div class="muted" style="margin-top:4px">'+
+                  (aiState==='connected'?'AI連携時も、下記の根拠を回答とセットで表示します。':'現在は根拠検索から作成した対応候補です。AI連携は '+esc(aiStateText)+' です。')+
+                '</div></div>'+
+                '<span class="pill good">根拠 '+esc(evidenceCount)+'件</span>'+
+              '</div>'+
+              '<div style="white-space:pre-wrap;margin-top:10px;line-height:1.7">'+esc(assistAnswer||'該当する根拠を確認して対応してください。')+'</div>'+
+              '<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line)">'+
+                '<strong>この回答の根拠</strong>'+
+                '<div class="muted" style="margin-top:6px">'+
+                  (topKnowledge?'ナレッジ: '+esc(topKnowledge.title||''):'')+
+                  (topKnowledge&&topTicket?' / ':'')+
+                  (topTicket?'過去案件: '+esc(topTicket.ticket_number||'—')+' '+esc(topTicket.subject||''):'')+
+                '</div>'+
+              '</div>'+
+            '</section>'
+          : '<div class="notice" style="margin-top:12px"><strong>対応候補を作成できませんでした。</strong><br><span class="muted">根拠となるナレッジ・過去案件が見つかっていません。推測で回答は作成しません。</span></div>';
+
         const knowledgeHtml=scoredKnowledge.length
           ? '<div class="row between" style="margin:10px 0"><strong>候補ナレッジ</strong><span class="muted">'+scoredKnowledge.length+'件 / 根拠を表示</span></div>'+
             scoredKnowledge.map(v=>{
@@ -7820,7 +7855,7 @@
             }).join('')
           : '<div class="empty" style="margin-top:12px">類似する過去案件は見つかりませんでした。</div>';
 
-        host.innerHTML=knowledgeHtml+ticketHtml;
+        host.innerHTML=aiAssistHtml+knowledgeHtml+ticketHtml;
 
         document.querySelectorAll('.ticketKnowledgeUse').forEach(btn=>btn.onclick=()=>{
           const article=knowledgeSource.find(x=>String(x.id)===String(btn.dataset.id));
