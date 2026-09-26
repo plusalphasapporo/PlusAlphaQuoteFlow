@@ -6970,12 +6970,12 @@
     })():'—';
     const assistSectionNo=internal?'02':'01';
     const supportPrimaryStep=(()=>{
-      if(t.status==='closed') return {label:'完了済み',hint:'対応履歴・作業報告を確認できます。',target:'history'};
-      if(supportStage==='unhandled') return {label:'① 受付内容を確認',hint:'依頼内容・写真・顧客情報を確認して対応を開始します。',target:'content'};
-      if(latestTeamViewerSession && teamviewerSessionClosed && !latestTeamViewerSession.outcome) return {label:'④ TeamViewer結果を記録',hint:'遠隔対応の結果を入力して、完了・継続・引継ぎを決めます。',target:'remote'};
-      if(supportStage==='teamviewer_waiting'||(latestTeamViewerSession&&!teamviewerSessionClosed)) return {label:'③ TeamViewer対応',hint:'接続・遠隔確認を進めます。',target:'remote'};
-      if(['internal_handoff_waiting','internal_in_progress','support_review_waiting'].includes(supportStage)) return {label:'引継ぎ状況を確認',hint:'同じ案件カルテのまま対応状況を確認します。',target:'history'};
-      return {label:'② 対応方法を確認',hint:'AI・ナレッジ・過去案件から対応方法を確認します。',target:'assist'};
+      if(t.status==='closed') return {label:'完了済み',button:'対応履歴を確認',hint:'対応履歴・作業報告を確認できます。',target:'history',tone:'ghost'};
+      if(supportStage==='unhandled') return {label:'① 受付内容を確認',button:'受付内容を確認する',hint:'依頼内容・写真・顧客情報を確認して対応を開始します。',target:'content',tone:'primary'};
+      if(latestTeamViewerSession && teamviewerSessionClosed && !latestTeamViewerSession.outcome) return {label:'④ TeamViewer結果を記録',button:'結果を記録する',hint:'遠隔対応の結果を入力して、完了・継続・引継ぎを決めます。',target:'remote',tone:'green'};
+      if(supportStage==='teamviewer_waiting'||(latestTeamViewerSession&&!teamviewerSessionClosed)) return {label:'③ TeamViewer対応',button:'TeamViewer対応へ進む',hint:'接続・遠隔確認を進めます。',target:'remote',tone:'orange'};
+      if(['internal_handoff_waiting','internal_in_progress','support_review_waiting'].includes(supportStage)) return {label:'引継ぎ状況を確認',button:'引継ぎ状況を確認',hint:'同じ案件カルテのまま対応状況を確認します。',target:'history',tone:'primary'};
+      return {label:'② 対応方法を確認',button:'対応方法を確認する',hint:'AI・ナレッジ・過去案件から対応方法を確認します。',target:'assist',tone:'primary'};
     })();
     const supportStageControl=support && t.status!=='closed'
       ? '<div class="notice"><div class="row between"><div><strong>現在の対応工程</strong><div style="margin-top:6px">'+supportStageBadge(supportStage)+'</div><div style="margin-top:8px"><strong>次の行動：</strong> '+supportNextActionBadge(nextActionState?.support_next_action||'in_progress')+' '+supportQueueAlertBadge(nextActionState?.notification_active!==false?(nextActionState?.alert_level||'normal'):'normal')+' <span class="pill">滞留 '+esc(supportQueueAgeText(nextActionState?.waiting_seconds||0))+'</span><div class="muted" style="margin-top:4px">'+esc(supportQueueThresholdText(nextActionState?.support_next_action||''))+'</div></div><div style="margin-top:8px"><strong>対応管理：</strong> '+(supportAttentionBadge(nextActionState)||'<span class="pill">未設定</span>')+(nextActionState?.support_attention_note?'<div class="muted" style="margin-top:4px">'+esc(nextActionState.support_attention_note)+'</div>':'')+'</div><div style="margin-top:8px"><strong>サポート担当：</strong> '+supportAssigneeBadge(assignmentState)+'</div></div><div class="supportQuickActions">'+
@@ -7240,18 +7240,7 @@
           ? '<div class="supportTicketTopbar">'+
               '<div class="summary"><strong>'+esc(cust?.name||'顧客未登録')+' / '+esc(t.subject||'')+'</strong><small>'+esc(t.ticket_number||'—')+' ・ '+esc(supportStageLabel(supportStage||((t.status==='closed')?'completed':'unhandled')))+' ・ '+esc(supportDeadlineLabel(deadlineState?.deadline_state))+'</small></div>'+
               '<div class="supportQuickActions">'+
-                '<button id="supportTicketContentJump" class="ghost" type="button">内容・写真</button>'+
-                '<button id="supportTicketCustomerJump" class="ghost" type="button">顧客・機器</button>'+
-                '<button id="supportTicketAiJump" class="ghost" type="button">AI・ナレッジ</button>'+
-                '<button id="supportTicketRemoteJump" class="orange" type="button">TeamViewer</button>'+
-                (t.status!=='closed'
-                  ? (['internal_handoff_waiting','internal_in_progress'].includes(supportStage)
-                      ? '<button class="ghost" type="button" disabled>引継ぎ中</button>'
-                      : supportStage==='support_review_waiting'
-                        ? '<button id="supportTicketReturnReview" class="ghost" type="button">戻り内容を確認</button>'
-                        : '<button id="supportTicketInstantHandoff" class="orange" type="button">即引き継ぎ</button>')
-                  : '')+
-                (t.status!=='closed'?'<button id="supportTicketCompleteQuick" class="green" type="button">作業報告</button>':'')+
+                '<button id="supportTopPrimaryAction" class="'+esc(supportPrimaryStep.tone||'primary')+'" type="button">'+esc(supportPrimaryStep.button||'ここから進める')+'</button>'+
               '</div>'+
             '</div>'+
             '<div class="supportTicketFacts">'+
@@ -7546,6 +7535,8 @@
         const el=$(selector);
         if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
       };
+      const topPrimaryAction=$('#supportTopPrimaryAction');
+      if(topPrimaryAction) topPrimaryAction.onclick=()=>$('#supportPrimaryNext')?.click();
       const topCustomer=$('#supportTopCustomer');
       const topAttachments=$('#supportTopAttachments');
       if(topCustomer) topCustomer.onclick=()=>jump('#supportTicketCustomerContext');
