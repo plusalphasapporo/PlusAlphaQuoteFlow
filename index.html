@@ -8126,9 +8126,13 @@
           assistCompleteSteps.disabled=true;
           try{
             const boxes=[...document.querySelectorAll('.ticketAssistStepCheck')];
+            const before=readAssistStepState();
             boxes.forEach(el=>el.checked=true);
-            const lines=assistSteps.map((step,i)=>'☑ '+(i+1)+'. '+step).join('\n');
-            try{localStorage.setItem(assistStepStateKey,JSON.stringify(boxes.map(()=>true)));}catch(_){}
+            const completedState=assistSteps.map((_,i)=>({done:true,note:String(before[i]?.note||'').trim()}));
+            const lines=assistSteps.map((step,i)=>
+              '☑ '+(i+1)+'. '+step+(completedState[i]?.note?'\n   結果: '+completedState[i].note:'')
+            ).join('\n');
+            try{localStorage.setItem(assistStepStateKey,JSON.stringify(completedState));}catch(_){}
             await rpc('post_ticket_message',{
               p_ticket_id:t.id,
               p_visibility:'support',
@@ -8561,14 +8565,19 @@
           '</div>'+
           '<div class="appModalBody">'+
             '<div class="notice"><strong>'+esc(t.ticket_number||'—')+' / '+esc(cust?.name||'顧客未登録')+'</strong><br>'+esc(t.subject||'')+'</div>'+
-            '<div class="field"><label>対応内容・実施した作業 <span class="muted">必須</span></label><textarea id="workReportAction" rows="5" placeholder="例：プリンタードライバーを再設定し、テスト印刷まで確認"></textarea></div>'+
-            '<div class="field"><label>原因・確認できたこと</label><textarea id="workReportCause" rows="3" placeholder="例：既存ドライバー設定の破損を確認"></textarea></div>'+
+            '<div id="workReportAutoSummary" class="notice ok" style="margin-top:10px"></div>'+
+            '<div class="supportQuickActions" style="margin:8px 0 4px">'+
+              '<button id="workReportRegenerate" class="ghost" type="button">対応手順から再作成</button>'+
+            '</div>'+
             '<div class="field"><label>結果</label><select id="workReportResult">'+
               '<option value="解決">解決</option>'+
               '<option value="暫定対応">暫定対応</option>'+
               '<option value="経過観察">経過観察</option>'+
             '</select></div>'+
-            '<div class="field"><label>顧客への案内・注意事項</label><textarea id="workReportCustomer" rows="3" placeholder="例：再発時は同じ症状か確認後ご連絡ください"></textarea></div>'+
+            '<div class="field"><label>対応内容・実施した作業 <span class="muted">必須</span></label><textarea id="workReportAction" rows="5" placeholder="完了した対応手順から自動作成します。必要な内容だけ追記してください。"></textarea></div>'+
+            '<div class="field"><label>原因・確認できたこと</label><textarea id="workReportCause" rows="3" placeholder="対応中に確認できた原因・状態を記録"></textarea></div>'+
+            '<div id="workReportRemaining" class="notice hidden" style="margin-top:8px"></div>'+
+            '<div class="field"><label>顧客への案内・注意事項</label><textarea id="workReportCustomer" rows="3" placeholder="必要な場合のみ入力"></textarea></div>'+
             '<label class="row" style="margin-top:8px"><input id="workReportKnowledge" type="checkbox"> この内容をナレッジとして残す</label>'+
             '<div class="muted" style="margin-top:4px">'+
               (internal?'チェックするとサポート会社向けナレッジとして保存します。':'チェックすると自社側へ「ナレッジ候補」として共有します。')+
@@ -8582,23 +8591,55 @@
         );
         $('#workReportClose').onclick=closeAppModal;
         $('#workReportCancel').onclick=closeAppModal;
-        try{
-          const savedSteps=JSON.parse(localStorage.getItem('quoteflow:assist-steps:'+String(t.id))||'[]');
-          const normalized=assistSteps.map((step,i)=>({
-            step,
-            done:typeof savedSteps[i]==='object'?!!savedSteps[i]?.done:!!savedSteps[i],
-            note:typeof savedSteps[i]==='object'?String(savedSteps[i]?.note||'').trim():''
-          }));
-          const completed=normalized.filter(x=>x.done);
-          const withNotes=normalized.filter(x=>x.note);
-          if(completed.length || withNotes.length){
-            $('#workReportAction').value=normalized.map((x,i)=>
-              (x.done?'完了':'未完了')+' '+(i+1)+'. '+x.step+(x.note?'\n結果: '+x.note:'')
+        const buildWorkReportFromSteps=(force=false)=>{
+          try{
+            const savedSteps=JSON.parse(localStorage.getItem('quoteflow:assist-steps:'+String(t.id))||'[]');
+            const hasSavedState=Array.isArray(savedSteps)&&savedSteps.length>0;
+            const normalized=assistSteps.map((step,i)=>({
+              step,
+              done:typeof savedSteps[i]==='object'?!!savedSteps[i]?.done:!!savedSteps[i],
+              note:typeof savedSteps[i]==='object'?String(savedSteps[i]?.note||'').trim():''
+            }));
+            const completed=normalized.filter(x=>x.done);
+            const pending=normalized.filter(x=>!x.done);
+            const withNotes=normalized.filter(x=>x.note);
+            const actionText=completed.map((x,i)=>
+              (i+1)+'. '+x.step+(x.note?'\n確認結果: '+x.note:'')
             ).join('\n\n');
-            const confirmed=withNotes.map((x,i)=>x.note).filter(Boolean);
-            if(confirmed.length) $('#workReportCause').value=confirmed.join('\n');
-          }
-        }catch(_){} 
+            const causeText=withNotes.map(x=>x.step+'：'+x.note).join('\n');
+
+            if(force || !$('#workReportAction').value.trim()){
+              if(actionText) $('#workReportAction').value=actionText;
+            }
+            if(force || !$('#workReportCause').value.trim()){
+              if(causeText) $('#workReportCause').value=causeText;
+            }
+            if(hasSavedState){
+              $('#workReportResult').value=
+                completed.length===normalized.length?'解決':
+                completed.length>0?'暫定対応':'経過観察';
+            }
+
+            const summary=$('#workReportAutoSummary');
+            if(summary){
+              summary.innerHTML='<strong>対応手順から自動反映</strong><br>'+
+                '<span class="muted">完了 '+completed.length+' / '+normalized.length+
+                ' ・ 確認メモ '+withNotes.length+'件</span>';
+            }
+            const remaining=$('#workReportRemaining');
+            if(remaining){
+              if(pending.length && hasSavedState){
+                remaining.classList.remove('hidden');
+                remaining.innerHTML='<strong>未完了・残課題 '+pending.length+'件</strong><br>'+
+                  pending.map((x,i)=>(i+1)+'. '+esc(x.step)).join('<br>');
+              }else{
+                remaining.classList.add('hidden');
+                remaining.innerHTML='';
+              }
+            }
+          }catch(_){}
+        };
+        buildWorkReportFromSteps(false);
         bindSupportDraftInputs(t.id,'work_report',{
           action:'#workReportAction',
           cause:'#workReportCause',
@@ -8606,6 +8647,15 @@
           customer:'#workReportCustomer',
           knowledge:'#workReportKnowledge'
         });
+        const regenerateBtn=$('#workReportRegenerate');
+        if(regenerateBtn) regenerateBtn.onclick=()=>{
+          buildWorkReportFromSteps(true);
+          ['#workReportAction','#workReportCause','#workReportResult'].forEach(selector=>{
+            const el=$(selector);
+            if(el) el.dispatchEvent(new Event(el.tagName==='SELECT'?'change':'input',{bubbles:true}));
+          });
+          toast('対応手順から作業報告を再作成しました');
+        };
         $('#workReportSubmit').onclick=async()=>{
           const btn=$('#workReportSubmit');
           const action=$('#workReportAction').value.trim();
@@ -8620,11 +8670,20 @@
           }
           btn.disabled=true;
           try{
+            let pendingSteps=[];
+            try{
+              const savedSteps=JSON.parse(localStorage.getItem('quoteflow:assist-steps:'+String(t.id))||'[]');
+              pendingSteps=assistSteps.filter((_,i)=>{
+                const state=savedSteps[i];
+                return !(typeof state==='object'?!!state?.done:!!state);
+              });
+            }catch(_){}
             const reportBody=[
               '【作業報告】',
               '結果: '+result,
               '対応内容: '+action,
               cause?'原因・確認事項: '+cause:'',
+              pendingSteps.length?'未完了・残課題: '+pendingSteps.join(' / '):'',
               customerNote?'顧客案内: '+customerNote:''
             ].filter(Boolean).join('\n');
 
