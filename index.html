@@ -639,6 +639,7 @@
   let teamviewerStatusTimer=null;
   let lastCallConnectPopupId='';
   let pendingCallConnectIntake=null;
+  let supportQueueView='immediate';
 
   function supportDraftKey(ticketId,kind){
     return 'qfc_support_draft:'+String(ticketId||'')+':'+String(kind||'general');
@@ -2202,7 +2203,7 @@
         if(!t.support_assignment?.support_assigned_user_id) return 6;
         return 7;
       };
-      const topWork=tickets.filter(t=>t.status!=='closed').slice().sort((a,b)=>{
+      const topWork=tickets.filter(t=>t.status!=='closed'&&t.support_next_action!=='customer_reply_waiting').slice().sort((a,b)=>{
         const r=workRank(a)-workRank(b);
         return r!==0?r:timeValue(b.updated_at)-timeValue(a.updated_at);
       }).slice(0,8);
@@ -2239,6 +2240,15 @@
           '<button class="supportTodayTile warn supportGoCases" type="button"><span>TeamViewer待ち</span><strong>'+esc(remoteWaiting.length)+'</strong><em>接続待ち</em></button>'+
           '<button id="supportTeamViewerPendingTile" class="supportTodayTile '+(teamviewerPendingItems.length?'danger':'')+'" type="button"><span>TV結果未入力</span><strong>'+esc(teamviewerPendingItems.length)+'</strong><em>終了後の記録</em></button>'+
         '</div></section>'+
+        '<section class="supportHomeSection"><div class="supportHomeSectionHead"><div><h2>次の行動キュー</h2><p>案件を「次に何をするか」で自動分類しています。</p></div><button id="supportNextQueueAll" class="ghost" type="button">案件一覧</button></div>'+
+          '<div class="supportTodayGrid">'+
+            '<button class="supportTodayTile danger supportNextQueueOpen" type="button" data-view="immediate"><span>今すぐ対応</span><strong>'+esc(tickets.filter(t=>t.status!=="closed"&&t.support_next_action==="in_progress").length)+'</strong><em>対応・返信が必要</em></button>'+
+            '<button class="supportTodayTile supportNextQueueOpen" type="button" data-view="customer_wait"><span>顧客返信待ち</span><strong>'+esc(tickets.filter(t=>t.status!=="closed"&&t.support_next_action==="customer_reply_waiting").length)+'</strong><em>顧客からの返答待ち</em></button>'+
+            '<button class="supportTodayTile warn supportNextQueueOpen" type="button" data-view="internal_review"><span>社内確認待ち</span><strong>'+esc(tickets.filter(t=>t.status!=="closed"&&t.support_next_action==="internal_review_waiting").length)+'</strong><em>確認後に再対応</em></button>'+
+            '<button class="supportTodayTile warn supportNextQueueOpen" type="button" data-view="teamviewer"><span>TeamViewer待ち</span><strong>'+esc(tickets.filter(t=>t.status!=="closed"&&(t.support_next_action==="teamviewer_waiting"||teamviewerPendingIds.has(String(t.id)))).length)+'</strong><em>接続・結果入力</em></button>'+
+            '<button class="supportTodayTile supportNextQueueOpen" type="button" data-view="handoff"><span>自社引継ぎ待ち</span><strong>'+esc(tickets.filter(t=>t.status!=="closed"&&t.support_next_action==="internal_handoff_waiting").length)+'</strong><em>自社側の対応待ち</em></button>'+
+          '</div>'+
+        '</section>'+
         ((unreadItems.length||handoffUpdateItems.length)?'<section class="supportHomeSection"><div class="supportHomeSectionHead"><div><h2>新着</h2><p>未確認だけ表示します。</p></div><span class="hold">'+esc(unreadItems.length+handoffUpdateItems.length)+'件</span></div>'+
           unreadItems.slice(0,4).map(t=>'<div class="supportPriorityCase"><div><div class="title">'+esc(t.customer_name||'—')+' / '+esc(t.subject||'')+'</div><div class="sub">'+esc(t.source_label||supportRequestTypeLabel(t.request_type))+' / '+esc(dateTimeText(t.created_at))+'</div></div><button class="primary supportUnreadOpen" type="button" data-id="'+esc(t.id)+'">対応開始</button></div>').join('')+
           handoffUpdateItems.slice(0,3).map(h=>'<div class="supportPriorityCase"><div><div class="title">'+esc(h.customer_name||'—')+' / '+esc(h.subject||'')+'</div><div class="sub">'+esc(h.handoff_state==='accepted'?'自社対応開始':'自社対応完了')+'</div></div><button class="ghost supportHandoffUpdateOpen" type="button" data-handoff-id="'+esc(h.handoff_id)+'" data-ticket-id="'+esc(h.ticket_id)+'">確認</button></div>').join('')+
@@ -2366,6 +2376,11 @@
 
       $('#supportNewFromHome').onclick=()=>go('support_new');
       $('#supportCasesFromHome').onclick=()=>go('support_cases');
+      $('#supportNextQueueAll')?.addEventListener('click',()=>{supportQueueView='immediate';go('support_cases');});
+      document.querySelectorAll('.supportNextQueueOpen').forEach(btn=>btn.onclick=()=>{
+        supportQueueView=btn.dataset.view||'immediate';
+        go('support_cases');
+      });
       $('#supportOpenCallConnectApp').onclick=()=>window.open('https://www.callconnect.jp/users/sign_in','_blank','noopener,noreferrer');
       $('#supportOpenCallHistory').onclick=()=>go('support_callconnect');
       $('#supportCallHistoryMore').onclick=()=>go('support_callconnect');
@@ -5073,6 +5088,38 @@
       });
 
       filtered=[...filtered].sort((a,b)=>{
+        if(state.sort==='queue_priority'&&support){
+          const queueRank=t=>{
+            if(view==='immediate'){
+              if(t.deadline_state==='overdue') return 0;
+              if(t.priority==='urgent') return 1;
+              if(t.support_stage==='unhandled') return 2;
+              if(t.deadline_state==='due_today') return 3;
+              if(t.support_assignment?.is_mine) return 4;
+              if(!t.support_assignment?.support_assigned_user_id) return 5;
+              return 6;
+            }
+            if(view==='teamviewer') return t.teamviewer_result_pending?0:1;
+            if(view==='internal_review') return t.support_stage==='support_review_waiting'?0:1;
+            if(view==='handoff'){
+              if(t.support_stage==='internal_handoff_waiting') return 0;
+              if(t.support_stage==='internal_in_progress') return 1;
+              return 2;
+            }
+            if(view==='attention'){
+              if(t.deadline_state==='overdue') return 0;
+              if(t.priority==='urgent') return 1;
+              if(t.teamviewer_result_pending) return 2;
+              if(t.deadline_state==='due_today') return 3;
+              return 4;
+            }
+            return 0;
+          };
+          const r=queueRank(a)-queueRank(b);
+          if(r!==0) return r;
+          if(['customer_wait','internal_review','handoff'].includes(view)) return timeValue(a.updated_at)-timeValue(b.updated_at);
+          return timeValue(b.updated_at)-timeValue(a.updated_at);
+        }
         if(state.sort==='updated_desc') return timeValue(b.updated_at)-timeValue(a.updated_at);
         if(state.sort==='amount_desc') return Number(b.total_amount||0)-Number(a.total_amount||0);
         if(state.sort==='valid_asc') return (timeValue(a.valid_until)||Number.MAX_SAFE_INTEGER)-(timeValue(b.valid_until)||Number.MAX_SAFE_INTEGER);
@@ -8163,22 +8210,24 @@
         ['完了',summary.closed||0]
       ])+
       (support
-        ? '<section class="card section"><div class="row between"><div><h2>作業キュー</h2><p class="sectionDesc">「次に何をするか」で案件を分けています。まず未対応、その後は自分の対応中を確認してください。</p></div></div>'+
+        ? '<section class="card section"><div class="row between"><div><h2>次の行動キュー</h2><p class="sectionDesc">案件を「次に何をするか」で自動分類します。待ち案件を今すぐ対応へ混ぜません。</p></div><span class="pill">自動分類</span></div>'+
             '<div class="supportTodayGrid" style="margin-top:12px">'+
-              '<button class="supportTodayTile danger supportQueueJump" type="button" data-view="unhandled"><span>受付待ち</span><strong>'+esc(data.filter(x=>x.status!=="closed"&&x.support_stage==="unhandled").length)+'</strong><em>まだ誰も対応開始していない</em></button>'+
-              '<button class="supportTodayTile supportQueueJump" type="button" data-view="mine"><span>自分の対応中</span><strong>'+esc(data.filter(x=>x.status!=="closed"&&x.support_assignment?.is_mine).length)+'</strong><em>今、自分が進める案件</em></button>'+
-              '<button class="supportTodayTile warn supportQueueJump" type="button" data-view="teamviewer"><span>TeamViewer</span><strong>'+esc(data.filter(x=>x.status!=="closed"&&(x.support_stage==="teamviewer_waiting"||x.teamviewer_result_pending)).length)+'</strong><em>接続待ち・結果入力待ち</em></button>'+
-              '<button class="supportTodayTile supportQueueJump" type="button" data-view="handoff"><span>自社引継ぎ</span><strong>'+esc(data.filter(x=>x.status!=="closed"&&["internal_handoff_waiting","internal_in_progress","support_review_waiting"].includes(x.support_stage)).length)+'</strong><em>自社対応中・戻り待ち</em></button>'+
-              '<button class="supportTodayTile supportQueueJump" type="button" data-view="closed"><span>完了</span><strong>'+esc(data.filter(x=>x.status==="closed").length)+'</strong><em>対応済み</em></button>'+
+              '<button class="supportTodayTile danger supportQueueJump" type="button" data-view="immediate"><span>今すぐ対応</span><strong>'+esc(data.filter(x=>x.status!=="closed"&&x.support_next_action==="in_progress").length)+'</strong><em>対応・返信が必要</em></button>'+
+              '<button class="supportTodayTile supportQueueJump" type="button" data-view="customer_wait"><span>顧客返信待ち</span><strong>'+esc(data.filter(x=>x.status!=="closed"&&x.support_next_action==="customer_reply_waiting").length)+'</strong><em>顧客からの返答待ち</em></button>'+
+              '<button class="supportTodayTile warn supportQueueJump" type="button" data-view="internal_review"><span>社内確認待ち</span><strong>'+esc(data.filter(x=>x.status!=="closed"&&x.support_next_action==="internal_review_waiting").length)+'</strong><em>社内確認後に再対応</em></button>'+
+              '<button class="supportTodayTile warn supportQueueJump" type="button" data-view="teamviewer"><span>TeamViewer待ち</span><strong>'+esc(data.filter(x=>x.status!=="closed"&&(x.support_next_action==="teamviewer_waiting"||x.teamviewer_result_pending)).length)+'</strong><em>接続・結果入力待ち</em></button>'+
+              '<button class="supportTodayTile supportQueueJump" type="button" data-view="handoff"><span>自社引継ぎ待ち</span><strong>'+esc(data.filter(x=>x.status!=="closed"&&x.support_next_action==="internal_handoff_waiting").length)+'</strong><em>自社側の対応待ち</em></button>'+
             '</div>'+
-            '<div id="supportViewTabs" class="supportCaseFilterBar" data-active="unhandled">'+
-              '<button class="supportCaseFilterBtn active supportViewTab" type="button" data-view="unhandled">受付待ち</button>'+
-              '<button class="supportCaseFilterBtn supportViewTab" type="button" data-view="mine">自分の対応中</button>'+
-              '<button class="supportCaseFilterBtn supportViewTab" type="button" data-view="attention">要注意</button>'+
-              '<button class="supportCaseFilterBtn supportViewTab" type="button" data-view="teamviewer">TeamViewer</button>'+
-              '<button class="supportCaseFilterBtn supportViewTab" type="button" data-view="handoff">自社引継ぎ</button>'+
-              '<button class="supportCaseFilterBtn supportViewTab" type="button" data-view="all_open">対応中すべて</button>'+
-              '<button class="supportCaseFilterBtn supportViewTab" type="button" data-view="closed">完了</button>'+
+            '<div id="supportViewTabs" class="supportCaseFilterBar" data-active="'+esc(supportQueueView||"immediate")+'">'+
+              '<button class="supportCaseFilterBtn '+(supportQueueView==="immediate"?"active ":"")+'supportViewTab" type="button" data-view="immediate">今すぐ対応</button>'+
+              '<button class="supportCaseFilterBtn '+(supportQueueView==="customer_wait"?"active ":"")+'supportViewTab" type="button" data-view="customer_wait">顧客返信待ち</button>'+
+              '<button class="supportCaseFilterBtn '+(supportQueueView==="internal_review"?"active ":"")+'supportViewTab" type="button" data-view="internal_review">社内確認待ち</button>'+
+              '<button class="supportCaseFilterBtn '+(supportQueueView==="teamviewer"?"active ":"")+'supportViewTab" type="button" data-view="teamviewer">TeamViewer待ち</button>'+
+              '<button class="supportCaseFilterBtn '+(supportQueueView==="handoff"?"active ":"")+'supportViewTab" type="button" data-view="handoff">自社引継ぎ待ち</button>'+
+              '<button class="supportCaseFilterBtn '+(supportQueueView==="attention"?"active ":"")+'supportViewTab" type="button" data-view="attention">要注意</button>'+
+              '<button class="supportCaseFilterBtn '+(supportQueueView==="mine"?"active ":"")+'supportViewTab" type="button" data-view="mine">自分の担当</button>'+
+              '<button class="supportCaseFilterBtn '+(supportQueueView==="all_open"?"active ":"")+'supportViewTab" type="button" data-view="all_open">対応中すべて</button>'+
+              '<button class="supportCaseFilterBtn '+(supportQueueView==="closed"?"active ":"")+'supportViewTab" type="button" data-view="closed">完了</button>'+
             '</div>'+
           '</section>'
         : '')+
@@ -8199,7 +8248,9 @@
         '<div id="supportMessageGlobalSearchMsg" class="notice hidden"></div>'+
         '<div id="supportMessageGlobalSearchResult" style="margin-top:12px"></div>'+
       '</section>'+
-      listToolbar('supportCaseList',data,'status','番号・顧客・件名・機器・契約・担当者',[
+      listToolbar('supportCaseList',data,'status','番号・顧客・件名・機器・契約・担当者',support?[
+        ['queue_priority','キュー優先順'],['deadline_asc','期限が近い順'],['priority_desc','優先度が高い順'],['updated_desc','更新が新しい順'],['created_desc','作成が新しい順']
+      ]:[
         ['deadline_asc','期限が近い順'],['priority_desc','優先度が高い順'],['updated_desc','更新が新しい順'],['created_desc','作成が新しい順']
       ])+
       '<div id="ticketDetailHost"></div><section class="section"><div id="supportCaseListHost"></div></section>';
@@ -8207,15 +8258,17 @@
     const priorityRank={urgent:0,high:1,normal:2,low:3};
     const renderRows=()=>{
       const state=listToolbarState('supportCaseList');
+      const view=support?($('#supportViewTabs')?.dataset.active||supportQueueView||'immediate'):'';
       let filtered=data.filter(t=>{
         if(state.status!=='all'&&t.status!==state.status) return false;
         if(support){
-          const view=$('#supportViewTabs')?.dataset.active||'unhandled';
-          if(view==='attention' && !(t.status!=='closed' && (t.teamviewer_result_pending||t.deadline_state==='overdue'||t.deadline_state==='due_today'||t.support_stage==='unhandled'||t.priority==='urgent'||t.support_stage==='teamviewer_waiting'||t.support_stage==='support_review_waiting'))) return false;
+          if(view==='immediate' && !(t.status!=='closed'&&t.support_next_action==='in_progress')) return false;
+          if(view==='customer_wait' && !(t.status!=='closed'&&t.support_next_action==='customer_reply_waiting')) return false;
+          if(view==='internal_review' && !(t.status!=='closed'&&t.support_next_action==='internal_review_waiting')) return false;
+          if(view==='teamviewer' && !(t.status!=='closed'&&(t.support_next_action==='teamviewer_waiting'||t.teamviewer_result_pending))) return false;
+          if(view==='handoff' && !(t.status!=='closed'&&t.support_next_action==='internal_handoff_waiting')) return false;
+          if(view==='attention' && !(t.status!=='closed' && (t.teamviewer_result_pending||t.deadline_state==='overdue'||t.deadline_state==='due_today'||t.priority==='urgent'||t.support_stage==='support_review_waiting'))) return false;
           if(view==='mine' && !(t.status!=='closed'&&t.support_assignment?.is_mine)) return false;
-          if(view==='unhandled' && !(t.status!=='closed'&&t.support_stage==='unhandled')) return false;
-          if(view==='teamviewer' && !(t.status!=='closed'&&(t.support_stage==='teamviewer_waiting'||t.teamviewer_result_pending))) return false;
-          if(view==='handoff' && !(t.status!=='closed'&&['internal_handoff_waiting','internal_in_progress','support_review_waiting'].includes(t.support_stage))) return false;
           if(view==='all_open' && t.status==='closed') return false;
           if(view==='closed' && t.status!=='closed') return false;
         }
@@ -8297,7 +8350,8 @@
       const setSupportQueueView=(view)=>{
         const bar=$('#supportViewTabs');
         if(!bar) return;
-        bar.dataset.active=view||'unhandled';
+        supportQueueView=view||'immediate';
+        bar.dataset.active=supportQueueView;
         bar.querySelectorAll('.supportViewTab').forEach(x=>x.classList.toggle('active',x.dataset.view===bar.dataset.active));
         renderRows();
       };
