@@ -7030,27 +7030,33 @@
               (t.status!=='closed'?'<button id="supportPrimaryNext" class="primary" type="button">ここから進める</button>':'')+
             '</div>'+
           '</div>'+
-          '<div class="supportMainActions">'+
-            '<button id="ticketActionAi" class="supportMainAction" type="button"><strong>対応方法</strong><small>AI・ナレッジ・過去案件</small></button>'+
-            '<button id="ticketActionRemote" class="supportMainAction orange" type="button"><strong>TeamViewer</strong><small>必要な場合だけ遠隔対応</small></button>'+
-            '<button id="ticketActionFinish" class="supportMainAction green" type="button"><strong>作業報告</strong><small>結果を記録して完了</small></button>'+
-          '</div>'+
-          '<div class="supportQuickActions" style="margin:8px 0 12px">'+
-            '<button id="ticketActionCustomer" class="ghost" type="button">顧客・機器を確認</button>'+
+          (support
+            ? '<div class="supportQuickActions" style="margin:8px 0 12px">'+
+                '<button id="ticketActionAi" class="ghost" type="button">対応方法</button>'+
+                '<button id="ticketActionRemote" class="ghost" type="button">TeamViewer</button>'+
+                '<button id="ticketActionFinish" class="ghost" type="button">作業報告</button>'+
+                '<button id="ticketActionCustomer" class="ghost" type="button">顧客・機器</button>'+
+              '</div>'
+            : '<div class="supportMainActions">'+
+                '<button id="ticketActionAi" class="supportMainAction" type="button"><strong>対応方法</strong><small>AI・ナレッジ・過去案件</small></button>'+
+                '<button id="ticketActionRemote" class="supportMainAction orange" type="button"><strong>TeamViewer</strong><small>必要な場合だけ遠隔対応</small></button>'+
+                '<button id="ticketActionFinish" class="supportMainAction green" type="button"><strong>作業報告</strong><small>結果を記録して完了</small></button>'+
+                '<div class="supportQuickActions" style="margin-top:8px"><button id="ticketActionCustomer" class="ghost" type="button">顧客・機器を確認</button></div>'+
+              '</div>')+
+          '<div class="supportQuickActions" style="margin:0 0 12px">'+
             (t.status!=='closed'?'<button id="ticketActionIncident" class="ghost" type="button">障害として登録</button>':'')+
             (t.status!=='closed'?'<button id="ticketActionSetting" class="ghost" type="button">設定依頼として登録</button>':'')+
           '</div>'+
           '<div id="ticketClassificationPanel" class="supportClassificationPanel hidden"></div>'+
           '<div class="supportFlow">'+
             '<div class="supportStep '+(supportStage==='unhandled'?'active':'done')+'"><span class="supportStepNum">1</span><strong>受付確認</strong><small>内容・写真・顧客</small></div>'+
-            '<div class="supportStep '+(supportStage==='in_progress'&&!latestTeamViewerSession?'active':(latestTeamViewerSession||supportStage==='completed'?'done':''))+'"><span class="supportStepNum">2</span><strong>対応</strong><small>ナレッジ・作業</small></div>'+
-            '<div class="supportStep '+((supportStage==='teamviewer_waiting'||(latestTeamViewerSession&&!teamviewerSessionClosed))?'active':(latestTeamViewerSession?'done':''))+'"><span class="supportStepNum">3</span><strong>TeamViewer</strong><small>必要な場合のみ</small></div>'+
-            '<div class="supportStep '+((latestTeamViewerSession&&teamviewerSessionClosed&&!latestTeamViewerSession.outcome)?'active':(t.status==='closed'?'done':''))+'"><span class="supportStepNum">4</span><strong>報告</strong><small>対応結果を記録</small></div>'+
-            '<div class="supportStep '+(t.status==='closed'?'done':(['internal_handoff_waiting','internal_in_progress','support_review_waiting'].includes(supportStage)?'active':''))+'"><span class="supportStepNum">5</span><strong>完了</strong><small>または管理者へ引継ぎ</small></div>'+
+            '<div class="supportStep '+((supportStage==='in_progress'||supportStage==='teamviewer_waiting'||(latestTeamViewerSession&&!teamviewerSessionClosed))?'active':(latestTeamViewerSession||supportStage==='completed'||t.status==='closed'?'done':''))+'"><span class="supportStepNum">2</span><strong>対応</strong><small>AI・ナレッジ / 必要ならTeamViewer</small></div>'+
+            '<div class="supportStep '+((latestTeamViewerSession&&teamviewerSessionClosed&&!latestTeamViewerSession.outcome)?'active':(t.status==='closed'?'done':''))+'"><span class="supportStepNum">3</span><strong>作業報告</strong><small>対応結果を記録</small></div>'+
+            '<div class="supportStep '+(t.status==='closed'?'done':(['internal_handoff_waiting','internal_in_progress','support_review_waiting'].includes(supportStage)?'active':''))+'"><span class="supportStepNum">4</span><strong>完了</strong><small>または自社へ引継ぎ</small></div>'+
           '</div>'+
           '<div class="supportWorkGrid">'+
             '<div>'+
-              '<div class="notice"><strong>ここから対応を開始します。</strong><br><span class="muted">①内容・写真を確認 → ②AI・ナレッジ・マニュアルで検索 → ③必要ならTeamViewer → ④解決または自社へ引継ぎ。候補は自動送信しません。</span></div>'+
+              '<div class="notice"><strong>対応方法を確認</strong><br><span class="muted">AI・ナレッジ・マニュアルから確認し、必要な場合だけTeamViewerを使用します。解決できない場合は自社へ引き継ぎます。</span></div>'+
               '<div class="modalGrid2">'+
                 '<div class="item"><strong>受付経路</strong><p>'+esc(intakeSource)+'</p></div>'+
                 '<div class="item"><strong>AI連携</strong><p>'+esc(aiStateText)+'</p></div>'+
