@@ -8290,7 +8290,7 @@
           };
           const r=queueRank(a)-queueRank(b);
           if(r!==0) return r;
-          if(['customer_wait','internal_review','handoff'].includes(view)){
+          if(['customer_wait','internal_review','teamviewer','handoff'].includes(view)){
             const waitDiff=Number(b.support_next_action_waiting_seconds||0)-Number(a.support_next_action_waiting_seconds||0);
             if(waitDiff!==0) return waitDiff;
           }
