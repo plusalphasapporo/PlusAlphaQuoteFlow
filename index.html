@@ -8840,13 +8840,13 @@
         ['完了',summary.closed||0]
       ])+
       (support
-        ? '<section class="card section"><div class="row between"><div><h2>次の行動キュー</h2><p class="sectionDesc">案件を「次に何をするか」で自動分類します。待ち案件を今すぐ対応へ混ぜません。</p></div><span class="pill">自動分類</span></div>'+
+        ? '<section class="card section"><div class="row between"><div><h2>次に対応する案件</h2><p class="sectionDesc">まず「今すぐ対応」を確認し、待ち案件は必要なタイミングで開きます。</p></div><span class="pill">自動分類</span></div>'+
             '<div class="supportTodayGrid" style="margin-top:12px">'+
-              '<button class="supportTodayTile danger supportQueueJump" type="button" data-view="immediate"><span>今すぐ対応</span><strong>'+esc(data.filter(x=>x.status!=="closed"&&x.support_next_action==="in_progress").length)+'</strong><em>対応・返信が必要</em></button>'+
-              '<button class="supportTodayTile supportQueueJump" type="button" data-view="customer_wait"><span>顧客返信待ち</span><strong>'+esc(data.filter(x=>x.status!=="closed"&&x.support_next_action==="customer_reply_waiting").length)+'</strong><em>顧客からの返答待ち</em></button>'+
-              '<button class="supportTodayTile warn supportQueueJump" type="button" data-view="internal_review"><span>社内確認待ち</span><strong>'+esc(data.filter(x=>x.status!=="closed"&&x.support_next_action==="internal_review_waiting").length)+'</strong><em>社内確認後に再対応</em></button>'+
-              '<button class="supportTodayTile warn supportQueueJump" type="button" data-view="teamviewer"><span>TeamViewer待ち</span><strong>'+esc(data.filter(x=>x.status!=="closed"&&(x.support_next_action==="teamviewer_waiting"||x.teamviewer_result_pending)).length)+'</strong><em>接続・結果入力待ち</em></button>'+
-              '<button class="supportTodayTile supportQueueJump" type="button" data-view="handoff"><span>自社引継ぎ待ち</span><strong>'+esc(data.filter(x=>x.status!=="closed"&&x.support_next_action==="internal_handoff_waiting").length)+'</strong><em>自社側の対応待ち</em></button>'+
+              '<button class="supportTodayTile danger supportQueueJump" type="button" data-view="immediate"><span>今すぐ対応</span><strong>'+esc(data.filter(x=>x.status!=="closed"&&x.support_next_action==="in_progress").length)+'</strong><em>ここから確認</em></button>'+
+              '<button class="supportTodayTile warn supportQueueJump" type="button" data-view="teamviewer"><span>TeamViewer</span><strong>'+esc(data.filter(x=>x.status!=="closed"&&(x.support_next_action==="teamviewer_waiting"||x.teamviewer_result_pending)).length)+'</strong><em>接続・結果入力</em></button>'+
+              '<button class="supportTodayTile supportQueueJump" type="button" data-view="customer_wait"><span>顧客返信待ち</span><strong>'+esc(data.filter(x=>x.status!=="closed"&&x.support_next_action==="customer_reply_waiting").length)+'</strong><em>返答待ち</em></button>'+
+              '<button class="supportTodayTile supportQueueJump" type="button" data-view="internal_review"><span>社内確認待ち</span><strong>'+esc(data.filter(x=>x.status!=="closed"&&x.support_next_action==="internal_review_waiting").length)+'</strong><em>確認後に再対応</em></button>'+
+              '<button class="supportTodayTile supportQueueJump" type="button" data-view="handoff"><span>引継ぎ待ち</span><strong>'+esc(data.filter(x=>x.status!=="closed"&&x.support_next_action==="internal_handoff_waiting").length)+'</strong><em>自社側の対応待ち</em></button>'+
             '</div>'+
             '<div id="supportViewTabs" class="supportCaseFilterBar" data-active="'+esc(supportQueueView||"immediate")+'">'+
               '<button class="supportCaseFilterBtn '+(supportQueueView==="immediate"?"active ":"")+'supportViewTab" type="button" data-view="immediate">今すぐ対応</button>'+
@@ -8980,16 +8980,17 @@
                   '</div>'+
                   '<div>'+supportAssigneeBadge(t.support_assignment)+'</div>'+
                 '</div>'+
+                '<div class="notice '+(t.deadline_state==='overdue'?'error':t.deadline_state==='due_today'?'warn':'')+'" style="margin-top:12px">'+
+                  '<strong>今やること：'+esc(supportNextActionLabel(t.support_next_action))+'</strong>'+
+                  '<div class="muted" style="margin-top:4px">'+esc(supportQueueThresholdText(t.support_next_action))+'</div>'+
+                '</div>'+
                 '<div class="supportCaseFacts">'+
                   '<div class="supportCaseFact"><span>機器</span><strong>'+esc(t.asset_number||t.asset_model_name||'未指定')+'</strong></div>'+
-                  '<div class="supportCaseFact"><span>初動期限</span><strong>'+esc(dateTimeText(t.first_response_due_at))+'</strong></div>'+
-                  '<div class="supportCaseFact"><span>最終更新</span><strong>'+esc(dateTimeText(t.last_message_at||t.updated_at))+'</strong></div>'+
-                  '<div class="supportCaseFact"><span>自社担当</span><strong>'+esc(t.assigned_internal_user_name||'未設定')+'</strong></div>'+
-                  '<div class="supportCaseFact"><span>次の行動</span><strong>'+esc(supportNextActionLabel(t.support_next_action))+'</strong></div>'+
-                  '<div class="supportCaseFact"><span>滞留時間</span><strong>'+esc(supportQueueAgeText(t.support_next_action_waiting_seconds))+'</strong><small class="muted">'+esc(supportQueueThresholdText(t.support_next_action))+'</small></div>'+
-                  '<div class="supportCaseFact"><span>対応管理</span><strong>'+(t.support_planned_at?'対応予定 '+esc(dateTimeText(t.support_planned_at)):t.support_acknowledged_at?'確認済み':'未設定')+'</strong>'+(t.support_attention_note?'<small class="muted">'+esc(t.support_attention_note)+'</small>':'')+'</div>'+
+                  '<div class="supportCaseFact"><span>期限</span><strong>'+esc(dateTimeText(t.resolution_due_at||t.first_response_due_at))+'</strong></div>'+
+                  '<div class="supportCaseFact"><span>滞留</span><strong>'+esc(supportQueueAgeText(t.support_next_action_waiting_seconds))+'</strong></div>'+
+                  '<div class="supportCaseFact"><span>担当</span><strong>'+esc(t.support_assignment?.support_assigned_user_name||'未担当')+'</strong></div>'+
                 '</div>'+
-                '<div class="supportCaseCardActions"><button class="ghost supportAttentionPlanOpen" type="button" data-id="'+esc(t.id)+'">確認・予定</button><button class="primary ticketDetail" type="button" data-id="'+esc(t.id)+'">'+(t.status!=='closed'&&t.support_stage==='unhandled'?'対応を開始':'案件カルテを開く')+'</button></div>'+
+                '<div class="supportCaseCardActions"><button class="ghost supportAttentionPlanOpen" type="button" data-id="'+esc(t.id)+'">確認・予定</button><button class="primary ticketDetail" type="button" data-id="'+esc(t.id)+'">'+(t.status!=='closed'&&t.support_stage==='unhandled'?'対応を開始':'この案件を開く')+'</button></div>'+
               '</article>';
             }).join('')+'</div>'
           : '<div class="empty">該当する案件はありません。</div>';
