@@ -25,6 +25,7 @@
     .headerActions{display:flex;align-items:center;justify-content:flex-end;gap:9px;min-width:0}.headerPill{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.18);color:#fff}
     .headerIconBtn{position:relative;background:rgba(255,255,255,.08);color:#fff;border:1px solid rgba(255,255,255,.16);width:40px;height:40px;padding:0;border-radius:10px}
     .notificationCount{position:absolute;right:-5px;top:-6px;background:#dc2626;color:#fff;border-radius:999px;min-width:19px;height:19px;padding:0 5px;display:grid;place-items:center;font-size:10px;font-weight:900;border:2px solid var(--navy)}
+    .notificationCount.attention{background:#d97706}.notificationCount.warning{background:#ea580c}.notificationCount.critical{background:#991b1b;box-shadow:0 0 0 3px rgba(239,68,68,.22)}
     .profileBadge{display:flex;flex-direction:column;line-height:1.15;padding:5px 9px;font-size:12px;font-weight:800;white-space:nowrap}.profileBadge small{font-size:10px;font-weight:600;opacity:.7;margin-top:3px}
     .headerLogout{background:transparent;color:#dbeafe;border:1px solid rgba(255,255,255,.18);padding:8px 10px}
     @media(max-width:1050px){header{grid-template-columns:220px 1fr auto}.headerPill{display:none}}
@@ -628,6 +629,7 @@
   let healthTimer=null;
   let deadlineWatchTimer=null;
   let lastDeadlineAlertKey='';
+  let lastUnansweredAlertKey='';
   let supportRealtimeChannel=null;
   let internalHandoffRealtimeChannel=null;
   let messageRealtimeChannel=null;
@@ -1128,7 +1130,7 @@
   async function refreshSupportUnreadBadge(){
     if(bootData?.context?.role!=='support_staff') return {count:0,items:[]};
     try{
-      const [unread,handoffUpdates,deadlineStates,callUnread]=await Promise.all([
+      const [unread,unanswered,handoffUpdates,deadlineStates,callUnread]=await Promise.all([
         rpc('support_unread_notifications'),
         rpc('support_unanswered_messages'),
         rpc('support_unread_handoff_updates'),
@@ -1138,23 +1140,40 @@
       const deadlineAttention=(deadlineStates||[]).filter(x=>x.deadline_state==='overdue'||x.deadline_state==='due_today');
       const overdueCount=deadlineAttention.filter(x=>x.deadline_state==='overdue').length;
       const dueTodayCount=deadlineAttention.filter(x=>x.deadline_state==='due_today').length;
-      const count=Number(unread?.count||0)+Number(handoffUpdates?.count||0)+overdueCount+dueTodayCount+Number(callUnread?.count||0);
+      const unansweredAttentionCount=Number(unanswered?.attention_count||0);
+      const unansweredWarningCount=Number(unanswered?.warning_count||0);
+      const unansweredCriticalCount=Number(unanswered?.critical_count||0);
+      const unansweredAlertCount=unansweredAttentionCount+unansweredWarningCount+unansweredCriticalCount;
+      const count=Number(unread?.count||0)+Number(handoffUpdates?.count||0)+overdueCount+dueTodayCount+Number(callUnread?.count||0)+unansweredAlertCount;
+      const badge=$('#notificationCount');
+      badge.classList.remove('attention','warning','critical');
+      if(unansweredCriticalCount) badge.classList.add('critical');
+      else if(unansweredWarningCount) badge.classList.add('warning');
+      else if(unansweredAttentionCount) badge.classList.add('attention');
       if(count>0){
-        $('#notificationCount').textContent=count>99?'99+':String(count);
-        $('#notificationCount').classList.remove('hidden');
+        badge.textContent=count>99?'99+':String(count);
+        badge.classList.remove('hidden');
       }else{
-        $('#notificationCount').classList.add('hidden');
+        badge.classList.add('hidden');
+      }
+      const notificationBtn=$('#notificationBtn');
+      if(notificationBtn){
+        notificationBtn.title='通知'+(unansweredAlertCount?' / 未返信: 緊急 '+unansweredCriticalCount+'・警告 '+unansweredWarningCount+'・注意 '+unansweredAttentionCount:'');
       }
       return {
         count,
         items:unread?.items||[],
+        unanswered:unanswered?.items||[],
+        unanswered_attention_count:unansweredAttentionCount,
+        unanswered_warning_count:unansweredWarningCount,
+        unanswered_critical_count:unansweredCriticalCount,
         handoff_updates:handoffUpdates?.items||[],
         deadline_attention:deadlineAttention,
         overdue_count:overdueCount,
         due_today_count:dueTodayCount
       };
     }catch(_){
-      return {count:0,items:[]};
+      return {count:0,items:[],unanswered:[],unanswered_attention_count:0,unanswered_warning_count:0,unanswered_critical_count:0};
     }
   }
 
@@ -1554,7 +1573,10 @@
 
     const refresh=async(showToast=false)=>{
       try{
-        const states=await rpc('support_deadline_states');
+        const [states,unanswered]=await Promise.all([
+          rpc('support_deadline_states'),
+          role==='support_staff'?rpc('support_unanswered_messages'):Promise.resolve(null)
+        ]);
         const overdue=(states||[]).filter(x=>x.deadline_state==='overdue');
         const dueToday=(states||[]).filter(x=>x.deadline_state==='due_today');
         const key=overdue.map(x=>x.ticket_id).sort().join(',')+'|'+dueToday.map(x=>x.ticket_id).sort().join(',');
@@ -1562,8 +1584,21 @@
           toast('期限アラート更新：期限超過 '+overdue.length+'件 / 本日期限 '+dueToday.length+'件');
         }
         lastDeadlineAlertKey=key;
-        if(role==='support_staff') await refreshSupportUnreadBadge();
-        else await refreshInternalUnreadHandoffBadge();
+
+        if(role==='support_staff'){
+          const unansweredItems=unanswered?.items||[];
+          const unansweredKey=unansweredItems.map(x=>String(x.ticket_id)+':'+String(x.wait_level||'normal')).sort().join('|');
+          const critical=Number(unanswered?.critical_count||0);
+          const warning=Number(unanswered?.warning_count||0);
+          const attention=Number(unanswered?.attention_count||0);
+          if(showToast && lastUnansweredAlertKey && unansweredKey!==lastUnansweredAlertKey && (critical||warning||attention)){
+            toast('未返信アラート更新：緊急 '+critical+'件 / 警告 '+warning+'件 / 注意 '+attention+'件');
+          }
+          lastUnansweredAlertKey=unansweredKey;
+          await refreshSupportUnreadBadge();
+        }else{
+          await refreshInternalUnreadHandoffBadge();
+        }
         if(currentPage==='home') await renderHome();
       }catch(_){}
     };
@@ -1606,9 +1641,14 @@
         }
 
         try{
-          if(role==='support_staff') await refreshSupportUnreadBadge();
-          else if(role==='internal_admin'||role==='internal_staff') await refreshInternalUnreadHandoffBadge();
-          else await setupGlobalHeader();
+          if(role==='support_staff'){
+            await refreshSupportUnreadBadge();
+            if(currentPage==='home') await renderHome();
+          }else if(role==='internal_admin'||role==='internal_staff'){
+            await refreshInternalUnreadHandoffBadge();
+          }else{
+            await setupGlobalHeader();
+          }
         }catch(_){}
       })
       .subscribe();
@@ -1656,19 +1696,34 @@
         const deadlineCount=(deadlineStates||[]).filter(x=>x.deadline_state==='overdue'||x.deadline_state==='due_today').length;
         count=Number(biz?.kpis?.urgent_open_tickets||0)+Number(unreadHandoffs?.count||0)+deadlineCount+Number(callUnread?.count||0);
       }else if(role==='support_staff'){
-        const [unread,handoffUpdates,deadlineStates,callUnread]=await Promise.all([
+        const [unread,unanswered,handoffUpdates,deadlineStates,callUnread]=await Promise.all([
           rpc('support_unread_notifications'),
+          rpc('support_unanswered_messages'),
           rpc('support_unread_handoff_updates'),
           rpc('support_deadline_states'),
           rpc('callconnect_unread_notifications')
         ]);
         const deadlineCount=(deadlineStates||[]).filter(x=>x.deadline_state==='overdue'||x.deadline_state==='due_today').length;
-        count=Number(unread?.count||0)+Number(handoffUpdates?.count||0)+deadlineCount+Number(callUnread?.count||0);
+        const unansweredAttentionCount=Number(unanswered?.attention_count||0);
+        const unansweredWarningCount=Number(unanswered?.warning_count||0);
+        const unansweredCriticalCount=Number(unanswered?.critical_count||0);
+        const unansweredAlertCount=unansweredAttentionCount+unansweredWarningCount+unansweredCriticalCount;
+        count=Number(unread?.count||0)+Number(handoffUpdates?.count||0)+deadlineCount+Number(callUnread?.count||0)+unansweredAlertCount;
+        const badge=$('#notificationCount');
+        badge.classList.remove('attention','warning','critical');
+        if(unansweredCriticalCount) badge.classList.add('critical');
+        else if(unansweredWarningCount) badge.classList.add('warning');
+        else if(unansweredAttentionCount) badge.classList.add('attention');
+        $('#notificationBtn').title='通知'+(unansweredAlertCount?' / 未返信: 緊急 '+unansweredCriticalCount+'・警告 '+unansweredWarningCount+'・注意 '+unansweredAttentionCount:'');
       }else if(role==='customer_user'){
         const h=await rpc('customer_portal_home');
         count=(h?.recent_tickets||[]).filter(x=>x.status!=='closed').length;
       }
     }catch(_){ count=0; }
+    if(role!=='support_staff'){
+      $('#notificationCount').classList.remove('attention','warning','critical');
+      $('#notificationBtn').title='通知';
+    }
     if(count>0){
       $('#notificationCount').textContent=count>99?'99+':String(count);
       $('#notificationCount').classList.remove('hidden');
@@ -10771,15 +10826,24 @@
           try{await supabase.removeChannel(internalHandoffRealtimeChannel);}catch(_){}
           internalHandoffRealtimeChannel=null;
         }
+        if(messageRealtimeChannel){
+          try{await supabase.removeChannel(messageRealtimeChannel);}catch(_){}
+          messageRealtimeChannel=null;
+        }
         if(callconnectNotificationChannel){
           try{await supabase.removeChannel(callconnectNotificationChannel);}catch(_){}
           callconnectNotificationChannel=null;
+        }
+        if(callconnectNotificationPollTimer){
+          clearInterval(callconnectNotificationPollTimer);
+          callconnectNotificationPollTimer=null;
         }
         if(deadlineWatchTimer){
           clearInterval(deadlineWatchTimer);
           deadlineWatchTimer=null;
         }
         lastDeadlineAlertKey='';
+        lastUnansweredAlertKey='';
         bootData=null;
         currentPage='home';
         if(!manualLogout){
