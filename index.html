@@ -621,6 +621,35 @@
   let lastCallConnectPopupId='';
   let pendingCallConnectIntake=null;
 
+  function supportDraftKey(ticketId,kind){
+    return 'qfc_support_draft:'+String(ticketId||'')+':'+String(kind||'general');
+  }
+  function loadSupportDraft(ticketId,kind){
+    try{return JSON.parse(localStorage.getItem(supportDraftKey(ticketId,kind))||'null')||{};}catch(_){return {};}
+  }
+  function saveSupportDraft(ticketId,kind,data){
+    try{localStorage.setItem(supportDraftKey(ticketId,kind),JSON.stringify({...data,saved_at:new Date().toISOString()}));}catch(_){}
+  }
+  function clearSupportDraft(ticketId,kind){
+    try{localStorage.removeItem(supportDraftKey(ticketId,kind));}catch(_){}
+  }
+  function bindSupportDraftInputs(ticketId,kind,fields){
+    const draft=loadSupportDraft(ticketId,kind);
+    Object.entries(fields||{}).forEach(([key,selector])=>{
+      const el=$(selector); if(!el) return;
+      if(draft[key]!==undefined && draft[key]!==null){
+        if(el.type==='checkbox') el.checked=!!draft[key];
+        else el.value=String(draft[key]);
+      }
+      const persist=()=>{
+        const current=loadSupportDraft(ticketId,kind);
+        current[key]=el.type==='checkbox'?!!el.checked:el.value;
+        saveSupportDraft(ticketId,kind,current);
+      };
+      el.addEventListener(el.tagName==='SELECT'||el.type==='checkbox'?'change':'input',persist);
+    });
+  }
+
   const pageSets = {
     internal_admin: [
       ['home','ダッシュボード'],
@@ -6765,6 +6794,8 @@
 
     $('#ticketDetailClose').onclick=()=>{$('#ticketDetailHost').innerHTML='';};
     $('#ticketDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
+    bindSupportDraftInputs(t.id,'message',{body:'#ticketMessageBody'});
+    bindSupportDraftInputs(t.id,'handoff',{reason:'#handoffReason',next_action:'#handoffNextAction'});
 
     if(support){
       const jump=(selector)=>{
@@ -6846,6 +6877,11 @@
         );
         $('#instantHandoffClose').onclick=closeAppModal;
         $('#instantHandoffCancel').onclick=closeAppModal;
+        bindSupportDraftInputs(t.id,'instant_handoff',{
+          reason:'#instantHandoffReason',
+          urgency:'#instantHandoffUrgency',
+          note:'#instantHandoffNote'
+        });
         $('#instantHandoffSubmit').onclick=async()=>{
           const btn=$('#instantHandoffSubmit');
           const reason=$('#instantHandoffReason').value;
@@ -6860,6 +6896,8 @@
               p_reason:reasonText,
               p_next_action:'自社管理者で案件カルテを確認し、そのまま対応を継続'
             });
+            clearSupportDraft(t.id,'instant_handoff');
+            clearSupportDraft(t.id,'handoff');
             closeAppModal();
             toast('自社へ即引き継ぎしました');
             await renderTicketDetail(t.id);
@@ -7247,6 +7285,7 @@
         await rpc('post_ticket_message',{
           p_ticket_id:t.id,p_visibility:$('#ticketMessageVisibility').value,p_body:$('#ticketMessageBody').value.trim()
         });
+        clearSupportDraft(t.id,'message');
         notice('#ticketMessageMsg','メッセージを送信しました。',true);
         toast('メッセージを送信しました');
         await renderTicketDetail(t.id);
@@ -7285,6 +7324,13 @@
         );
         $('#workReportClose').onclick=closeAppModal;
         $('#workReportCancel').onclick=closeAppModal;
+        bindSupportDraftInputs(t.id,'work_report',{
+          action:'#workReportAction',
+          cause:'#workReportCause',
+          result:'#workReportResult',
+          customer:'#workReportCustomer',
+          knowledge:'#workReportKnowledge'
+        });
         $('#workReportSubmit').onclick=async()=>{
           const btn=$('#workReportSubmit');
           const action=$('#workReportAction').value.trim();
@@ -7337,6 +7383,9 @@
             }
 
             await rpc('close_support_ticket',{p_ticket_id:t.id});
+            clearSupportDraft(t.id,'work_report');
+            clearSupportDraft(t.id,'handoff');
+            clearSupportDraft(t.id,'message');
             closeAppModal();
             toast(makeKnowledge?'作業報告を保存し、案件を完了しました':'作業報告を保存して案件を完了しました');
             await renderTicketDetail(t.id);
