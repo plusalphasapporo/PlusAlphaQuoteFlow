@@ -7242,24 +7242,34 @@
 
     const topAttachmentPreview=(attachments||[]).slice(0,4).map(a=>{
       const name=a.file_name||a.filename||a.name||'添付ファイル';
-      return '<button class="ghost supportTopAttachmentJump" type="button" style="text-align:left">'+esc(name)+'</button>';
+      return '<article class="attachmentCard supportTopAttachmentJump" data-top-attachment-id="'+esc(a.id)+'" style="cursor:pointer;min-width:150px;max-width:220px">'+
+        '<span class="attachmentSource '+esc(a.uploader_group||'')+'">'+esc(attachmentSourceLabel(a))+'</span>'+
+        '<div class="attachmentPreview supportTopAttachmentPreview muted">読み込み中...</div>'+
+        '<div class="fileMeta">'+esc(name)+'</div>'+
+      '</article>';
     }).join('');
     const supportTopSummary=support
-      ? '<section class="card section" style="box-shadow:none;margin:0 0 14px;background:var(--soft)">'+
+      ? '<section id="supportTopOverview" class="card section" style="box-shadow:none;margin:0 0 14px;background:var(--soft)">'+
           '<div class="row between" style="gap:12px;align-items:flex-start;flex-wrap:wrap">'+
-            '<div style="min-width:0;flex:1"><span class="pill good">最初に確認</span><h3 style="margin:8px 0 6px">'+esc(t.subject||'問い合わせ')+'</h3><p style="white-space:pre-wrap;margin:0;line-height:1.7">'+esc(displayDescription||'内容なし')+'</p></div>'+
+            '<div style="min-width:0;flex:1">'+
+              '<div class="row" style="gap:6px;flex-wrap:wrap"><span class="pill good">最初に確認</span>'+supportRequestTypeBadge(t.request_type)+(t.priority==='urgent'?'<span class="hold">緊急</span>':t.priority==='high'?'<span class="pill warn">高優先度</span>':'')+'</div>'+
+              '<h3 style="margin:8px 0 6px">'+esc(t.subject||'問い合わせ')+'</h3>'+
+              '<div class="item" style="margin-top:8px;background:var(--card)"><strong>問い合わせ内容</strong><p style="white-space:pre-wrap;margin:6px 0 0;line-height:1.75">'+esc(displayDescription||'内容なし')+'</p></div>'+
+            '</div>'+
             '<div class="supportQuickActions">'+
-              '<button id="supportTopCustomer" class="ghost" type="button">顧客・機器</button>'+
-              (attachments.length?'<button id="supportTopAttachments" class="ghost" type="button">写真・添付 '+esc(attachments.length)+'件</button>':'')+
+              '<button id="supportTopCustomer" class="ghost" type="button">詳細情報</button>'+
+              (attachments.length?'<button id="supportTopAttachments" class="ghost" type="button">添付をすべて見る '+esc(attachments.length)+'件</button>':'')+
             '</div>'+
           '</div>'+
           '<div class="modalGrid2" style="margin-top:12px">'+
             '<div class="item"><strong>顧客</strong><p>'+esc(cust?.customer_code||'—')+' / '+esc(cust?.name||'未登録')+'</p></div>'+
             '<div class="item"><strong>連絡先</strong><p>'+esc(primary?.name||'未登録')+'<br><span class="muted">'+esc(primary?.phone||primary?.email||'連絡先未登録')+'</span></p></div>'+
             '<div class="item"><strong>対象機器</strong><p>'+(asset?esc(asset.asset_number||'—')+' / '+esc(asset.model_name||''):'未指定')+'</p></div>'+
-            '<div class="item"><strong>契約</strong><p>'+(contract?esc(contract.contract_number||'—'):'未指定')+'</p></div>'+
+            '<div class="item"><strong>受付経路 / 契約</strong><p>'+esc(intakeSource)+'<br><span class="muted">'+(contract?esc(contract.contract_number||'—'):'契約未指定')+'</span></p></div>'+
           '</div>'+
-          (attachments.length?'<div style="margin-top:12px"><strong>添付</strong><div class="row" style="margin-top:6px">'+topAttachmentPreview+'</div></div>':'')+
+          (attachments.length
+            ? '<div style="margin-top:12px"><div class="row between"><strong>写真・添付</strong><span class="pill">'+esc(attachments.length)+'件</span></div><div class="attachmentGallery" style="margin-top:8px">'+topAttachmentPreview+'</div></div>'
+            : '<div class="notice" style="margin-top:12px"><strong>写真・添付なし</strong><br><span class="muted">受付時の画像・ファイルは登録されていません。</span></div>')+
         '</section>'
       : '';
 
@@ -7694,8 +7704,8 @@
       if(primaryNext) primaryNext.onclick=()=>{
         const target=supportPrimaryStep.target;
         if(target==='content'){
-          jump('#ticketAttachmentGallery');
-          setTimeout(()=>$('#ticketStageStart')?.focus()||$('#ticketClaimSupport')?.focus(),250);
+          jump('#supportTopOverview');
+          setTimeout(()=>($('#ticketStageStart')||$('#ticketClaimSupport')||$('#supportPrimaryNext'))?.focus(),250);
         }else if(target==='remote'){
           jump('#supportRemoteWorkspace');
           setTimeout(()=>($('#ticketRemoteResultNote')||$('#ticketRemoteAction')||$('#ticketTeamViewerCreate'))?.focus(),250);
@@ -7803,11 +7813,18 @@
             if(signed.error) throw signed.error;
             const url=signed.data?.signedUrl;
             const imageLike=/\.(png|jpe?g|gif|webp|bmp)$/i.test(String(a.file_name||''));
-            preview.innerHTML=imageLike
+            const previewHtml=imageLike
               ? '<a href="'+esc(url)+'" target="_blank" rel="noopener"><img src="'+esc(url)+'" alt="'+esc(a.file_name||'添付画像')+'"></a>'
               : '<a class="linkBtn" href="'+esc(url)+'" target="_blank" rel="noopener">添付を開く</a>';
+            preview.innerHTML=previewHtml;
+            document.querySelectorAll('[data-top-attachment-id="'+CSS.escape(String(a.id))+'"] .supportTopAttachmentPreview').forEach(topPreview=>{
+              topPreview.innerHTML=previewHtml;
+            });
           }catch(_){
             preview.textContent='プレビューできません';
+            document.querySelectorAll('[data-top-attachment-id="'+CSS.escape(String(a.id))+'"] .supportTopAttachmentPreview').forEach(topPreview=>{
+              topPreview.textContent='プレビューできません';
+            });
           }
         }
       }
