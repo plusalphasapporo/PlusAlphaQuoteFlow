@@ -470,7 +470,7 @@
     'customer_ticket_detail','internal_numbering_settings','internal_accounts_list',
     'internal_account_companies','internal_audit_workspace','internal_document_profile','internal_demo_seed_status','internal_company_settings','internal_entity_audit_history',
     'internal_products_list','internal_lease_rates_list','internal_order_profitability','internal_customer_unified_workspace','internal_receiving_workspace','internal_order_operation','role_knowledge_articles',
-    'support_customer_directory','support_asset_directory','post_support_ticket_message','support_handoff_history','support_customer_context','support_customer_phone_search','support_workflow_states','support_ticket_workflow_state','support_unread_notifications','support_unanswered_messages','support_unread_handoff_updates','support_deadline_states','support_ticket_deadline_state','support_assignment_states','support_ticket_assignment_state','callconnect_dashboard','callconnect_api_settings','callconnect_unread_notifications','callconnect_customer_directory',
+    'support_customer_directory','support_asset_directory','support_handoff_history','support_customer_context','support_customer_phone_search','support_workflow_states','support_ticket_workflow_state','support_unread_notifications','support_unanswered_messages','support_unread_handoff_updates','support_deadline_states','support_ticket_deadline_state','support_assignment_states','support_ticket_assignment_state','callconnect_dashboard','callconnect_api_settings','callconnect_unread_notifications','callconnect_customer_directory',
     'internal_case_directory','internal_handoff_history','internal_knowledge_articles'
   ]);
 
@@ -7097,9 +7097,20 @@
       messageVisibilityBanner.classList.toggle('replyMismatch',mismatch);
       messageVisibilityBanner.textContent=meta[1]+(mismatch?' 返信先の公開範囲と異なります。送信前に確認してください。':'');
     };
+    const updateMessageActionButtons=()=>{
+      const releaseBtn=$('#ticketMessageSendRelease');
+      if(!releaseBtn||!messageVisibilityEl) return;
+      const customerVisible=messageVisibilityEl.value==='customer';
+      releaseBtn.disabled=!customerVisible;
+      releaseBtn.title=customerVisible?'顧客へ返信後、この案件の担当を解除します。':'担当解除は顧客向け返信のときだけ選べます。';
+    };
     if(messageVisibilityEl){
       updateMessageVisibilityBanner();
-      messageVisibilityEl.addEventListener('change',updateMessageVisibilityBanner);
+      updateMessageActionButtons();
+      messageVisibilityEl.addEventListener('change',()=>{
+        updateMessageVisibilityBanner();
+        updateMessageActionButtons();
+      });
     }
 
     const messageFilesEl=$('#ticketMessageFiles');
@@ -7811,6 +7822,7 @@
         if(btn)btn.disabled=false;
         $('#ticketMessageSendKeep')?.removeAttribute('disabled');
         $('#ticketMessageSendRelease')?.removeAttribute('disabled');
+        updateMessageActionButtons();
       }
     };
 
