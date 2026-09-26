@@ -470,7 +470,7 @@
     'customer_ticket_detail','internal_numbering_settings','internal_accounts_list',
     'internal_account_companies','internal_audit_workspace','internal_document_profile','internal_demo_seed_status','internal_company_settings','internal_entity_audit_history',
     'internal_products_list','internal_lease_rates_list','internal_order_profitability','internal_customer_unified_workspace','internal_receiving_workspace','internal_order_operation','role_knowledge_articles',
-    'support_customer_directory','support_asset_directory','support_handoff_history','support_customer_context','support_customer_phone_search','support_workflow_states','support_ticket_workflow_state','support_unread_notifications','support_unanswered_messages','support_unread_handoff_updates','support_deadline_states','support_ticket_deadline_state','support_assignment_states','support_ticket_assignment_state','callconnect_dashboard','callconnect_api_settings','callconnect_unread_notifications','callconnect_customer_directory',
+    'support_customer_directory','support_asset_directory','support_handoff_history','support_customer_context','support_customer_phone_search','support_workflow_states','support_ticket_workflow_state','support_next_action_states','support_ticket_next_action_state','support_unread_notifications','support_unanswered_messages','support_unread_handoff_updates','support_deadline_states','support_ticket_deadline_state','support_assignment_states','support_ticket_assignment_state','callconnect_dashboard','callconnect_api_settings','callconnect_unread_notifications','callconnect_customer_directory',
     'internal_case_directory','internal_handoff_history','internal_knowledge_articles'
   ]);
 
@@ -1060,6 +1060,26 @@
     if(v==='internal_in_progress') return '<span class="pill warn">'+esc(label)+'</span>';
     if(v==='support_review_waiting') return '<span class="pill good">'+esc(label)+'</span>';
     if(v==='completed') return '<span class="pill good">'+esc(label)+'</span>';
+    return '<span class="pill good">'+esc(label)+'</span>';
+  }
+
+  function supportNextActionLabel(v){
+    return ({
+      in_progress:'対応を続ける',
+      customer_reply_waiting:'顧客返信待ち',
+      internal_review_waiting:'社内確認待ち',
+      teamviewer_waiting:'TeamViewer待ち',
+      internal_handoff_waiting:'自社引継ぎ待ち',
+      completed:'完了'
+    }[v]||'対応を続ける');
+  }
+
+  function supportNextActionBadge(v){
+    const label=supportNextActionLabel(v);
+    if(v==='completed') return '<span class="pill good">'+esc(label)+'</span>';
+    if(v==='internal_handoff_waiting') return '<span class="hold">'+esc(label)+'</span>';
+    if(v==='internal_review_waiting'||v==='teamviewer_waiting') return '<span class="pill warn">'+esc(label)+'</span>';
+    if(v==='customer_reply_waiting') return '<span class="pill">'+esc(label)+'</span>';
     return '<span class="pill good">'+esc(label)+'</span>';
   }
 
@@ -2053,11 +2073,13 @@
     }
 
     if(role==='support_staff'){
-      const [h,workspace,workflowStates,unread,unanswered,handoffUpdates,deadlineStates,assignmentStates,callconnectDash,teamviewerPending]=await Promise.all([
+      const [h,workspace,workflowStates,nextActionStates,unread,unanswered,handoffUpdates,deadlineStates,assignmentStates,callconnectDash,teamviewerPending]=await Promise.all([
         rpc('support_home'),
         rpc('internal_support_cases_list'),
         rpc('support_workflow_states'),
+        rpc('support_next_action_states'),
         rpc('support_unread_notifications'),
+        rpc('support_unanswered_messages'),
         rpc('support_unread_handoff_updates'),
         rpc('support_deadline_states'),
         rpc('support_assignment_states'),
@@ -2066,6 +2088,8 @@
       ]);
       const stageMap={};
       (workflowStates||[]).forEach(x=>stageMap[x.ticket_id]=x.support_stage);
+      const nextActionMap={};
+      (nextActionStates||[]).forEach(x=>nextActionMap[x.ticket_id]=x.support_next_action);
       const deadlineMap={};
       (deadlineStates||[]).forEach(x=>deadlineMap[x.ticket_id]=x);
       const assignmentMap={};
@@ -2073,6 +2097,7 @@
       const tickets=(workspace?.tickets||[]).map(x=>({
         ...x,
         support_stage:stageMap[x.id]||((x.status==='closed')?'completed':'unhandled'),
+        support_next_action:nextActionMap[x.id]||((x.status==='closed')?'completed':'in_progress'),
         deadline_state:deadlineMap[x.id]?.deadline_state||'unset',
         first_response_due_at:deadlineMap[x.id]?.first_response_due_at||null,
         resolution_due_at:deadlineMap[x.id]?.resolution_due_at||null,
@@ -2184,7 +2209,7 @@
       const topWorkHtml=topWork.length?topWork.map(t=>
         '<div class="supportCompactItem">'+
           '<div><strong>'+esc(t.customer_name||'—')+' / '+esc(t.subject||'')+'</strong>'+
-            '<div class="meta">'+supportRequestTypeBadge(t.request_type)+supportStageBadge(t.support_stage)+supportDeadlineBadge(t.deadline_state)+supportAssigneeBadge(t.support_assignment)+'</div>'+
+            '<div class="meta">'+supportRequestTypeBadge(t.request_type)+supportStageBadge(t.support_stage)+supportNextActionBadge(t.support_next_action)+supportDeadlineBadge(t.deadline_state)+supportAssigneeBadge(t.support_assignment)+'</div>'+
           '</div>'+
           '<button class="primary supportPriorityOpen" type="button" data-id="'+esc(t.id)+'">開く</button>'+
         '</div>'
@@ -6676,12 +6701,13 @@
     const internal=role==='internal_admin'||role==='internal_staff';
     const support=role==='support_staff';
 
-    const [detail,knowledgeArticles,supportStage,deadlineState,assignmentState,teamviewerApiState,teamviewerSessions]=customer
-      ? [await rpc('customer_ticket_detail',{p_ticket_id:ticketId}),[],null,null,null,null,[]]
+    const [detail,knowledgeArticles,supportStage,nextActionState,deadlineState,assignmentState,teamviewerApiState,teamviewerSessions]=customer
+      ? [await rpc('customer_ticket_detail',{p_ticket_id:ticketId}),[],null,null,null,null,null,[]]
       : await Promise.all([
           rpc('support_ticket_workspace',{p_ticket_id:ticketId}),
           rpc('role_knowledge_articles'),
           rpc('support_ticket_workflow_state',{p_ticket_id:ticketId}),
+          rpc('support_ticket_next_action_state',{p_ticket_id:ticketId}),
           rpc('support_ticket_deadline_state',{p_ticket_id:ticketId}),
           rpc('support_ticket_assignment_state',{p_ticket_id:ticketId}),
           rpc('teamviewer_api_settings'),
@@ -6739,7 +6765,7 @@
     })():'—';
     const assistSectionNo=internal?'02':'01';
     const supportStageControl=support && t.status!=='closed'
-      ? '<div class="notice"><div class="row between"><div><strong>現在の対応工程</strong><div style="margin-top:6px">'+supportStageBadge(supportStage)+'</div><div style="margin-top:8px"><strong>サポート担当：</strong> '+supportAssigneeBadge(assignmentState)+'</div></div><div class="supportQuickActions">'+
+      ? '<div class="notice"><div class="row between"><div><strong>現在の対応工程</strong><div style="margin-top:6px">'+supportStageBadge(supportStage)+'</div><div style="margin-top:8px"><strong>次の行動：</strong> '+supportNextActionBadge(nextActionState?.support_next_action||'in_progress')+'</div><div style="margin-top:8px"><strong>サポート担当：</strong> '+supportAssigneeBadge(assignmentState)+'</div></div><div class="supportQuickActions">'+
           (!assignmentState?.support_assigned_user_id?'<button id="ticketClaimSupport" class="primary" type="button">自分が担当する</button>':'')+
           (assignmentState?.is_mine?'<button id="ticketReleaseSupport" class="ghost" type="button">担当を解除</button>':'')+
           (supportStage==='unhandled'?'<button id="ticketStageStart" class="primary" type="button">対応開始</button>':'')+
@@ -7036,6 +7062,7 @@
             '</div>'+
             '<div class="field"><label>返信</label><textarea id="ticketMessageBody" rows="5" placeholder="対応内容を入力してください"></textarea><div class="row between"><small class="muted">Ctrl + Enter で送信</small><small id="ticketMessageCount" class="muted">0文字</small></div></div>'+
             '<div id="ticketMessageDropZone" class="field messageDropZone"><label>写真・ファイルを添付</label><input id="ticketMessageFiles" type="file" accept="image/*,.pdf,.txt,.csv,.doc,.docx,.xls,.xlsx" multiple><small class="muted">選択・ドラッグ＆ドロップ・スクリーンショット貼り付け（Ctrl+V）に対応します。</small><div id="ticketMessageFileList" class="messageFilePreviewGrid"></div></div>'+
+            (support?'<div class="field"><label>返信後の次の行動</label><select id="ticketMessageNextAction"><option value="customer_reply_waiting">顧客返信待ち</option><option value="in_progress">対応を続ける</option><option value="internal_review_waiting">社内確認待ち</option><option value="teamviewer_waiting">TeamViewer待ち</option><option value="internal_handoff_waiting">自社引継ぎ待ち</option><option value="completed">完了</option></select><small class="muted">返信後に「次に何をする案件か」を一覧へ反映します。</small></div>':'')+
             '<div class="row between" style="gap:8px">'+
               '<div class="row">'+
                 (!customer?'<button id="ticketMessageInternalNote" class="ghost" type="button">'+(support?'サポート内メモ':'社内メモ')+'</button>':'')+
@@ -7061,6 +7088,11 @@
     const messageVisibilityEl=$('#ticketMessageVisibility');
     const messageVisibilityBanner=$('#ticketMessageVisibilityBanner');
     const messageReplyContextEl=$('#ticketMessageReplyContext');
+    const messageNextActionEl=$('#ticketMessageNextAction');
+    if(messageNextActionEl){
+      const currentNext=nextActionState?.support_next_action||'in_progress';
+      if([...messageNextActionEl.options].some(o=>o.value===currentNext)) messageNextActionEl.value=currentNext;
+    }
     let messageReplyContext=null;
     const renderMessageReplyContext=()=>{
       if(!messageReplyContextEl) return;
@@ -7798,12 +7830,21 @@
         const composed=[replyNote,baseBody,attachmentNote].filter(Boolean).join('\n\n');
         const body=$('#ticketMessageImportant')?.checked?'【重要】\n'+composed:composed;
 
+        const selectedNextAction=messageNextActionEl?.value||'in_progress';
         const useRelease=support && visibility==='customer' && messageReleaseAfter;
         if(support){
-          await rpc('post_support_ticket_message',{
+          if(visibility==='customer' && selectedNextAction==='internal_handoff_waiting'){
+            const hasActiveHandoff=(handoffs||[]).some(h=>['pending','accepted'].includes(h.state));
+            if(!hasActiveHandoff) throw new Error('自社引継ぎ待ちにするには、先に自社引継ぎを登録してください。');
+          }
+          if(visibility==='customer' && selectedNextAction==='completed' && t.status!=='closed'){
+            throw new Error('「完了」は作業報告から案件完了処理を行ってください。');
+          }
+          await rpc('post_support_ticket_message_action',{
             p_ticket_id:t.id,
             p_visibility:visibility,
             p_body:body,
+            p_next_action:visibility==='customer'?selectedNextAction:null,
             p_release_after:useRelease
           });
         }else{
@@ -8075,17 +8116,20 @@
       return;
     }
 
-    const [workspace,customers,staff,workflowStates,deadlineStates,assignmentStates,teamviewerPending]=await Promise.all([
+    const [workspace,customers,staff,workflowStates,nextActionStates,deadlineStates,assignmentStates,teamviewerPending]=await Promise.all([
       rpc('internal_support_cases_list'),
       internal?rpc('internal_customers_list'):rpc('support_customer_directory'),
       internal?rpc('internal_staff_options'):Promise.resolve([]),
       rpc('support_workflow_states'),
+      rpc('support_next_action_states'),
       rpc('support_deadline_states'),
       rpc('support_assignment_states'),
       rpc('teamviewer_pending_results')
     ]);
     const workflowMap={};
     (workflowStates||[]).forEach(x=>workflowMap[x.ticket_id]=x.support_stage);
+    const nextActionMap={};
+    (nextActionStates||[]).forEach(x=>nextActionMap[x.ticket_id]=x.support_next_action);
     const deadlineMap={};
     (deadlineStates||[]).forEach(x=>deadlineMap[x.ticket_id]=x);
     const assignmentMap={};
@@ -8095,6 +8139,7 @@
     const data=(workspace?.tickets||[]).map(x=>({
       ...x,
       support_stage:workflowMap[x.id]||((x.status==='closed')?'completed':'unhandled'),
+      support_next_action:nextActionMap[x.id]||((x.status==='closed')?'completed':'in_progress'),
       deadline_state:deadlineMap[x.id]?.deadline_state||'unset',
       first_response_due_at:deadlineMap[x.id]?.first_response_due_at||null,
       resolution_due_at:deadlineMap[x.id]?.resolution_due_at||null,
@@ -8176,7 +8221,7 @@
         }
         return !state.query||[
           t.ticket_number,t.customer_name,t.customer_code,t.subject,t.priority,t.status,supportRequestTypeLabel(t.request_type),
-          t.asset_number,t.asset_model_name,t.contract_number,t.assigned_internal_user_name,t.support_assignment?.support_assigned_user_name
+          t.asset_number,t.asset_model_name,t.contract_number,t.assigned_internal_user_name,t.support_assignment?.support_assigned_user_name,supportNextActionLabel(t.support_next_action)
         ].some(v=>String(v||'').toLowerCase().includes(state.query));
       });
       filtered=[...filtered].sort((a,b)=>{
@@ -8204,6 +8249,7 @@
                     '<div class="supportCaseBadges">'+
                       supportRequestTypeBadge(t.request_type)+
                       supportStageBadge(t.support_stage)+
+                      supportNextActionBadge(t.support_next_action)+
                       supportDeadlineBadge(t.deadline_state)+
                       (t.teamviewer_result_pending?'<span class="hold">TV結果未入力</span>':'')+
                       (t.priority==='urgent'?'<span class="hold">緊急</span>':t.priority==='high'?'<span class="pill warn">高優先度</span>':'')+
@@ -8216,6 +8262,7 @@
                   '<div class="supportCaseFact"><span>初動期限</span><strong>'+esc(dateTimeText(t.first_response_due_at))+'</strong></div>'+
                   '<div class="supportCaseFact"><span>最終更新</span><strong>'+esc(dateTimeText(t.last_message_at||t.updated_at))+'</strong></div>'+
                   '<div class="supportCaseFact"><span>自社担当</span><strong>'+esc(t.assigned_internal_user_name||'未設定')+'</strong></div>'+
+                  '<div class="supportCaseFact"><span>次の行動</span><strong>'+esc(supportNextActionLabel(t.support_next_action))+'</strong></div>'+
                 '</div>'+
                 '<div class="supportCaseCardActions"><button class="primary ticketDetail" type="button" data-id="'+esc(t.id)+'">'+(t.status!=='closed'&&t.support_stage==='unhandled'?'対応を開始':'案件カルテを開く')+'</button></div>'+
               '</article>';
@@ -8223,13 +8270,14 @@
           : '<div class="empty">該当する案件はありません。</div>';
       }else{
         $('#supportCaseListHost').innerHTML=dataTable(
-          ['番号','種別','サポート担当','対応工程','期限','顧客','件名','状態','優先度','機器/契約','自社担当','最終対応','操作'],
+          ['番号','種別','サポート担当','対応工程','次の行動','期限','顧客','件名','状態','優先度','機器/契約','自社担当','最終対応','操作'],
           filtered.map(t=>
             '<tr>'+
               '<td><strong>'+esc(t.ticket_number||'—')+'</strong></td>'+
               '<td>'+supportRequestTypeBadge(t.request_type)+'</td>'+
               '<td>'+supportAssigneeBadge(t.support_assignment)+'</td>'+
               '<td>'+supportStageBadge(t.support_stage)+(t.teamviewer_result_pending?'<br><span class="hold">TV結果未入力</span>':'')+'</td>'+
+              '<td>'+supportNextActionBadge(t.support_next_action)+'</td>'+
               '<td>'+supportDeadlineBadge(t.deadline_state)+'</td>'+
               '<td>'+esc(t.customer_name||'—')+'</td>'+
               '<td>'+esc(t.subject||'')+'</td>'+
