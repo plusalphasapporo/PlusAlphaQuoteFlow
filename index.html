@@ -7783,6 +7783,15 @@
             (teamviewerPending||[]).slice(0,6).map(x=>'<div class="supportCompactItem"><div><strong>'+esc(x.customer_name||'—')+' / '+esc(x.subject||'')+'</strong><small>'+esc(x.ticket_number||'—')+' / '+esc(x.session_code||'—')+' / '+esc(dateTimeText(x.session_closed_at||x.session_updated_at))+'</small></div><button class="primary supportPendingResultOpen" type="button" data-id="'+esc(x.ticket_id)+'">結果入力</button></div>').join('')+
           '</section>'
         : '')+
+      '<section class="card section">'+
+        '<div class="row between"><div><h2>メッセージ横断検索</h2><p class="sectionDesc">案件をまたいで、顧客名・案件番号・件名・メッセージ本文を検索します。</p></div></div>'+
+        '<div class="row" style="margin-top:12px;gap:8px">'+
+          '<input id="supportMessageGlobalSearch" placeholder="例：プリンター / エラー番号 / 顧客名" style="flex:1;min-width:240px;padding:11px 12px;border:1px solid var(--line);border-radius:10px">'+
+          '<button id="supportMessageGlobalSearchBtn" class="primary" type="button">メッセージ検索</button>'+
+        '</div>'+
+        '<div id="supportMessageGlobalSearchMsg" class="notice hidden"></div>'+
+        '<div id="supportMessageGlobalSearchResult" style="margin-top:12px"></div>'+
+      '</section>'+
       listToolbar('supportCaseList',data,'status','番号・顧客・件名・機器・契約・担当者',[
         ['deadline_asc','期限が近い順'],['priority_desc','優先度が高い順'],['updated_desc','更新が新しい順'],['created_desc','作成が新しい順']
       ])+
@@ -7890,6 +7899,86 @@
     }
     bindListToolbar('supportCaseList',renderRows);
     renderRows();
+
+    const runGlobalMessageSearch=async()=>{
+      const input=$('#supportMessageGlobalSearch');
+      const btn=$('#supportMessageGlobalSearchBtn');
+      const host=$('#supportMessageGlobalSearchResult');
+      const msg=$('#supportMessageGlobalSearchMsg');
+      const q=(input?.value||'').trim().toLowerCase();
+      if(!q || q.length<2){
+        if(msg) notice('#supportMessageGlobalSearchMsg','2文字以上で検索してください。');
+        return;
+      }
+      if(btn) btn.disabled=true;
+      if(host) host.innerHTML='<div class="empty">検索しています...</div>';
+      if(msg) msg.classList.add('hidden');
+      try{
+        const candidates=[...data]
+          .sort((a,b)=>timeValue(b.last_message_at||b.updated_at)-timeValue(a.last_message_at||a.updated_at))
+          .slice(0,40);
+
+        const details=await Promise.allSettled(candidates.map(t=>rpc('support_ticket_workspace',{p_ticket_id:t.id})));
+        const hits=[];
+        details.forEach((res,idx)=>{
+          if(res.status!=='fulfilled') return;
+          const ticket=candidates[idx];
+          const detail=res.value||{};
+          const meta=[ticket.ticket_number,ticket.customer_name,ticket.subject].map(v=>String(v||'').toLowerCase()).join(' ');
+          (detail.messages||[]).forEach(m=>{
+            const body=String(m.body||'');
+            if(meta.includes(q)||body.toLowerCase().includes(q)){
+              hits.push({
+                ticket_id:ticket.id,
+                ticket_number:ticket.ticket_number,
+                customer_name:ticket.customer_name,
+                subject:ticket.subject,
+                visibility:m.visibility||'customer',
+                body,
+                created_at:m.created_at
+              });
+            }
+          });
+        });
+
+        hits.sort((a,b)=>timeValue(b.created_at)-timeValue(a.created_at));
+        if(!host) return;
+        host.innerHTML=hits.length
+          ? '<div class="supportCaseCards">'+hits.slice(0,30).map((h,idx)=>
+              '<article class="supportCaseCard">'+
+                '<div class="supportCaseCardHead"><div>'+
+                  '<div class="supportCaseCardNo">'+esc(h.ticket_number||'—')+'</div>'+
+                  '<div class="supportCaseCardTitle">'+esc(h.customer_name||'—')+' / '+esc(h.subject||'')+'</div>'+
+                  '<div class="supportCaseBadges"><span class="pill">'+esc(visibilityLabel(h.visibility))+'</span></div>'+
+                '</div><span class="muted">'+esc(dateTimeText(h.created_at))+'</span></div>'+
+                '<p style="white-space:pre-wrap;margin:10px 0;color:#475569">'+esc(h.body.length>320?h.body.slice(0,320)+'…':h.body)+'</p>'+
+                '<div class="supportCaseCardActions"><button class="primary globalMessageHitOpen" type="button" data-ticket-id="'+esc(h.ticket_id)+'">案件で確認</button></div>'+
+              '</article>'
+            ).join('')+'</div>'
+          : '<div class="empty">一致するメッセージはありませんでした。</div>';
+
+        document.querySelectorAll('.globalMessageHitOpen').forEach(openBtn=>openBtn.onclick=async()=>{
+          openBtn.disabled=true;
+          try{
+            await openTicketWorkspace(openBtn.dataset.ticketId);
+            setTimeout(()=>$('#ticketMessageList')?.scrollIntoView({behavior:'smooth',block:'start'}),200);
+          }catch(err){toast(err.message||String(err));}
+          finally{openBtn.disabled=false;}
+        });
+
+        if(msg) notice('#supportMessageGlobalSearchMsg','直近更新の最大40案件を検索しました。'+hits.length+'件見つかりました。',true);
+      }catch(err){
+        if(msg) notice('#supportMessageGlobalSearchMsg',err.message||String(err));
+        if(host) host.innerHTML='';
+      }finally{
+        if(btn) btn.disabled=false;
+      }
+    };
+    $('#supportMessageGlobalSearchBtn')?.addEventListener('click',runGlobalMessageSearch);
+    $('#supportMessageGlobalSearch')?.addEventListener('keydown',e=>{
+      if(e.key==='Enter'){e.preventDefault();runGlobalMessageSearch();}
+    });
+
     document.querySelectorAll('.supportPendingResultOpen').forEach(btn=>btn.onclick=async()=>{
       btn.disabled=true;
       try{
