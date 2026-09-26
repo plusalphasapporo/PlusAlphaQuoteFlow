@@ -7041,7 +7041,9 @@
                 (!customer?'<button id="ticketMessageInternalNote" class="ghost" type="button">'+(support?'サポート内メモ':'社内メモ')+'</button>':'')+
                 '<label class="row" style="gap:6px"><input id="ticketMessageImportant" type="checkbox"> 重要</label>'+
               '</div>'+
-              '<button class="primary" type="submit">メッセージを送信</button>'+
+              (support
+                ? '<div class="row" style="gap:8px"><button id="ticketMessageSendKeep" class="ghost" type="button">送信・継続対応</button><button id="ticketMessageSendRelease" class="primary" type="button">返信完了・担当解除</button></div>'
+                : '<button class="primary" type="submit">メッセージを送信</button>')+
             '</div>'+
           '</form><div id="ticketMessageMsg" class="notice hidden"></div></section>'+
         (!customer?'<section class="section"><h3>引き継ぎ履歴</h3>'+dataTable(internal?['状態','理由','次の対応','作成日','操作']:['状態','理由','次の対応','作成日'],handoffRows)+'</section>':'')+
@@ -7095,9 +7097,20 @@
       messageVisibilityBanner.classList.toggle('replyMismatch',mismatch);
       messageVisibilityBanner.textContent=meta[1]+(mismatch?' 返信先の公開範囲と異なります。送信前に確認してください。':'');
     };
+    const updateMessageActionButtons=()=>{
+      const releaseBtn=$('#ticketMessageSendRelease');
+      if(!releaseBtn||!messageVisibilityEl) return;
+      const customerVisible=messageVisibilityEl.value==='customer';
+      releaseBtn.disabled=!customerVisible;
+      releaseBtn.title=customerVisible?'顧客へ返信後、この案件の担当を解除します。':'担当解除は顧客向け返信のときだけ選べます。';
+    };
     if(messageVisibilityEl){
       updateMessageVisibilityBanner();
-      messageVisibilityEl.addEventListener('change',updateMessageVisibilityBanner);
+      updateMessageActionButtons();
+      messageVisibilityEl.addEventListener('change',()=>{
+        updateMessageVisibilityBanner();
+        updateMessageActionButtons();
+      });
     }
 
     const messageFilesEl=$('#ticketMessageFiles');
@@ -7177,6 +7190,7 @@
       messageBodyEl.addEventListener('keydown',e=>{
         if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){
           e.preventDefault();
+          messageReleaseAfter=false;
           $('#ticketMessageForm')?.requestSubmit();
         }
       });
@@ -7730,9 +7744,19 @@
       };
     }
 
+    let messageReleaseAfter=false;
+    const sendMessageForm=(releaseAfter)=>{
+      messageReleaseAfter=!!releaseAfter;
+      $('#ticketMessageForm')?.requestSubmit();
+    };
+    $('#ticketMessageSendKeep')?.addEventListener('click',()=>sendMessageForm(false));
+    $('#ticketMessageSendRelease')?.addEventListener('click',()=>sendMessageForm(true));
+
     $('#ticketMessageForm').onsubmit=async e=>{
       e.preventDefault();
       const btn=e.submitter;if(btn)btn.disabled=true;
+      $('#ticketMessageSendKeep')?.setAttribute('disabled','disabled');
+      $('#ticketMessageSendRelease')?.setAttribute('disabled','disabled');
       try{
         const rawBody=$('#ticketMessageBody').value.trim();
         const files=[...messagePendingFiles];
@@ -7774,15 +7798,32 @@
         const composed=[replyNote,baseBody,attachmentNote].filter(Boolean).join('\n\n');
         const body=$('#ticketMessageImportant')?.checked?'【重要】\n'+composed:composed;
 
-        await rpc('post_ticket_message',{
-          p_ticket_id:t.id,p_visibility:visibility,p_body:body
-        });
+        const useRelease=support && visibility==='customer' && messageReleaseAfter;
+        if(support){
+          await rpc('post_support_ticket_message',{
+            p_ticket_id:t.id,
+            p_visibility:visibility,
+            p_body:body,
+            p_release_after:useRelease
+          });
+        }else{
+          await rpc('post_ticket_message',{
+            p_ticket_id:t.id,p_visibility:visibility,p_body:body
+          });
+        }
         clearSupportDraft(t.id,'message');
-        notice('#ticketMessageMsg','メッセージを送信しました。'+(files.length?' 添付 '+files.length+'件を追加しました。':''),true);
-        toast(files.length?'メッセージと添付を送信しました':'メッセージを送信しました');
+        notice('#ticketMessageMsg','メッセージを送信しました。'+(useRelease?' 担当を解除しました。':'')+(files.length?' 添付 '+files.length+'件を追加しました。':''),true);
+        toast(useRelease?'返信完了・担当を解除しました':(files.length?'メッセージと添付を送信しました':'メッセージを送信しました'));
+        messageReleaseAfter=false;
         await renderTicketDetail(t.id);
       }catch(err){notice('#ticketMessageMsg',err.message||String(err));}
-      finally{if(btn)btn.disabled=false;}
+      finally{
+        messageReleaseAfter=false;
+        if(btn)btn.disabled=false;
+        $('#ticketMessageSendKeep')?.removeAttribute('disabled');
+        $('#ticketMessageSendRelease')?.removeAttribute('disabled');
+        updateMessageActionButtons();
+      }
     };
 
     if(!customer){
