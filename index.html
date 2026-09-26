@@ -7981,23 +7981,31 @@
             '</section>'
           : '';
 
+        const firstAssistStep=assistSteps[0]||'内容を確認する';
         const aiAssistHtml=evidenceCount
           ? escalationHtml+'<section class="notice ok" style="margin-top:12px">'+
               '<div class="row between" style="gap:10px;align-items:flex-start;flex-wrap:wrap">'+
                 '<div><strong>対応候補</strong><div class="muted" style="margin-top:4px">'+
-                  (aiState==='connected'?'AI連携時も、下記の根拠を回答とセットで表示します。':'現在は根拠検索から作成した対応候補です。AI連携は '+esc(aiStateText)+' です。')+
+                  (aiState==='connected'?'AI連携時も、根拠付きで候補を表示します。':'現在はナレッジ・過去案件から候補を作成しています。')+
                 '</div></div>'+
                 '<span class="pill good">根拠 '+esc(evidenceCount)+'件</span>'+
               '</div>'+
-              '<div style="white-space:pre-wrap;margin-top:10px;line-height:1.7">'+esc(assistAnswer||'該当する根拠を確認して対応してください。')+'</div>'+
-              '<div style="margin-top:14px"><strong>実施手順</strong><div class="muted" style="margin-top:4px">完了した項目をチェックしてください。</div>'+
+              '<div class="item" style="margin-top:10px;border-width:2px">'+
+                '<span class="pill good">まずこれを実施</span>'+
+                '<div style="font-size:1.05rem;font-weight:700;margin-top:8px;line-height:1.6">'+esc(firstAssistStep)+'</div>'+
+                '<div class="supportQuickActions" style="margin-top:10px">'+
+                  '<button id="ticketAssistStartWork" class="primary" type="button">この手順から作業開始</button>'+
+                  '<button id="ticketAssistUseRemote" class="ghost" type="button">TeamViewerで確認</button>'+
+                '</div>'+
+              '</div>'+
+              '<div style="margin-top:14px"><strong>実施手順</strong><div class="muted" style="margin-top:4px">上から順に確認し、終わった項目をチェックしてください。</div>'+
                 '<div id="ticketAssistChecklist" style="margin-top:8px">'+assistSteps.map((step,i)=>
                   '<div class="item" style="margin-bottom:8px">'+
                     '<label class="row" style="gap:10px;align-items:flex-start">'+
                       '<input class="ticketAssistStepCheck" type="checkbox" data-step="'+esc(i)+'" style="margin-top:4px">'+
                       '<span><strong>'+(i+1)+'.</strong> '+esc(step)+'</span>'+
                     '</label>'+
-                    '<textarea class="ticketAssistStepNote" data-step="'+esc(i)+'" rows="2" placeholder="結果・確認内容を入力" style="width:100%;margin-top:8px"></textarea>'+
+                    '<textarea class="ticketAssistStepNote" data-step="'+esc(i)+'" rows="2" placeholder="確認結果・実施結果を入力" style="width:100%;margin-top:8px"></textarea>'+
                     '<div class="supportQuickActions" style="margin-top:8px">'+
                       '<button class="ghost ticketAssistStepFailed" type="button" data-step="'+esc(i)+'">この手順では解決しなかった</button>'+
                     '</div>'+
@@ -8006,21 +8014,18 @@
                 '<div class="supportQuickActions" style="margin-top:10px">'+
                   '<button id="ticketAssistSaveProgress" class="ghost" type="button">進捗を記録</button>'+
                   '<button id="ticketAssistCompleteSteps" class="green" type="button">手順完了</button>'+
+                  '<button id="ticketAssistReplyCustomer" class="ghost" type="button">顧客へ返信</button>'+
                 '</div>'+
               '</div>'+
-              '<div class="supportQuickActions" style="margin-top:12px">'+
-                '<button id="ticketAssistStartWork" class="primary" type="button">この内容で作業開始</button>'+
-                '<button id="ticketAssistReplyCustomer" class="ghost" type="button">顧客へ返信</button>'+
-                '<button id="ticketAssistUseRemote" class="orange" type="button">TeamViewerで対応</button>'+
-              '</div>'+
-              '<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line)">'+
-                '<strong>この回答の根拠</strong>'+
-                '<div class="muted" style="margin-top:6px">'+
+              '<details style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line)">'+
+                '<summary style="cursor:pointer;font-weight:700">根拠・詳細を確認</summary>'+
+                '<div style="white-space:pre-wrap;margin-top:10px;line-height:1.7">'+esc(assistAnswer||'該当する根拠を確認して対応してください。')+'</div>'+
+                '<div class="muted" style="margin-top:8px">'+
                   (topKnowledge?'ナレッジ: '+esc(topKnowledge.title||''):'')+
                   (topKnowledge&&topTicket?' / ':'')+
                   (topTicket?'過去案件: '+esc(topTicket.ticket_number||'—')+' '+esc(topTicket.subject||''):'')+
                 '</div>'+
-              '</div>'+
+              '</details>'+
             '</section>'
           : escalationHtml+'<div class="notice" style="margin-top:12px"><strong>対応候補を作成できませんでした。</strong><br><span class="muted">根拠となるナレッジ・過去案件が見つかっていません。推測で回答は作成しません。</span></div>';
 
