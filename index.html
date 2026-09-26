@@ -1111,6 +1111,83 @@
     }[action]||'');
   }
 
+  function supportAttentionBadge(state){
+    if(state?.support_planned_at){
+      const future=timeValue(state.support_planned_at)>Date.now();
+      return '<span class="pill '+(future?'good':'warn')+'">'+(future?'対応予定 ':'予定時刻超過 ')+esc(dateTimeText(state.support_planned_at))+'</span>';
+    }
+    if(state?.support_acknowledged_at){
+      return '<span class="pill good">確認済み'+(state?.support_acknowledged_user_name?' '+esc(state.support_acknowledged_user_name):'')+'</span>';
+    }
+    return '';
+  }
+
+  function dateTimeLocalInputValue(v){
+    if(!v) return '';
+    const d=new Date(v);
+    if(Number.isNaN(d.getTime())) return '';
+    const pad=n=>String(n).padStart(2,'0');
+    return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes());
+  }
+
+  async function openSupportAttentionPlanDialog(ticketId,state=null){
+    let current=state;
+    if(!current) current=await rpc('support_ticket_next_action_state',{p_ticket_id:ticketId});
+    mountAppModal(
+      '<div class="appModalHead"><div><h2>確認済み・対応予定</h2><p>対応予定時刻までは滞留通知を抑制し、時刻を過ぎると自動で要注意へ戻します。</p></div><button id="supportAttentionClose" class="ghost" type="button">×</button></div>'+
+      '<div class="appModalBody">'+
+        '<label class="row"><input id="supportAttentionAck" type="checkbox" '+(current?.support_acknowledged_at?'checked':'')+'> この案件を確認済みにする</label>'+
+        '<div class="field" style="margin-top:14px"><label>対応予定時刻</label><input id="supportAttentionPlanned" type="datetime-local" value="'+esc(dateTimeLocalInputValue(current?.support_planned_at))+'"><small class="muted">未来の時刻を設定した場合、その時刻まで滞留警告の通知対象から外れます。</small></div>'+
+        '<div class="field"><label>対応予定メモ</label><textarea id="supportAttentionNote" rows="3" maxlength="500" placeholder="例：14時に顧客へ電話、担当者から回答待ち">'+esc(current?.support_attention_note||'')+'</textarea></div>'+
+        (current?.support_acknowledged_at?'<div class="notice ok">確認済み：'+esc(current?.support_acknowledged_user_name||'担当者')+' / '+esc(dateTimeText(current.support_acknowledged_at))+'</div>':'')+
+        '<div id="supportAttentionMsg" class="notice hidden"></div>'+
+      '</div>'+
+      '<div class="appModalFoot"><button id="supportAttentionClear" class="ghost" type="button">設定を解除</button><button id="supportAttentionSave" class="primary" type="button">保存</button></div>'
+    );
+    $('#supportAttentionClose').onclick=closeAppModal;
+    const refreshAfter=async()=>{
+      closeAppModal();
+      try{await setupGlobalHeader();}catch(_){}
+      if(String(activeTicketId||'')===String(ticketId)) await renderTicketDetail(ticketId);
+      else if(currentPage==='support_cases') await renderSupport();
+      else if(currentPage==='home') await renderHome();
+    };
+    $('#supportAttentionSave').onclick=async()=>{
+      const btn=$('#supportAttentionSave');
+      btn.disabled=true;
+      try{
+        const planned=$('#supportAttentionPlanned').value||'';
+        if(planned && new Date(planned).getTime()<=Date.now()){
+          throw new Error('対応予定時刻は現在より後の時刻を指定してください。');
+        }
+        await rpc('set_support_attention_plan',{
+          p_ticket_id:ticketId,
+          p_acknowledged:!!$('#supportAttentionAck').checked,
+          p_planned_at:planned?new Date(planned).toISOString():null,
+          p_note:$('#supportAttentionNote').value.trim()||null
+        });
+        toast(planned?'対応予定を保存しました':'確認状態を保存しました');
+        await refreshAfter();
+      }catch(err){notice('#supportAttentionMsg',err.message||String(err));}
+      finally{btn.disabled=false;}
+    };
+    $('#supportAttentionClear').onclick=async()=>{
+      const btn=$('#supportAttentionClear');
+      btn.disabled=true;
+      try{
+        await rpc('set_support_attention_plan',{
+          p_ticket_id:ticketId,
+          p_acknowledged:false,
+          p_planned_at:null,
+          p_note:null
+        });
+        toast('確認・対応予定を解除しました');
+        await refreshAfter();
+      }catch(err){notice('#supportAttentionMsg',err.message||String(err));}
+      finally{btn.disabled=false;}
+    };
+  }
+
   function supportAssigneeLabel(a){
     if(!a?.support_assigned_user_id) return '未担当';
     if(a.is_mine) return '自分が担当';
@@ -1200,8 +1277,8 @@
       const unansweredWarningCount=Number(unanswered?.warning_count||0);
       const unansweredCriticalCount=Number(unanswered?.critical_count||0);
       const unansweredAlertCount=unansweredAttentionCount+unansweredWarningCount+unansweredCriticalCount;
-      const queueCriticalItems=(nextActionStates||[]).filter(x=>x.alert_level==='critical');
-      const queueWarningItems=(nextActionStates||[]).filter(x=>x.alert_level==='warning');
+      const queueCriticalItems=(nextActionStates||[]).filter(x=>x.alert_level==='critical'&&x.notification_active!==false);
+      const queueWarningItems=(nextActionStates||[]).filter(x=>x.alert_level==='warning'&&x.notification_active!==false);
       const queueCriticalCount=queueCriticalItems.length;
       const queueWarningCount=queueWarningItems.length;
       const queueAlertCount=queueCriticalCount+queueWarningCount;
@@ -1666,7 +1743,7 @@
           }
           lastUnansweredAlertKey=unansweredKey;
 
-          const queueAlerts=(nextActionStates||[]).filter(x=>x.alert_level==='warning'||x.alert_level==='critical');
+          const queueAlerts=(nextActionStates||[]).filter(x=>(x.alert_level==='warning'||x.alert_level==='critical')&&x.notification_active!==false);
           const queueAlertKey=queueAlerts.map(x=>String(x.ticket_id)+':'+String(x.alert_level)).sort().join('|');
           const queueCritical=queueAlerts.filter(x=>x.alert_level==='critical').length;
           const queueWarning=queueAlerts.filter(x=>x.alert_level==='warning').length;
@@ -1790,8 +1867,8 @@
         const unansweredWarningCount=Number(unanswered?.warning_count||0);
         const unansweredCriticalCount=Number(unanswered?.critical_count||0);
         const unansweredAlertCount=unansweredAttentionCount+unansweredWarningCount+unansweredCriticalCount;
-        const queueCriticalCount=(nextActionStates||[]).filter(x=>x.alert_level==='critical').length;
-        const queueWarningCount=(nextActionStates||[]).filter(x=>x.alert_level==='warning').length;
+        const queueCriticalCount=(nextActionStates||[]).filter(x=>x.alert_level==='critical'&&x.notification_active!==false).length;
+        const queueWarningCount=(nextActionStates||[]).filter(x=>x.alert_level==='warning'&&x.notification_active!==false).length;
         const queueAlertCount=queueCriticalCount+queueWarningCount;
         count=Number(unread?.count||0)+Number(handoffUpdates?.count||0)+deadlineCount+Number(callUnread?.count||0)+unansweredAlertCount+queueAlertCount;
         const badge=$('#notificationCount');
@@ -1824,7 +1901,7 @@
         if(Number(cc?.count||0)>0) return go('support_callconnect');
         if(role==='support_staff'){
           const nextActions=await rpc('support_next_action_states').catch(()=>[]);
-          if((nextActions||[]).some(x=>x.alert_level==='warning'||x.alert_level==='critical')){
+          if((nextActions||[]).some(x=>(x.alert_level==='warning'||x.alert_level==='critical')&&x.notification_active!==false)){
             supportQueueView='attention';
             return go('support_cases');
           }
@@ -2178,6 +2255,11 @@
         support_next_action_alert_level:nextActionMap[x.id]?.alert_level||'normal',
         support_next_action_warning_after_seconds:Number(nextActionMap[x.id]?.warning_after_seconds||0),
         support_next_action_critical_after_seconds:Number(nextActionMap[x.id]?.critical_after_seconds||0),
+        support_next_action_notification_active:nextActionMap[x.id]?.notification_active!==false,
+        support_acknowledged_at:nextActionMap[x.id]?.support_acknowledged_at||null,
+        support_acknowledged_user_name:nextActionMap[x.id]?.support_acknowledged_user_name||null,
+        support_planned_at:nextActionMap[x.id]?.support_planned_at||null,
+        support_attention_note:nextActionMap[x.id]?.support_attention_note||null,
         deadline_state:deadlineMap[x.id]?.deadline_state||'unset',
         first_response_due_at:deadlineMap[x.id]?.first_response_due_at||null,
         resolution_due_at:deadlineMap[x.id]?.resolution_due_at||null,
@@ -2289,7 +2371,7 @@
       const topWorkHtml=topWork.length?topWork.map(t=>
         '<div class="supportCompactItem">'+
           '<div><strong>'+esc(t.customer_name||'—')+' / '+esc(t.subject||'')+'</strong>'+
-            '<div class="meta">'+supportRequestTypeBadge(t.request_type)+supportStageBadge(t.support_stage)+supportNextActionBadge(t.support_next_action)+supportQueueAlertBadge(t.support_next_action_alert_level)+'<span class="pill">滞留 '+esc(supportQueueAgeText(t.support_next_action_waiting_seconds))+'</span>'+supportDeadlineBadge(t.deadline_state)+supportAssigneeBadge(t.support_assignment)+'</div>'+
+            '<div class="meta">'+supportRequestTypeBadge(t.request_type)+supportStageBadge(t.support_stage)+supportNextActionBadge(t.support_next_action)+supportQueueAlertBadge(t.support_next_action_notification_active?t.support_next_action_alert_level:'normal')+supportAttentionBadge(t)+'<span class="pill">滞留 '+esc(supportQueueAgeText(t.support_next_action_waiting_seconds))+'</span>'+supportDeadlineBadge(t.deadline_state)+supportAssigneeBadge(t.support_assignment)+'</div>'+
           '</div>'+
           '<button class="primary supportPriorityOpen" type="button" data-id="'+esc(t.id)+'">開く</button>'+
         '</div>'
@@ -2322,10 +2404,10 @@
         '<section class="supportHomeSection"><div class="supportHomeSectionHead"><div><h2>次の行動キュー</h2><p>案件を「次に何をするか」で自動分類しています。</p></div><button id="supportNextQueueAll" class="ghost" type="button">案件一覧</button></div>'+
           '<div class="supportTodayGrid">'+
             '<button class="supportTodayTile danger supportNextQueueOpen" type="button" data-view="immediate"><span>今すぐ対応</span><strong>'+esc(tickets.filter(t=>t.status!=="closed"&&t.support_next_action==="in_progress").length)+'</strong><em>対応・返信が必要</em></button>'+
-            (()=>{const q=tickets.filter(t=>t.status!=="closed"&&t.support_next_action==="customer_reply_waiting");const c=q.filter(t=>t.support_next_action_alert_level==="critical").length;const w=q.filter(t=>t.support_next_action_alert_level==="warning").length;return '<button class="supportTodayTile '+(c?'danger':w?'warn':'')+' supportNextQueueOpen" type="button" data-view="customer_wait"><span>顧客返信待ち</span><strong>'+esc(q.length)+'</strong><em>'+(c?'赤 '+c+'件':w?'黄 '+w+'件':'顧客からの返答待ち')+'</em></button>'})()+
-            (()=>{const q=tickets.filter(t=>t.status!=="closed"&&t.support_next_action==="internal_review_waiting");const c=q.filter(t=>t.support_next_action_alert_level==="critical").length;const w=q.filter(t=>t.support_next_action_alert_level==="warning").length;return '<button class="supportTodayTile '+(c?'danger':w?'warn':'')+' supportNextQueueOpen" type="button" data-view="internal_review"><span>社内確認待ち</span><strong>'+esc(q.length)+'</strong><em>'+(c?'赤 '+c+'件':w?'黄 '+w+'件':'確認後に再対応')+'</em></button>'})()+
-            (()=>{const q=tickets.filter(t=>t.status!=="closed"&&(t.support_next_action==="teamviewer_waiting"||teamviewerPendingIds.has(String(t.id))));const c=q.filter(t=>t.support_next_action_alert_level==="critical").length;const w=q.filter(t=>t.support_next_action_alert_level==="warning").length;return '<button class="supportTodayTile '+(c?'danger':w?'warn':'')+' supportNextQueueOpen" type="button" data-view="teamviewer"><span>TeamViewer待ち</span><strong>'+esc(q.length)+'</strong><em>'+(c?'赤 '+c+'件':w?'黄 '+w+'件':'接続・結果入力')+'</em></button>'})()+
-            (()=>{const q=tickets.filter(t=>t.status!=="closed"&&t.support_next_action==="internal_handoff_waiting");const c=q.filter(t=>t.support_next_action_alert_level==="critical").length;const w=q.filter(t=>t.support_next_action_alert_level==="warning").length;return '<button class="supportTodayTile '+(c?'danger':w?'warn':'')+' supportNextQueueOpen" type="button" data-view="handoff"><span>自社引継ぎ待ち</span><strong>'+esc(q.length)+'</strong><em>'+(c?'赤 '+c+'件':w?'黄 '+w+'件':'自社側の対応待ち')+'</em></button>'})()+
+            (()=>{const q=tickets.filter(t=>t.status!=="closed"&&t.support_next_action==="customer_reply_waiting");const c=q.filter(t=>t.support_next_action_alert_level==="critical"&&t.support_next_action_notification_active).length;const w=q.filter(t=>t.support_next_action_alert_level==="warning"&&t.support_next_action_notification_active).length;return '<button class="supportTodayTile '+(c?'danger':w?'warn':'')+' supportNextQueueOpen" type="button" data-view="customer_wait"><span>顧客返信待ち</span><strong>'+esc(q.length)+'</strong><em>'+(c?'赤 '+c+'件':w?'黄 '+w+'件':'顧客からの返答待ち')+'</em></button>'})()+
+            (()=>{const q=tickets.filter(t=>t.status!=="closed"&&t.support_next_action==="internal_review_waiting");const c=q.filter(t=>t.support_next_action_alert_level==="critical"&&t.support_next_action_notification_active).length;const w=q.filter(t=>t.support_next_action_alert_level==="warning"&&t.support_next_action_notification_active).length;return '<button class="supportTodayTile '+(c?'danger':w?'warn':'')+' supportNextQueueOpen" type="button" data-view="internal_review"><span>社内確認待ち</span><strong>'+esc(q.length)+'</strong><em>'+(c?'赤 '+c+'件':w?'黄 '+w+'件':'確認後に再対応')+'</em></button>'})()+
+            (()=>{const q=tickets.filter(t=>t.status!=="closed"&&(t.support_next_action==="teamviewer_waiting"||teamviewerPendingIds.has(String(t.id))));const c=q.filter(t=>t.support_next_action_alert_level==="critical"&&t.support_next_action_notification_active).length;const w=q.filter(t=>t.support_next_action_alert_level==="warning"&&t.support_next_action_notification_active).length;return '<button class="supportTodayTile '+(c?'danger':w?'warn':'')+' supportNextQueueOpen" type="button" data-view="teamviewer"><span>TeamViewer待ち</span><strong>'+esc(q.length)+'</strong><em>'+(c?'赤 '+c+'件':w?'黄 '+w+'件':'接続・結果入力')+'</em></button>'})()+
+            (()=>{const q=tickets.filter(t=>t.status!=="closed"&&t.support_next_action==="internal_handoff_waiting");const c=q.filter(t=>t.support_next_action_alert_level==="critical"&&t.support_next_action_notification_active).length;const w=q.filter(t=>t.support_next_action_alert_level==="warning"&&t.support_next_action_notification_active).length;return '<button class="supportTodayTile '+(c?'danger':w?'warn':'')+' supportNextQueueOpen" type="button" data-view="handoff"><span>自社引継ぎ待ち</span><strong>'+esc(q.length)+'</strong><em>'+(c?'赤 '+c+'件':w?'黄 '+w+'件':'自社側の対応待ち')+'</em></button>'})()+
           '</div>'+
         '</section>'+
         ((unreadItems.length||handoffUpdateItems.length)?'<section class="supportHomeSection"><div class="supportHomeSectionHead"><div><h2>新着</h2><p>未確認だけ表示します。</p></div><span class="hold">'+esc(unreadItems.length+handoffUpdateItems.length)+'件</span></div>'+
@@ -6859,9 +6941,10 @@
     })():'—';
     const assistSectionNo=internal?'02':'01';
     const supportStageControl=support && t.status!=='closed'
-      ? '<div class="notice"><div class="row between"><div><strong>現在の対応工程</strong><div style="margin-top:6px">'+supportStageBadge(supportStage)+'</div><div style="margin-top:8px"><strong>次の行動：</strong> '+supportNextActionBadge(nextActionState?.support_next_action||'in_progress')+' '+supportQueueAlertBadge(nextActionState?.alert_level||'normal')+' <span class="pill">滞留 '+esc(supportQueueAgeText(nextActionState?.waiting_seconds||0))+'</span><div class="muted" style="margin-top:4px">'+esc(supportQueueThresholdText(nextActionState?.support_next_action||''))+'</div></div><div style="margin-top:8px"><strong>サポート担当：</strong> '+supportAssigneeBadge(assignmentState)+'</div></div><div class="supportQuickActions">'+
+      ? '<div class="notice"><div class="row between"><div><strong>現在の対応工程</strong><div style="margin-top:6px">'+supportStageBadge(supportStage)+'</div><div style="margin-top:8px"><strong>次の行動：</strong> '+supportNextActionBadge(nextActionState?.support_next_action||'in_progress')+' '+supportQueueAlertBadge(nextActionState?.notification_active!==false?(nextActionState?.alert_level||'normal'):'normal')+' <span class="pill">滞留 '+esc(supportQueueAgeText(nextActionState?.waiting_seconds||0))+'</span><div class="muted" style="margin-top:4px">'+esc(supportQueueThresholdText(nextActionState?.support_next_action||''))+'</div></div><div style="margin-top:8px"><strong>対応管理：</strong> '+(supportAttentionBadge(nextActionState)||'<span class="pill">未設定</span>')+(nextActionState?.support_attention_note?'<div class="muted" style="margin-top:4px">'+esc(nextActionState.support_attention_note)+'</div>':'')+'</div><div style="margin-top:8px"><strong>サポート担当：</strong> '+supportAssigneeBadge(assignmentState)+'</div></div><div class="supportQuickActions">'+
           (!assignmentState?.support_assigned_user_id?'<button id="ticketClaimSupport" class="primary" type="button">自分が担当する</button>':'')+
           (assignmentState?.is_mine?'<button id="ticketReleaseSupport" class="ghost" type="button">担当を解除</button>':'')+
+          '<button id="ticketAttentionPlan" class="ghost" type="button">確認・対応予定</button>'+
           (supportStage==='unhandled'?'<button id="ticketStageStart" class="primary" type="button">対応開始</button>':'')+
           (supportStage==='in_progress'?'<button id="ticketStageRemoteWait" class="orange" type="button">TeamViewer待ちにする</button>':'')+
           (supportStage==='teamviewer_waiting'?'<button id="ticketStageResume" class="primary" type="button">対応中に戻す</button>':'')+
@@ -7631,6 +7714,9 @@
         }catch(err){notice('#ticketActionMsg',err.message||String(err));}
         finally{claimBtn.disabled=false;}
       };
+      const attentionPlanBtn=$('#ticketAttentionPlan');
+      if(attentionPlanBtn) attentionPlanBtn.onclick=()=>openSupportAttentionPlanDialog(t.id,nextActionState);
+
       const releaseBtn=$('#ticketReleaseSupport');
       if(releaseBtn) releaseBtn.onclick=async()=>{
         releaseBtn.disabled=true;
@@ -8319,7 +8405,7 @@
           if(view==='internal_review' && !(t.status!=='closed'&&t.support_next_action==='internal_review_waiting')) return false;
           if(view==='teamviewer' && !(t.status!=='closed'&&(t.support_next_action==='teamviewer_waiting'||t.teamviewer_result_pending))) return false;
           if(view==='handoff' && !(t.status!=='closed'&&t.support_next_action==='internal_handoff_waiting')) return false;
-          if(view==='attention' && !(t.status!=='closed' && (t.support_next_action_alert_level==='critical'||t.support_next_action_alert_level==='warning'||t.teamviewer_result_pending||t.deadline_state==='overdue'||t.deadline_state==='due_today'||t.priority==='urgent'||t.support_stage==='support_review_waiting'))) return false;
+          if(view==='attention' && !(t.status!=='closed' && (((t.support_next_action_alert_level==='critical'||t.support_next_action_alert_level==='warning')&&t.support_next_action_notification_active)||t.teamviewer_result_pending||t.deadline_state==='overdue'||t.deadline_state==='due_today'||t.priority==='urgent'||t.support_stage==='support_review_waiting'))) return false;
           if(view==='mine' && !(t.status!=='closed'&&t.support_assignment?.is_mine)) return false;
           if(view==='all_open' && t.status==='closed') return false;
           if(view==='closed' && t.status!=='closed') return false;
@@ -8331,7 +8417,7 @@
       });
       filtered=[...filtered].sort((a,b)=>{
         if(state.sort==='queue_priority'&&support){
-          const alertRank=t=>t.support_next_action_alert_level==='critical'?0:t.support_next_action_alert_level==='warning'?1:2;
+          const alertRank=t=>t.support_next_action_notification_active&&t.support_next_action_alert_level==='critical'?0:t.support_next_action_notification_active&&t.support_next_action_alert_level==='warning'?1:t.support_planned_at?2:3;
           const ar=alertRank(a)-alertRank(b);
           if(ar!==0) return ar;
           const queueRank=t=>{
@@ -8382,7 +8468,7 @@
       if(support){
         $('#supportCaseListHost').innerHTML=filtered.length
           ? '<div class="supportCaseCards">'+filtered.map(t=>{
-              const cardClass=t.support_next_action_alert_level==='critical'?'queue-critical':t.support_next_action_alert_level==='warning'?'queue-warning':t.teamviewer_result_pending?'pending-result':t.priority==='urgent'?'urgent':t.priority==='high'?'high':t.support_stage==='teamviewer_waiting'?'remote':'';
+              const cardClass=t.support_next_action_notification_active&&t.support_next_action_alert_level==='critical'?'queue-critical':t.support_next_action_notification_active&&t.support_next_action_alert_level==='warning'?'queue-warning':t.teamviewer_result_pending?'pending-result':t.priority==='urgent'?'urgent':t.priority==='high'?'high':t.support_stage==='teamviewer_waiting'?'remote':'';
               return '<article class="supportCaseCard '+cardClass+'">'+
                 '<div class="supportCaseCardHead">'+
                   '<div>'+
@@ -8393,7 +8479,8 @@
                       supportRequestTypeBadge(t.request_type)+
                       supportStageBadge(t.support_stage)+
                       supportNextActionBadge(t.support_next_action)+
-                      supportQueueAlertBadge(t.support_next_action_alert_level)+
+                      supportQueueAlertBadge(t.support_next_action_notification_active?t.support_next_action_alert_level:'normal')+
+                      supportAttentionBadge(t)+
                       supportDeadlineBadge(t.deadline_state)+
                       (t.teamviewer_result_pending?'<span class="hold">TV結果未入力</span>':'')+
                       (t.priority==='urgent'?'<span class="hold">緊急</span>':t.priority==='high'?'<span class="pill warn">高優先度</span>':'')+
@@ -8408,8 +8495,9 @@
                   '<div class="supportCaseFact"><span>自社担当</span><strong>'+esc(t.assigned_internal_user_name||'未設定')+'</strong></div>'+
                   '<div class="supportCaseFact"><span>次の行動</span><strong>'+esc(supportNextActionLabel(t.support_next_action))+'</strong></div>'+
                   '<div class="supportCaseFact"><span>滞留時間</span><strong>'+esc(supportQueueAgeText(t.support_next_action_waiting_seconds))+'</strong><small class="muted">'+esc(supportQueueThresholdText(t.support_next_action))+'</small></div>'+
+                  '<div class="supportCaseFact"><span>対応管理</span><strong>'+(t.support_planned_at?'対応予定 '+esc(dateTimeText(t.support_planned_at)):t.support_acknowledged_at?'確認済み':'未設定')+'</strong>'+(t.support_attention_note?'<small class="muted">'+esc(t.support_attention_note)+'</small>':'')+'</div>'+
                 '</div>'+
-                '<div class="supportCaseCardActions"><button class="primary ticketDetail" type="button" data-id="'+esc(t.id)+'">'+(t.status!=='closed'&&t.support_stage==='unhandled'?'対応を開始':'案件カルテを開く')+'</button></div>'+
+                '<div class="supportCaseCardActions"><button class="ghost supportAttentionPlanOpen" type="button" data-id="'+esc(t.id)+'">確認・予定</button><button class="primary ticketDetail" type="button" data-id="'+esc(t.id)+'">'+(t.status!=='closed'&&t.support_stage==='unhandled'?'対応を開始':'案件カルテを開く')+'</button></div>'+
               '</article>';
             }).join('')+'</div>'
           : '<div class="empty">該当する案件はありません。</div>';
@@ -8423,7 +8511,7 @@
               '<td>'+supportAssigneeBadge(t.support_assignment)+'</td>'+
               '<td>'+supportStageBadge(t.support_stage)+(t.teamviewer_result_pending?'<br><span class="hold">TV結果未入力</span>':'')+'</td>'+
               '<td>'+supportNextActionBadge(t.support_next_action)+'</td>'+
-              '<td><strong>'+esc(supportQueueAgeText(t.support_next_action_waiting_seconds))+'</strong><br>'+supportQueueAlertBadge(t.support_next_action_alert_level)+'</td>'+
+              '<td><strong>'+esc(supportQueueAgeText(t.support_next_action_waiting_seconds))+'</strong><br>'+supportQueueAlertBadge(t.support_next_action_notification_active?t.support_next_action_alert_level:'normal')+supportAttentionBadge(t)+'</td>'+
               '<td>'+supportDeadlineBadge(t.deadline_state)+'</td>'+
               '<td>'+esc(t.customer_name||'—')+'</td>'+
               '<td>'+esc(t.subject||'')+'</td>'+
@@ -8438,6 +8526,14 @@
         );
       }
       document.querySelectorAll('.ticketDetail').forEach(btn=>btn.onclick=async()=>{btn.disabled=true;try{if(bootData?.context?.role==='customer_user') await renderTicketDetail(btn.dataset.id); else await openTicketWorkspace(btn.dataset.id);}catch(err){toast(err.message||String(err));}finally{btn.disabled=false;}});
+      document.querySelectorAll('.supportAttentionPlanOpen').forEach(btn=>btn.onclick=async()=>{
+        btn.disabled=true;
+        try{
+          const ticket=data.find(x=>String(x.id)===String(btn.dataset.id));
+          await openSupportAttentionPlanDialog(btn.dataset.id,ticket||null);
+        }catch(err){toast(err.message||String(err));}
+        finally{btn.disabled=false;}
+      });
     };
     if(support){
       const setSupportQueueView=(view)=>{
