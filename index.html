@@ -7819,10 +7819,13 @@
               '<div style="white-space:pre-wrap;margin-top:10px;line-height:1.7">'+esc(assistAnswer||'該当する根拠を確認して対応してください。')+'</div>'+
               '<div style="margin-top:14px"><strong>実施手順</strong><div class="muted" style="margin-top:4px">完了した項目をチェックしてください。</div>'+
                 '<div id="ticketAssistChecklist" style="margin-top:8px">'+assistSteps.map((step,i)=>
-                  '<label class="item row" style="gap:10px;align-items:flex-start;margin-bottom:8px">'+
-                    '<input class="ticketAssistStepCheck" type="checkbox" data-step="'+esc(i)+'" style="margin-top:4px">'+
-                    '<span><strong>'+(i+1)+'.</strong> '+esc(step)+'</span>'+
-                  '</label>'
+                  '<div class="item" style="margin-bottom:8px">'+
+                    '<label class="row" style="gap:10px;align-items:flex-start">'+
+                      '<input class="ticketAssistStepCheck" type="checkbox" data-step="'+esc(i)+'" style="margin-top:4px">'+
+                      '<span><strong>'+(i+1)+'.</strong> '+esc(step)+'</span>'+
+                    '</label>'+
+                    '<textarea class="ticketAssistStepNote" data-step="'+esc(i)+'" rows="2" placeholder="結果・確認内容を入力" style="width:100%;margin-top:8px"></textarea>'+
+                  '</div>'
                 ).join('')+'</div>'+
                 '<div class="supportQuickActions" style="margin-top:10px">'+
                   '<button id="ticketAssistSaveProgress" class="ghost" type="button">進捗を記録</button>'+
@@ -7878,23 +7881,34 @@
         host.innerHTML=aiAssistHtml+knowledgeHtml+ticketHtml;
 
         const assistStepStateKey='quoteflow:assist-steps:'+String(t.id);
+        const readAssistStepState=()=>assistSteps.map((_,i)=>({
+          done:!!document.querySelector('.ticketAssistStepCheck[data-step="'+i+'"]')?.checked,
+          note:String(document.querySelector('.ticketAssistStepNote[data-step="'+i+'"]')?.value||'').trim()
+        }));
+        const saveAssistStepState=()=>{
+          try{localStorage.setItem(assistStepStateKey,JSON.stringify(readAssistStepState()));}catch(_){}
+        };
         try{
           const saved=JSON.parse(localStorage.getItem(assistStepStateKey)||'[]');
-          document.querySelectorAll('.ticketAssistStepCheck').forEach((el,i)=>{el.checked=!!saved[i];});
+          document.querySelectorAll('.ticketAssistStepCheck').forEach((el,i)=>{
+            el.checked=typeof saved[i]==='object'?!!saved[i]?.done:!!saved[i];
+          });
+          document.querySelectorAll('.ticketAssistStepNote').forEach((el,i)=>{
+            el.value=typeof saved[i]==='object'?String(saved[i]?.note||''):'';
+          });
         }catch(_){}
-
-        const readAssistStepState=()=>[...document.querySelectorAll('.ticketAssistStepCheck')].map(el=>!!el.checked);
-        document.querySelectorAll('.ticketAssistStepCheck').forEach(el=>el.addEventListener('change',()=>{
-          try{localStorage.setItem(assistStepStateKey,JSON.stringify(readAssistStepState()));}catch(_){}
-        }));
+        document.querySelectorAll('.ticketAssistStepCheck,.ticketAssistStepNote').forEach(el=>{
+          el.addEventListener('change',saveAssistStepState);
+          el.addEventListener('input',saveAssistStepState);
+        });
 
         const assistSaveProgress=$('#ticketAssistSaveProgress');
         if(assistSaveProgress) assistSaveProgress.onclick=async()=>{
           assistSaveProgress.disabled=true;
           try{
             const state=readAssistStepState();
-            const done=state.filter(Boolean).length;
-            const lines=assistSteps.map((step,i)=>(state[i]?'☑ ':'☐ ')+(i+1)+'. '+step).join('\n');
+            const done=state.filter(x=>x.done).length;
+            const lines=assistSteps.map((step,i)=>(state[i]?.done?'☑ ':'☐ ')+(i+1)+'. '+step+(state[i]?.note?'\n   結果: '+state[i].note:'')).join('\n');
             await rpc('post_ticket_message',{
               p_ticket_id:t.id,
               p_visibility:'support',
@@ -8296,6 +8310,23 @@
         );
         $('#workReportClose').onclick=closeAppModal;
         $('#workReportCancel').onclick=closeAppModal;
+        try{
+          const savedSteps=JSON.parse(localStorage.getItem('quoteflow:assist-steps:'+String(t.id))||'[]');
+          const normalized=assistSteps.map((step,i)=>({
+            step,
+            done:typeof savedSteps[i]==='object'?!!savedSteps[i]?.done:!!savedSteps[i],
+            note:typeof savedSteps[i]==='object'?String(savedSteps[i]?.note||'').trim():''
+          }));
+          const completed=normalized.filter(x=>x.done);
+          const withNotes=normalized.filter(x=>x.note);
+          if(completed.length || withNotes.length){
+            $('#workReportAction').value=normalized.map((x,i)=>
+              (x.done?'完了':'未完了')+' '+(i+1)+'. '+x.step+(x.note?'\n結果: '+x.note:'')
+            ).join('\n\n');
+            const confirmed=withNotes.map((x,i)=>x.note).filter(Boolean);
+            if(confirmed.length) $('#workReportCause').value=confirmed.join('\n');
+          }
+        }catch(_){} 
         bindSupportDraftInputs(t.id,'work_report',{
           action:'#workReportAction',
           cause:'#workReportCause',
@@ -8356,6 +8387,7 @@
 
             await rpc('close_support_ticket',{p_ticket_id:t.id});
             clearSupportDraft(t.id,'work_report');
+            try{localStorage.removeItem('quoteflow:assist-steps:'+String(t.id));}catch(_){}
             clearSupportDraft(t.id,'handoff');
             clearSupportDraft(t.id,'message');
             closeAppModal();
