@@ -117,6 +117,30 @@
     .supportTicketFact span{display:block;font-size:11px;color:var(--muted);font-weight:800}.supportTicketFact strong{display:block;margin-top:4px;font-size:14px}
     @media(max-width:900px){.supportTicketFacts{grid-template-columns:repeat(2,minmax(0,1fr))}.supportTicketTopbar{top:72px}}
     @media(max-width:640px){.supportTicketFacts{grid-template-columns:1fr}.supportTicketTopbar{position:static}.supportTicketTopbar .supportQuickActions{width:100%}.supportTicketTopbar .supportQuickActions button{flex:1}}
+    .supportReceptionBar{background:#0f2748;color:#fff;border-radius:18px;padding:18px;margin:14px 0;box-shadow:0 14px 34px rgba(15,39,72,.16)}
+    .supportReceptionBar h2{margin:0;font-size:21px}.supportReceptionBar .sectionDesc{color:#c9d8ec}
+    .supportReceptionBar .supportPhoneLookup{border-color:#34577f;background:#fff;color:var(--ink)}
+    .supportReceptionActions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+    .supportTodayBoard{margin:14px 0}
+    .supportTodayHead{display:flex;justify-content:space-between;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px}
+    .supportTodayHead h2{margin:0}.supportTodayHead p{margin:3px 0 0;color:var(--muted);font-size:13px}
+    .supportTodayGrid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+    .supportTodayTile{display:block;text-align:left;border:1px solid var(--line);background:#fff;border-radius:15px;padding:14px;min-height:100px}
+    .supportTodayTile span{display:block;color:var(--muted);font-size:11px;font-weight:900}
+    .supportTodayTile strong{display:block;font-size:28px;line-height:1;margin-top:12px}
+    .supportTodayTile em{display:block;margin-top:8px;color:#64748b;font-size:11px;font-style:normal;font-weight:700}
+    .supportTodayTile.danger{border-color:#fecaca;background:#fffafa}.supportTodayTile.danger strong{color:#b91c1c}
+    .supportTodayTile.warn{border-color:#fed7aa;background:#fffbeb}.supportTodayTile.warn strong{color:#c2410c}
+    .supportHomeSection{background:#fff;border:1px solid var(--line);border-radius:18px;padding:18px;margin-top:14px}
+    .supportHomeSectionHead{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+    .supportHomeSectionHead h2{margin:0}.supportHomeSectionHead p{margin:4px 0 0;color:var(--muted);font-size:13px}
+    .supportPriorityCase{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:center;border-top:1px solid #edf1f6;padding:13px 0}
+    .supportPriorityCase:first-child{border-top:0}
+    .supportPriorityCase .title{font-size:15px;font-weight:900;color:#0f172a}
+    .supportPriorityCase .sub{color:var(--muted);font-size:12px;margin-top:4px}
+    .supportPriorityCase .badges{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}
+    @media(max-width:1100px){.supportTodayGrid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+    @media(max-width:680px){.supportTodayGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
     .supportCaseCards{display:grid;gap:10px;margin-top:12px}
     .supportCaseCard{border:1px solid var(--line);border-left:5px solid #94a3b8;border-radius:16px;background:#fff;padding:15px;box-shadow:0 4px 15px rgba(15,23,42,.04)}
     .supportCaseCard.urgent{border-left-color:#dc2626}.supportCaseCard.high{border-left-color:#f59e0b}.supportCaseCard.remote{border-left-color:#ea580c}.supportCaseCard.pending-result{border-left-color:#b91c1c;background:#fffafa}
@@ -1983,81 +2007,30 @@
         '</div>'
       ).join(''):'<div class="empty">通話履歴はまだありません。</div>';
       home.innerHTML=
-        pageIntro('受付・対応','電話・チャットを受けたら、ここから顧客確認 → 受付 → 対応 → 引継ぎまで進めます。')+
-        '<div class="supportConsoleHero">'+
-          '<section class="supportPhonePanel">'+
-            '<div class="row between"><div><h2>電話受付</h2><p class="sectionDesc">CallConnectとQuoteFlowを並行して使う受付画面です。</p></div><span class="pill '+(callconnectDash?.integration_state==='connected'?'good':'warn')+'">'+esc(callconnectDash?.integration_state==='connected'?'CallConnect接続済み':'接続確認')+'</span></div>'+
-            '<div class="supportPhoneLookup">'+
-              '<div class="supportPhoneLookupForm">'+
-                '<div class="field"><label>電話番号で顧客検索</label><input id="supportPhoneLookupInput" inputmode="tel" autocomplete="off" placeholder="例：0111234567 / 09012345678"></div>'+
-                '<button id="supportPhoneLookupBtn" class="primary" type="button">検索</button>'+
-              '</div>'+
-              '<div id="supportPhoneLookupMsg" class="notice hidden"></div>'+
-              '<div id="supportPhoneLookupResult" class="supportPhoneLookupResult"></div>'+
-            '</div>'+
-            '<div class="supportQuickActions">'+
-              '<button id="supportOpenCallConnectApp" class="primary" type="button">CallConnectを開く</button>'+
-              '<button id="supportOpenCallHistory" class="ghost" type="button">通話履歴</button>'+
-              '<button id="supportNewFromHome" class="green" type="button">＋ 新規受付</button>'+
-            '</div>'+
-            '<div class="supportPhoneLatest">'+
-              '<span class="pill">直近の電話</span>'+
-              (latestCall
-                ? '<div style="margin-top:9px"><strong>'+esc(latestCall.matched_customer_name||latestCall.contact_company||latestCall.contact_name||latestCall.contact_number||'電話番号未取得')+'</strong><small>'+esc(callStatusMap[latestCall.record_status]||'通話')+' / '+esc(latestCall.contact_number||'—')+' / '+esc(dateTimeText(latestCall.call_ended_at||latestCall.received_at))+'</small></div>'
-                : '<div class="muted" style="margin-top:9px">まだ通話履歴はありません。</div>')+
-            '</div>'+
-          '</section>'+
-          '<section class="supportActionPanel">'+
-            '<div class="row between"><div><h2 style="margin:0">現在の対応</h2><p class="sectionDesc">件数を見て、必要な案件だけ開きます。</p></div><button id="supportCasesFromHome" class="ghost" type="button">案件一覧</button></div>'+
-            '<div class="supportActionGrid">'+
-              '<button class="supportActionTile supportGoCases" type="button"><span>未対応の障害</span><strong>'+esc(unhandledIncidents.length)+'</strong></button>'+
-              '<button class="supportActionTile supportGoCases" type="button"><span>自分の担当</span><strong>'+esc(tickets.filter(t=>t.status!=='closed'&&t.support_assignment?.is_mine).length)+'</strong></button>'+
-              '<button class="supportActionTile supportGoCases" type="button"><span>TeamViewer待ち</span><strong>'+esc(remoteWaiting.length)+'</strong></button>'+
-              '<button id="supportTeamViewerPendingTile" class="supportActionTile '+(teamviewerPendingItems.length?'warn':'')+'" type="button"><span>TeamViewer結果未入力</span><strong>'+esc(teamviewerPendingItems.length)+'</strong></button>'+
-              '<button class="supportActionTile supportGoCases" type="button"><span>自社引継ぎ待ち</span><strong>'+esc(handoffWaiting.length)+'</strong></button>'+
-            '</div>'+
-          '</section>'+
-        '</div>'+
-        ((unreadItems.length||handoffUpdateItems.length)
-          ? '<section class="card section"><div class="row between"><div><h2>新着</h2><p class="sectionDesc">未確認の案件・引継ぎ更新だけ表示します。</p></div><div class="row">'+
-              (unreadItems.length?'<span class="hold">新着案件 '+esc(unreadItems.length)+'</span>':'')+
-              (handoffUpdateItems.length?'<span class="pill warn">引継ぎ更新 '+esc(handoffUpdateItems.length)+'</span>':'')+
-            '</div></div>'+
-            (unreadItems.slice(0,4).map(t=>'<div class="supportCompactItem"><div><strong>'+esc(t.customer_name||'—')+' / '+esc(t.subject||'')+'</strong><small>'+esc(t.source_label||supportRequestTypeLabel(t.request_type))+' / '+esc(dateTimeText(t.created_at))+'</small></div><button class="primary supportUnreadOpen" type="button" data-id="'+esc(t.id)+'">対応開始</button></div>').join(''))+
-            (handoffUpdateItems.slice(0,3).map(h=>'<div class="supportCompactItem"><div><strong>'+esc(h.customer_name||'—')+' / '+esc(h.subject||'')+'</strong><small>'+esc(h.handoff_state==='accepted'?'自社対応開始':'自社対応完了')+'</small></div><button class="linkBtn supportHandoffUpdateOpen" type="button" data-handoff-id="'+esc(h.handoff_id)+'" data-ticket-id="'+esc(h.ticket_id)+'">確認</button></div>').join(''))+
-          '</section>'
-          : '')+
-        (teamviewerPendingItems.length
-          ? '<section class="card section"><div class="row between"><div><h2>TeamViewer結果未入力</h2><p class="sectionDesc">遠隔対応は終了しています。対応結果を保存するまで案件を完了扱いにしません。</p></div><span class="hold">'+esc(teamviewerPendingItems.length)+'件</span></div>'+
-              teamviewerPendingItems.slice(0,8).map(x=>
-                '<div class="supportCompactItem">'+
-                  '<div><strong>'+esc(x.customer_name||'—')+' / '+esc(x.subject||'')+'</strong>'+
-                    '<small>'+esc(x.ticket_number||'—')+' / セッション '+esc(x.session_code||'—')+' / 終了 '+esc(dateTimeText(x.session_closed_at||x.session_updated_at))+'</small></div>'+
-                  '<button class="primary supportTeamViewerPendingOpen" type="button" data-id="'+esc(x.ticket_id)+'">結果を入力</button>'+
-                '</div>'
-              ).join('')+
-            '</section>'
-          : '')+
-        '<div class="supportDeskGrid">'+
-          '<section class="card" style="margin:0"><div class="row between"><div><h2>今すぐ対応する案件</h2><p class="sectionDesc">期限・障害・緊急度・担当状況から自動で優先表示します。</p></div><span class="pill">'+esc(topWork.length)+'件表示</span></div><div class="supportCompactList">'+topWorkHtml+'</div></section>'+
-          '<section class="card" style="margin:0"><div class="row between"><div><h2>最近の電話</h2><p class="sectionDesc">CallConnectの直近履歴です。</p></div><button id="supportCallHistoryMore" class="ghost" type="button">すべて見る</button></div>'+recentCallHtml+'</section>'+
-        '</div>'+
-        ((overdueTickets.length||dueTodayTickets.length)
-          ? '<section class="card section"><div class="row between"><div><h2>期限アラート</h2><p class="sectionDesc">期限超過と本日期限だけを表示します。</p></div><div class="row"><span class="hold">超過 '+esc(overdueTickets.length)+'</span><span class="pill warn">本日 '+esc(dueTodayTickets.length)+'</span></div></div>'+
-            dataTable(['期限','案件','顧客','初動期限','完了目標','操作'],deadlineAttention.filter(t=>t.deadline_state==='overdue'||t.deadline_state==='due_today').slice(0,6).map(t=>
-              '<tr><td>'+supportDeadlineBadge(t.deadline_state)+'</td><td><strong>'+esc(t.ticket_number||'—')+'</strong><br><span class="muted">'+esc(t.subject||'')+'</span></td><td>'+esc(t.customer_name||'—')+'</td><td>'+esc(dateTimeText(t.first_response_due_at))+'</td><td>'+esc(dateTimeText(t.resolution_due_at))+'</td><td><button class="linkBtn supportDeadlineOpen" type="button" data-id="'+esc(t.id)+'">開く</button></td></tr>'
-            ))+
-          '</section>'
-          : '')+
-        '<section class="card section"><div class="row between"><div><h2>対応の流れ</h2><p class="sectionDesc">迷ったらこの順番で進めます。</p></div></div>'+
-          '<div class="supportFlow">'+
-            '<div class="supportStep active"><span class="supportStepNum">1</span><strong>受付</strong><small>電話 / チャット</small></div>'+
-            '<div class="supportStep"><span class="supportStepNum">2</span><strong>顧客・機器確認</strong><small>履歴・写真・契約</small></div>'+
-            '<div class="supportStep"><span class="supportStepNum">3</span><strong>AI・ナレッジ</strong><small>解決手順を確認</small></div>'+
-            '<div class="supportStep"><span class="supportStepNum">4</span><strong>TeamViewer</strong><small>必要時のみ遠隔</small></div>'+
-            '<div class="supportStep"><span class="supportStepNum">5</span><strong>完了 / 引継ぎ</strong><small>解決または自社へ</small></div>'+
-          '</div>'+
-        '</section>';
+        pageIntro('サポートTOP','受付と、今日やるべき案件だけを表示します。')+
+        '<section class="supportReceptionBar">'+
+          '<div class="row between"><div><h2>受付</h2><p class="sectionDesc">電話番号から顧客を確認し、そのまま受付へ進めます。</p></div><span class="pill '+(callconnectDash?.integration_state==='connected'?'good':'warn')+'">'+esc(callconnectDash?.integration_state==='connected'?'CallConnect 接続済み':'CallConnect 接続確認')+'</span></div>'+
+          '<div class="supportPhoneLookup"><div class="supportPhoneLookupForm"><div class="field"><label>電話番号で顧客検索</label><input id="supportPhoneLookupInput" inputmode="tel" autocomplete="off" placeholder="0111234567 / 09012345678"></div><button id="supportPhoneLookupBtn" class="primary" type="button">顧客を検索</button></div><div id="supportPhoneLookupMsg" class="notice hidden"></div><div id="supportPhoneLookupResult" class="supportPhoneLookupResult"></div></div>'+
+          '<div class="supportReceptionActions"><button id="supportNewFromHome" class="green" type="button">＋ 新規受付</button><button id="supportOpenCallConnectApp" class="primary" type="button">CallConnectを開く</button><button id="supportOpenCallHistory" class="ghost" type="button">通話履歴</button><button id="supportCasesFromHome" class="ghost" type="button">案件一覧</button></div>'+
+        '</section>'+
+        '<section class="supportTodayBoard"><div class="supportTodayHead"><div><h2>今日やること</h2><p>数字を押して案件一覧へ移動します。</p></div></div><div class="supportTodayGrid">'+
+          '<button class="supportTodayTile danger supportGoCases" type="button"><span>未対応の障害</span><strong>'+esc(unhandledIncidents.length)+'</strong><em>まず確認</em></button>'+
+          '<button class="supportTodayTile supportGoCases" type="button"><span>自分の担当</span><strong>'+esc(tickets.filter(t=>t.status!=='closed'&&t.support_assignment?.is_mine).length)+'</strong><em>対応中</em></button>'+
+          '<button class="supportTodayTile '+(overdueTickets.length?'danger':'')+' supportGoCases" type="button"><span>期限超過</span><strong>'+esc(overdueTickets.length)+'</strong><em>期限確認</em></button>'+
+          '<button class="supportTodayTile warn supportGoCases" type="button"><span>TeamViewer待ち</span><strong>'+esc(remoteWaiting.length)+'</strong><em>接続待ち</em></button>'+
+          '<button id="supportTeamViewerPendingTile" class="supportTodayTile '+(teamviewerPendingItems.length?'danger':'')+'" type="button"><span>TV結果未入力</span><strong>'+esc(teamviewerPendingItems.length)+'</strong><em>終了後の記録</em></button>'+
+        '</div></section>'+
+        ((unreadItems.length||handoffUpdateItems.length)?'<section class="supportHomeSection"><div class="supportHomeSectionHead"><div><h2>新着</h2><p>未確認だけ表示します。</p></div><span class="hold">'+esc(unreadItems.length+handoffUpdateItems.length)+'件</span></div>'+
+          unreadItems.slice(0,4).map(t=>'<div class="supportPriorityCase"><div><div class="title">'+esc(t.customer_name||'—')+' / '+esc(t.subject||'')+'</div><div class="sub">'+esc(t.source_label||supportRequestTypeLabel(t.request_type))+' / '+esc(dateTimeText(t.created_at))+'</div></div><button class="primary supportUnreadOpen" type="button" data-id="'+esc(t.id)+'">対応開始</button></div>').join('')+
+          handoffUpdateItems.slice(0,3).map(h=>'<div class="supportPriorityCase"><div><div class="title">'+esc(h.customer_name||'—')+' / '+esc(h.subject||'')+'</div><div class="sub">'+esc(h.handoff_state==='accepted'?'自社対応開始':'自社対応完了')+'</div></div><button class="ghost supportHandoffUpdateOpen" type="button" data-handoff-id="'+esc(h.handoff_id)+'" data-ticket-id="'+esc(h.ticket_id)+'">確認</button></div>').join('')+
+        '</section>':'')+
+        (teamviewerPendingItems.length?'<section class="supportHomeSection"><div class="supportHomeSectionHead"><div><h2>TeamViewer結果未入力</h2><p>遠隔対応終了済み。結果だけ記録してください。</p></div><span class="hold">'+esc(teamviewerPendingItems.length)+'件</span></div>'+
+          teamviewerPendingItems.slice(0,5).map(x=>'<div class="supportPriorityCase"><div><div class="title">'+esc(x.customer_name||'—')+' / '+esc(x.subject||'')+'</div><div class="sub">'+esc(x.ticket_number||'—')+' / 終了 '+esc(dateTimeText(x.session_closed_at||x.session_updated_at))+'</div></div><button class="primary supportTeamViewerPendingOpen" type="button" data-id="'+esc(x.ticket_id)+'">結果入力</button></div>').join('')+
+        '</section>':'')+
+        '<section class="supportHomeSection"><div class="supportHomeSectionHead"><div><h2>優先案件</h2><p>期限・障害・緊急度の高い案件だけです。</p></div><button class="ghost supportGoCases" type="button">案件一覧を開く</button></div>'+
+          (topWork.length?topWork.map(t=>'<div class="supportPriorityCase"><div><div class="title">'+esc(t.customer_name||'—')+' / '+esc(t.subject||'')+'</div><div class="sub">'+esc(t.ticket_number||'—')+' / '+supportAssigneeLabel(t.support_assignment)+'</div><div class="badges">'+supportRequestTypeBadge(t.request_type)+supportStageBadge(t.support_stage)+supportDeadlineBadge(t.deadline_state)+'</div></div><button class="primary supportPriorityOpen" type="button" data-id="'+esc(t.id)+'">案件を開く</button></div>').join(''):'<div class="empty">現在、対応が必要な案件はありません。</div>')+
+        '</section>'+
+        '<section class="supportHomeSection"><div class="supportHomeSectionHead"><div><h2>最近の電話</h2><p>CallConnectの直近履歴です。</p></div><button id="supportCallHistoryMore" class="ghost" type="button">すべて見る</button></div>'+recentCallHtml+'</section>';
       $('#supportTeamViewerPendingTile')?.addEventListener('click',()=>{
         const first=document.querySelector('.supportTeamViewerPendingOpen');
         if(first) first.scrollIntoView({behavior:'smooth',block:'center'});
@@ -7389,26 +7362,58 @@
         return p!==0?p:timeValue(b.updated_at)-timeValue(a.updated_at);
       });
       updateListCount('supportCaseList',filtered.length,data.length);
-      $('#supportCaseListHost').innerHTML=dataTable(
-        ['番号','種別','サポート担当','対応工程','期限','顧客','件名','状態','優先度','機器/契約','自社担当','最終対応','操作'],
-        filtered.map(t=>
-          '<tr>'+
-            '<td><strong>'+esc(t.ticket_number||'—')+'</strong></td>'+
-            '<td>'+supportRequestTypeBadge(t.request_type)+'</td>'+
-            '<td>'+supportAssigneeBadge(t.support_assignment)+'</td>'+
-            '<td>'+supportStageBadge(t.support_stage)+(t.teamviewer_result_pending?'<br><span class="hold">TV結果未入力</span>':'')+'</td>'+
-            '<td>'+supportDeadlineBadge(t.deadline_state)+(t.first_response_due_at?'<br><span class="muted">初動 '+esc(dateTimeText(t.first_response_due_at))+'</span>':'')+'</td>'+
-            '<td>'+esc(t.customer_name||'—')+'</td>'+
-            '<td>'+esc(t.subject||'')+'</td>'+
-            '<td>'+esc(statusText(t.status))+'</td>'+
-            '<td>'+(t.priority==='urgent'?'<span class="hold">緊急</span>':t.priority==='high'?'<span class="pill">高</span>':esc(t.priority||'normal'))+'</td>'+
-            '<td>'+esc(t.asset_number||'機器未指定')+(t.contract_number?'<br><span class="muted">'+esc(t.contract_number)+'</span>':'')+'</td>'+
-            '<td>'+esc(t.assigned_internal_user_name||'未設定')+'</td>'+
-            '<td>'+esc(dateText(t.last_message_at||t.updated_at))+(t.active_handoff?'<br><span class="pill">引継ぎ中</span>':'')+'</td>'+
-            '<td><button class="linkBtn ticketDetail" type="button" data-id="'+esc(t.id)+'">案件カルテ</button></td>'+
-          '</tr>'
-        )
-      );
+      if(support){
+        $('#supportCaseListHost').innerHTML=filtered.length
+          ? '<div class="supportCaseCards">'+filtered.map(t=>{
+              const cardClass=t.teamviewer_result_pending?'pending-result':t.priority==='urgent'?'urgent':t.priority==='high'?'high':t.support_stage==='teamviewer_waiting'?'remote':'';
+              return '<article class="supportCaseCard '+cardClass+'">'+
+                '<div class="supportCaseCardHead">'+
+                  '<div>'+
+                    '<div class="supportCaseCardNo">'+esc(t.ticket_number||'—')+'</div>'+
+                    '<div class="supportCaseCardTitle">'+esc(t.subject||'件名なし')+'</div>'+
+                    '<div class="supportCaseCardCustomer">'+esc(t.customer_name||'顧客未登録')+'</div>'+
+                    '<div class="supportCaseBadges">'+
+                      supportRequestTypeBadge(t.request_type)+
+                      supportStageBadge(t.support_stage)+
+                      supportDeadlineBadge(t.deadline_state)+
+                      (t.teamviewer_result_pending?'<span class="hold">TV結果未入力</span>':'')+
+                      (t.priority==='urgent'?'<span class="hold">緊急</span>':t.priority==='high'?'<span class="pill warn">高優先度</span>':'')+
+                    '</div>'+
+                  '</div>'+
+                  '<div>'+supportAssigneeBadge(t.support_assignment)+'</div>'+
+                '</div>'+
+                '<div class="supportCaseFacts">'+
+                  '<div class="supportCaseFact"><span>機器</span><strong>'+esc(t.asset_number||t.asset_model_name||'未指定')+'</strong></div>'+
+                  '<div class="supportCaseFact"><span>初動期限</span><strong>'+esc(dateTimeText(t.first_response_due_at))+'</strong></div>'+
+                  '<div class="supportCaseFact"><span>最終更新</span><strong>'+esc(dateTimeText(t.last_message_at||t.updated_at))+'</strong></div>'+
+                  '<div class="supportCaseFact"><span>自社担当</span><strong>'+esc(t.assigned_internal_user_name||'未設定')+'</strong></div>'+
+                '</div>'+
+                '<div class="supportCaseCardActions"><button class="primary ticketDetail" type="button" data-id="'+esc(t.id)+'">案件カルテを開く</button></div>'+
+              '</article>';
+            }).join('')+'</div>'
+          : '<div class="empty">該当する案件はありません。</div>';
+      }else{
+        $('#supportCaseListHost').innerHTML=dataTable(
+          ['番号','種別','サポート担当','対応工程','期限','顧客','件名','状態','優先度','機器/契約','自社担当','最終対応','操作'],
+          filtered.map(t=>
+            '<tr>'+
+              '<td><strong>'+esc(t.ticket_number||'—')+'</strong></td>'+
+              '<td>'+supportRequestTypeBadge(t.request_type)+'</td>'+
+              '<td>'+supportAssigneeBadge(t.support_assignment)+'</td>'+
+              '<td>'+supportStageBadge(t.support_stage)+(t.teamviewer_result_pending?'<br><span class="hold">TV結果未入力</span>':'')+'</td>'+
+              '<td>'+supportDeadlineBadge(t.deadline_state)+'</td>'+
+              '<td>'+esc(t.customer_name||'—')+'</td>'+
+              '<td>'+esc(t.subject||'')+'</td>'+
+              '<td>'+esc(statusText(t.status))+'</td>'+
+              '<td>'+esc(t.priority||'normal')+'</td>'+
+              '<td>'+esc(t.asset_number||'機器未指定')+'</td>'+
+              '<td>'+esc(t.assigned_internal_user_name||'未設定')+'</td>'+
+              '<td>'+esc(dateText(t.last_message_at||t.updated_at))+'</td>'+
+              '<td><button class="linkBtn ticketDetail" type="button" data-id="'+esc(t.id)+'">案件カルテ</button></td>'+
+            '</tr>'
+          )
+        );
+      }
       document.querySelectorAll('.ticketDetail').forEach(btn=>btn.onclick=async()=>{btn.disabled=true;try{if(bootData?.context?.role==='customer_user') await renderTicketDetail(btn.dataset.id); else await openTicketWorkspace(btn.dataset.id);}catch(err){toast(err.message||String(err));}finally{btn.disabled=false;}});
     };
     if(support){
