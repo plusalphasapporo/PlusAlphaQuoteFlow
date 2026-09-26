@@ -8274,7 +8274,7 @@
                   p_category:supportRequestTypeLabel(t.request_type),
                   p_body:knowledgeBody,
                   p_audience:'support',
-                  p_tags:[supportRequestTypeLabel(t.request_type),'TeamViewer','解決'],
+                  p_tags:[supportRequestTypeLabel(t.request_type),'TeamViewer','解決','候補'],
                   p_is_active:false
                 }).catch(()=>{});
               }else{
@@ -9997,20 +9997,128 @@
   async function renderKnowledgeAdmin(){
     const data=await rpc('internal_knowledge_articles');
     const audienceText=a=>({internal:'自社のみ',support:'サポート会社',customer:'顧客会社',all:'全社'}[a]||a);
-    const rows=(data||[]).map(k=>'<tr><td><strong>'+esc(k.title||'')+'</strong></td><td>'+esc(k.category||'—')+'</td><td>'+esc(audienceText(k.audience))+'</td><td>'+esc(k.is_active?'公開':'非公開')+'</td><td>'+esc(dateText(k.updated_at))+'</td><td><button class="linkBtn knowledgeAdminEdit" type="button" data-id="'+esc(k.id)+'">編集</button></td></tr>');
-    $('#home').innerHTML=pageIntro('ナレッジ管理','サポート会社・顧客会社へ公開する手順とマニュアルを管理します。')+'<section class="card section"><div class="unifiedToolbar"><h2>ナレッジ</h2><button id="knowledgeAdminNew" class="primary" type="button">＋新規登録</button></div>'+dataTable(['タイトル','カテゴリ','公開先','状態','更新','操作'],rows)+'</section>';
+    const isRejected=k=>(k.tags||[]).includes('却下');
+    const candidates=(data||[]).filter(k=>k.is_active===false&&!isRejected(k));
+    const published=(data||[]).filter(k=>k.is_active!==false);
+    const rejected=(data||[]).filter(k=>k.is_active===false&&isRejected(k));
+
+    const candidateCards=candidates.length?candidates.map(k=>
+      '<article class="item" style="margin-bottom:10px">'+
+        '<div class="row between" style="gap:10px;align-items:flex-start;flex-wrap:wrap">'+
+          '<div><strong>'+esc(k.title||'')+'</strong><div class="muted" style="margin-top:4px">'+esc(k.category||'未分類')+' / '+esc(audienceText(k.audience))+' / 更新 '+esc(dateText(k.updated_at))+'</div></div>'+
+          '<span class="pill warn">確認待ち</span>'+
+        '</div>'+
+        '<p style="white-space:pre-wrap;max-height:180px;overflow:auto">'+esc(String(k.body||'').slice(0,1200))+'</p>'+
+        ((k.tags||[]).length?'<div class="row" style="margin-top:8px">'+k.tags.filter(x=>x!=='却下').map(t=>'<span class="pill">'+esc(t)+'</span>').join('')+'</div>':'')+
+        '<div class="supportQuickActions" style="margin-top:10px">'+
+          '<button class="green knowledgeCandidatePublish" type="button" data-id="'+esc(k.id)+'">公開</button>'+
+          '<button class="primary knowledgeAdminEdit" type="button" data-id="'+esc(k.id)+'">修正</button>'+
+          '<button class="ghost knowledgeCandidateReject" type="button" data-id="'+esc(k.id)+'">却下</button>'+
+        '</div>'+
+      '</article>'
+    ).join(''):'<div class="empty">確認待ちのナレッジ候補はありません。</div>';
+
+    const rows=published.map(k=>'<tr><td><strong>'+esc(k.title||'')+'</strong></td><td>'+esc(k.category||'—')+'</td><td>'+esc(audienceText(k.audience))+'</td><td><span class="pill good">公開</span></td><td>'+esc(dateText(k.updated_at))+'</td><td><button class="linkBtn knowledgeAdminEdit" type="button" data-id="'+esc(k.id)+'">編集</button></td></tr>');
+
+    const rejectedRows=rejected.map(k=>'<tr><td><strong>'+esc(k.title||'')+'</strong></td><td>'+esc(k.category||'—')+'</td><td>'+esc(dateText(k.updated_at))+'</td><td><button class="linkBtn knowledgeCandidateRestore" type="button" data-id="'+esc(k.id)+'">候補に戻す</button></td></tr>');
+
+    $('#home').innerHTML=
+      pageIntro('ナレッジ管理','候補を確認してから公開します。修正・却下の履歴も残します。')+
+      kpis([['確認待ち',candidates.length],['公開済み',published.length],['却下済み',rejected.length]])+
+      '<section class="card section">'+
+        '<div class="row between"><div><h2>ナレッジ候補</h2><p class="sectionDesc">TeamViewerや解決案件から作成された候補です。内容を確認して公開してください。</p></div><button id="knowledgeAdminNew" class="primary" type="button">＋新規登録</button></div>'+
+        '<div style="margin-top:14px">'+candidateCards+'</div>'+
+      '</section>'+
+      '<section class="card section"><div class="unifiedToolbar"><h2>公開済みナレッジ</h2></div>'+dataTable(['タイトル','カテゴリ','公開先','状態','更新','操作'],rows)+'</section>'+
+      (rejected.length?'<section class="card section"><div class="unifiedToolbar"><h2>却下済み</h2></div>'+dataTable(['タイトル','カテゴリ','更新','操作'],rejectedRows)+'</section>':'');
+
     const openEditor=(k={})=>openModal({
       title:k.id?'ナレッジを編集':'ナレッジを登録',
-      description:'公開先を選ぶと、役割ごとのナレッジ/マニュアル画面へ反映されます。',
+      description:k.id&&!k.is_active?'候補内容を修正できます。公開チェックを入れると、そのまま公開されます。':'公開先を選ぶと、役割ごとのナレッジ/マニュアル画面へ反映されます。',
       wide:true,
       body:
-        '<div class="modalGrid3"><div class="field" style="grid-column:span 2"><label>タイトル</label><input id="kaTitle" value="'+esc(k.title||'')+'" required></div><div class="field"><label>カテゴリ</label><input id="kaCategory" value="'+esc(k.category||'')+'"></div><div class="field"><label>公開先</label><select id="kaAudience"><option value="internal" '+(k.audience==='internal'?'selected':'')+'>自社のみ</option><option value="support" '+(k.audience==='support'?'selected':'')+'>サポート会社</option><option value="customer" '+(k.audience==='customer'?'selected':'')+'>顧客会社</option><option value="all" '+(k.audience==='all'?'selected':'')+'>全社</option></select></div><div class="field" style="grid-column:span 2"><label>タグ</label><input id="kaTags" value="'+esc((k.tags||[]).join(', '))+'"></div></div>'+
+        '<div class="modalGrid3"><div class="field" style="grid-column:span 2"><label>タイトル</label><input id="kaTitle" value="'+esc(k.title||'')+'" required></div><div class="field"><label>カテゴリ</label><input id="kaCategory" value="'+esc(k.category||'')+'"></div><div class="field"><label>公開先</label><select id="kaAudience"><option value="internal" '+(k.audience==='internal'?'selected':'')+'>自社のみ</option><option value="support" '+(k.audience==='support'?'selected':'')+'>サポート会社</option><option value="customer" '+(k.audience==='customer'?'selected':'')+'>顧客会社</option><option value="all" '+(k.audience==='all'?'selected':'')+'>全社</option></select></div><div class="field" style="grid-column:span 2"><label>タグ</label><input id="kaTags" value="'+esc((k.tags||[]).filter(x=>x!=='却下').join(', '))+'"></div></div>'+
         '<div class="field"><label>本文</label><textarea id="kaBody" rows="10" required>'+esc(k.body||'')+'</textarea></div><label class="row"><input id="kaActive" type="checkbox" '+(k.is_active!==false?'checked':'')+'> 公開</label>',
       confirmLabel:'保存',
-      onSubmit:async()=>{await rpc('save_knowledge_article',{p_id:k.id||null,p_title:$('#kaTitle').value.trim(),p_category:$('#kaCategory').value.trim()||null,p_body:$('#kaBody').value.trim(),p_audience:$('#kaAudience').value,p_tags:$('#kaTags').value.split(',').map(x=>x.trim()).filter(Boolean),p_is_active:$('#kaActive').checked});closeModal();toast('ナレッジを保存しました');await renderKnowledgeAdmin();}
+      onSubmit:async()=>{
+        const tags=$('#kaTags').value.split(',').map(x=>x.trim()).filter(Boolean).filter(x=>x!=='却下');
+        await rpc('save_knowledge_article',{
+          p_id:k.id||null,
+          p_title:$('#kaTitle').value.trim(),
+          p_category:$('#kaCategory').value.trim()||null,
+          p_body:$('#kaBody').value.trim(),
+          p_audience:$('#kaAudience').value,
+          p_tags:tags,
+          p_is_active:$('#kaActive').checked
+        });
+        closeModal();toast('ナレッジを保存しました');await renderKnowledgeAdmin();
+      }
     });
+
     $('#knowledgeAdminNew').onclick=()=>openEditor();
-    document.querySelectorAll('.knowledgeAdminEdit').forEach(btn=>btn.onclick=()=>openEditor((data||[]).find(x=>x.id===btn.dataset.id)||{}));
+    document.querySelectorAll('.knowledgeAdminEdit').forEach(btn=>btn.onclick=()=>openEditor((data||[]).find(x=>String(x.id)===String(btn.dataset.id))||{}));
+
+    document.querySelectorAll('.knowledgeCandidatePublish').forEach(btn=>btn.onclick=async()=>{
+      const k=(data||[]).find(x=>String(x.id)===String(btn.dataset.id));
+      if(!k) return;
+      btn.disabled=true;
+      try{
+        await rpc('save_knowledge_article',{
+          p_id:k.id,
+          p_title:k.title,
+          p_category:k.category||null,
+          p_body:k.body,
+          p_audience:k.audience,
+          p_tags:(k.tags||[]).filter(x=>x!=='候補'&&x!=='却下'),
+          p_is_active:true
+        });
+        toast('ナレッジを公開しました');
+        await renderKnowledgeAdmin();
+      }catch(err){toast(err.message||String(err));}
+      finally{btn.disabled=false;}
+    });
+
+    document.querySelectorAll('.knowledgeCandidateReject').forEach(btn=>btn.onclick=async()=>{
+      const k=(data||[]).find(x=>String(x.id)===String(btn.dataset.id));
+      if(!k) return;
+      btn.disabled=true;
+      try{
+        const tags=[...(k.tags||[]).filter(x=>x!=='候補'&&x!=='却下'),'却下'];
+        await rpc('save_knowledge_article',{
+          p_id:k.id,
+          p_title:k.title,
+          p_category:k.category||null,
+          p_body:k.body,
+          p_audience:k.audience,
+          p_tags:tags,
+          p_is_active:false
+        });
+        toast('ナレッジ候補を却下しました');
+        await renderKnowledgeAdmin();
+      }catch(err){toast(err.message||String(err));}
+      finally{btn.disabled=false;}
+    });
+
+    document.querySelectorAll('.knowledgeCandidateRestore').forEach(btn=>btn.onclick=async()=>{
+      const k=(data||[]).find(x=>String(x.id)===String(btn.dataset.id));
+      if(!k) return;
+      btn.disabled=true;
+      try{
+        const tags=[...(k.tags||[]).filter(x=>x!=='却下'&&x!=='候補'),'候補'];
+        await rpc('save_knowledge_article',{
+          p_id:k.id,
+          p_title:k.title,
+          p_category:k.category||null,
+          p_body:k.body,
+          p_audience:k.audience,
+          p_tags:tags,
+          p_is_active:false
+        });
+        toast('ナレッジ候補に戻しました');
+        await renderKnowledgeAdmin();
+      }catch(err){toast(err.message||String(err));}
+      finally{btn.disabled=false;}
+    });
   }
 
   async function renderKnowledge(){
