@@ -5088,38 +5088,6 @@
       });
 
       filtered=[...filtered].sort((a,b)=>{
-        if(state.sort==='queue_priority'&&support){
-          const queueRank=t=>{
-            if(view==='immediate'){
-              if(t.deadline_state==='overdue') return 0;
-              if(t.priority==='urgent') return 1;
-              if(t.support_stage==='unhandled') return 2;
-              if(t.deadline_state==='due_today') return 3;
-              if(t.support_assignment?.is_mine) return 4;
-              if(!t.support_assignment?.support_assigned_user_id) return 5;
-              return 6;
-            }
-            if(view==='teamviewer') return t.teamviewer_result_pending?0:1;
-            if(view==='internal_review') return t.support_stage==='support_review_waiting'?0:1;
-            if(view==='handoff'){
-              if(t.support_stage==='internal_handoff_waiting') return 0;
-              if(t.support_stage==='internal_in_progress') return 1;
-              return 2;
-            }
-            if(view==='attention'){
-              if(t.deadline_state==='overdue') return 0;
-              if(t.priority==='urgent') return 1;
-              if(t.teamviewer_result_pending) return 2;
-              if(t.deadline_state==='due_today') return 3;
-              return 4;
-            }
-            return 0;
-          };
-          const r=queueRank(a)-queueRank(b);
-          if(r!==0) return r;
-          if(['customer_wait','internal_review','handoff'].includes(view)) return timeValue(a.updated_at)-timeValue(b.updated_at);
-          return timeValue(b.updated_at)-timeValue(a.updated_at);
-        }
         if(state.sort==='updated_desc') return timeValue(b.updated_at)-timeValue(a.updated_at);
         if(state.sort==='amount_desc') return Number(b.total_amount||0)-Number(a.total_amount||0);
         if(state.sort==='valid_asc') return (timeValue(a.valid_until)||Number.MAX_SAFE_INTEGER)-(timeValue(b.valid_until)||Number.MAX_SAFE_INTEGER);
@@ -8278,6 +8246,38 @@
         ].some(v=>String(v||'').toLowerCase().includes(state.query));
       });
       filtered=[...filtered].sort((a,b)=>{
+        if(state.sort==='queue_priority'&&support){
+          const queueRank=t=>{
+            if(view==='immediate'){
+              if(t.deadline_state==='overdue') return 0;
+              if(t.priority==='urgent') return 1;
+              if(t.support_stage==='unhandled') return 2;
+              if(t.deadline_state==='due_today') return 3;
+              if(t.support_assignment?.is_mine) return 4;
+              if(!t.support_assignment?.support_assigned_user_id) return 5;
+              return 6;
+            }
+            if(view==='teamviewer') return t.teamviewer_result_pending?0:1;
+            if(view==='internal_review') return t.support_stage==='support_review_waiting'?0:1;
+            if(view==='handoff'){
+              if(t.support_stage==='internal_handoff_waiting') return 0;
+              if(t.support_stage==='internal_in_progress') return 1;
+              return 2;
+            }
+            if(view==='attention'){
+              if(t.deadline_state==='overdue') return 0;
+              if(t.priority==='urgent') return 1;
+              if(t.teamviewer_result_pending) return 2;
+              if(t.deadline_state==='due_today') return 3;
+              return 4;
+            }
+            return 0;
+          };
+          const r=queueRank(a)-queueRank(b);
+          if(r!==0) return r;
+          if(['customer_wait','internal_review','handoff'].includes(view)) return timeValue(a.updated_at)-timeValue(b.updated_at);
+          return timeValue(b.updated_at)-timeValue(a.updated_at);
+        }
         if(state.sort==='updated_desc') return timeValue(b.updated_at)-timeValue(a.updated_at);
         if(state.sort==='created_desc') return timeValue(b.created_at)-timeValue(a.created_at);
         if(state.sort==='deadline_asc'){
