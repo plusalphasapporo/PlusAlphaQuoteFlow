@@ -6691,6 +6691,53 @@
       '</tr>'
     );
 
+    const timelineEvents=[];
+    const pushTimeline=(at,type,title,body='')=>{
+      const ts=timeValue(at);
+      if(!ts) return;
+      timelineEvents.push({at,ts,type,title,body});
+    };
+    pushTimeline(t.created_at,'受付','受付','受付経路: '+intakeSource+' / '+supportRequestTypeLabel(t.request_type));
+    if(t.updated_at && t.updated_at!==t.created_at){
+      pushTimeline(t.updated_at,'更新',t.status==='closed'?'案件完了':'案件更新',t.status==='closed'?'作業報告を含む対応が完了しました。':'案件情報が更新されました。');
+    }
+    messages.forEach(m=>{
+      const body=String(m.body||'');
+      const isReport=body.startsWith('【作業報告】');
+      const isRemote=body.startsWith('【TeamViewer');
+      pushTimeline(
+        m.created_at,
+        isReport?'作業報告':isRemote?'TeamViewer':'メッセージ',
+        isReport?'作業報告':isRemote?'TeamViewer記録':(customer?'メッセージ':visibilityLabel(m.visibility)),
+        body
+      );
+    });
+    (teamviewerSessions||[]).forEach(tv=>{
+      pushTimeline(tv.created_at,'TeamViewer','TeamViewerセッション発行','セッション '+String(tv.session_code||'—')+(tv.action_text?' / '+String(tv.action_text):''));
+      if(tv.closed_at||tv.completed_at){
+        pushTimeline(tv.closed_at||tv.completed_at,'TeamViewer','TeamViewer終了',
+          '状態: '+String(tv.state||'終了')+(tv.work_note?' / '+String(tv.work_note):''));
+      }
+    });
+    handoffs.forEach(h=>{
+      pushTimeline(h.created_at,'引継ぎ','自社へ引継ぎ','理由: '+String(h.reason||'—')+' / 次対応: '+String(h.next_action||'—'));
+      if(h.accepted_at) pushTimeline(h.accepted_at,'引継ぎ','自社が受理','自社対応を開始');
+      if(h.completed_at) pushTimeline(h.completed_at,'引継ぎ','自社対応完了','サポート会社へ戻り');
+    });
+    attachments.forEach(a=>pushTimeline(a.created_at,'添付','写真・添付追加',attachmentSourceLabel(a)+' / '+String(a.file_name||'—')));
+    timelineEvents.sort((a,b)=>b.ts-a.ts);
+    const timelineHtml=timelineEvents.length
+      ? '<div class="supportCaseCards">'+timelineEvents.map(e=>
+          '<article class="supportCaseCard">'+
+            '<div class="row between" style="gap:10px;align-items:flex-start">'+
+              '<div><span class="pill">'+esc(e.type)+'</span><strong style="display:block;margin-top:7px">'+esc(e.title)+'</strong></div>'+
+              '<span class="muted">'+esc(dateTimeText(e.at))+'</span>'+
+            '</div>'+
+            (e.body?'<p style="white-space:pre-wrap;margin:10px 0 0;color:#475569">'+esc(e.body)+'</p>':'')+
+          '</article>'
+        ).join('')+'</div>'
+      : '<div class="empty">対応履歴はまだありません。</div>';
+
     let visibilitySelect='';
     if(customer){
       visibilitySelect='<input type="hidden" id="ticketMessageVisibility" value="customer">';
@@ -6784,6 +6831,7 @@
         (!support?firstLineAssist:'')+
         actionButtons+
         customerRemoteSupport+
+        (!customer?'<section class="section"><div class="row between"><div><h3>対応履歴タイムライン</h3><p class="sectionDesc">受付からTeamViewer・引継ぎ・作業報告までを時系列で確認します。</p></div><span class="pill">'+esc(timelineEvents.length)+'件</span></div>'+timelineHtml+'</section>':'')+
         '<section class="section"><h3>対応履歴・メッセージ</h3>'+messagesHtml+
           '<form id="ticketMessageForm" class="card section" style="box-shadow:none">'+visibilitySelect+'<div class="field"><label>返信</label><textarea id="ticketMessageBody" rows="4" required></textarea></div><button class="primary" type="submit">メッセージを送信</button></form><div id="ticketMessageMsg" class="notice hidden"></div></section>'+
         (!customer?'<section class="section"><h3>引き継ぎ履歴</h3>'+dataTable(internal?['状態','理由','次の対応','作成日','操作']:['状態','理由','次の対応','作成日'],handoffRows)+'</section>':'')+
