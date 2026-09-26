@@ -1147,7 +1147,8 @@
           '<div class="callIncomingActions">'+
             '<button id="callIncomingOpenCallConnect" class="primary" type="button">CallConnectを開く</button>'+
             ((item?.matched_customer_id&&(role==='internal_admin'||role==='internal_staff'))?'<button id="callIncomingOpenCustomer" class="ghost" type="button">顧客カルテ</button>':'')+
-            ((role==='support_staff'&&!item?.support_ticket_id)?'<button id="callIncomingStartIntake" class="green" type="button">'+(item?.matched_customer_id?'この電話を受付':'電話番号で顧客検索')+'</button>':'')+
+            ((role==='support_staff'&&!item?.support_ticket_id&&item?.matched_customer_id)?'<button id="callIncomingQuickStart" class="green" type="button">すぐ対応開始</button>':'')+
+            ((role==='support_staff'&&!item?.support_ticket_id)?'<button id="callIncomingStartIntake" class="ghost" type="button">'+(item?.matched_customer_id?'詳細を入力して受付':'電話番号で顧客検索')+'</button>':'')+
             (item?.support_ticket_id?'<button id="callIncomingOpenTicket" class="ghost" type="button">案件を開く</button>':'')+
           '</div>'+
         '</div>'+
@@ -1171,6 +1172,43 @@
         await close();
         await go('customers');
         await renderCustomerDetail(item.matched_customer_id);
+      };
+    }
+
+    const quickStartBtn=$('#callIncomingQuickStart');
+    if(quickStartBtn){
+      quickStartBtn.onclick=async()=>{
+        quickStartBtn.disabled=true;
+        try{
+          const autoSubject='CallConnect 入電：'+(item.matched_customer_name||item.contact_company||item.contact_name||item.contact_number||'問い合わせ');
+          const result=await rpc('create_support_ticket',{
+            p_customer_id:item.matched_customer_id,
+            p_asset_id:null,
+            p_contract_id:null,
+            p_subject:autoSubject,
+            p_description:'【受付経路】CallConnect 入電\n\n電話番号：'+(item.contact_number||'未取得')+'\nCallConnect Call ID：'+(item.call_id||'—')+'\n\n【受付内容】\n通話中に内容を確認して追記してください。',
+            p_priority:'normal'
+          });
+          if(!result?.id) throw new Error('受付案件を作成できませんでした。');
+
+          if(item.call_id){
+            await rpc('attach_callconnect_ticket',{
+              p_call_id:item.call_id,
+              p_customer_id:item.matched_customer_id,
+              p_ticket_id:result.id
+            }).catch(()=>{});
+          }
+
+          await rpc('claim_support_ticket',{p_ticket_id:result.id}).catch(()=>{});
+          await rpc('set_support_workflow_stage',{p_ticket_id:result.id,p_stage:'in_progress'}).catch(()=>{});
+          await close();
+          toast('CallConnect着信から対応を開始しました'+(result.ticket_number?' '+result.ticket_number:''));
+          await openTicketWorkspace(result.id);
+          setTimeout(()=>$('#ticketMessageBody')?.focus()||$('#ticketKnowledgeSearch')?.focus(),250);
+        }catch(err){
+          toast(err.message||String(err));
+          quickStartBtn.disabled=false;
+        }
       };
     }
 
