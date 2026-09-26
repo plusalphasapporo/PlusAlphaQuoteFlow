@@ -7007,6 +7007,7 @@
                     (teamviewerSessionClosed && !latestTeamViewerSession.outcome && t.status!=='closed'
                       ? '<div class="item" style="margin-top:12px"><strong>遠隔対応の結果を記録</strong>'+
                           '<div class="field"><label>対応内容・結果</label><textarea id="ticketRemoteResultNote" rows="4" placeholder="例：プリンター設定を修正し、テスト印刷まで確認"></textarea></div>'+
+                          '<div id="ticketRemoteRecommendation" class="notice hidden"></div>'+
                           '<div class="supportQuickActions">'+
                             '<button class="green ticketRemoteOutcome" data-outcome="resolved" type="button">解決して完了</button>'+
                             '<button class="primary ticketRemoteOutcome" data-outcome="continue" type="button">継続対応</button>'+
@@ -8194,6 +8195,47 @@
         }catch(err){notice('#ticketRemoteMsg',err.message||String(err));}
         finally{finishTv.disabled=false;}
       };
+
+      const remoteResultNote=$('#ticketRemoteResultNote');
+      const remoteRecommendation=$('#ticketRemoteRecommendation');
+      const updateRemoteRecommendation=()=>{
+        if(!remoteResultNote||!remoteRecommendation) return;
+        const note=remoteResultNote.value.trim().toLowerCase();
+        remoteRecommendation.classList.add('hidden');
+        remoteRecommendation.innerHTML='';
+        if(!note) return;
+
+        const resolvedWords=['解決','復旧','正常','成功','完了','印刷でき','接続でき','送信でき','起動でき','改善'];
+        const unresolvedWords=['未解決','解決しない','復旧しない','改善しない','再発','エラー継続','原因不明','対応不可','権限不足'];
+        const continueWords=['経過観察','再確認','確認中','追加確認','様子見','再起動後確認','設定確認'];
+
+        const resolvedHit=resolvedWords.some(x=>note.includes(x));
+        const unresolvedHit=unresolvedWords.some(x=>note.includes(x));
+        const continueHit=continueWords.some(x=>note.includes(x));
+
+        let mode='continue';
+        if(unresolvedHit) mode='escalate';
+        else if(resolvedHit&&!continueHit) mode='resolved';
+
+        const labels={
+          resolved:['解決として完了候補','入力内容から、復旧・正常化を確認できた可能性があります。'],
+          continue:['継続対応候補','追加確認や経過確認が必要な内容として扱います。'],
+          escalate:['管理者引き継ぎ候補','未解決・原因不明・対応困難を示す内容が含まれています。']
+        };
+        const info=labels[mode];
+        remoteRecommendation.className='notice '+(mode==='resolved'?'ok':mode==='escalate'?'error':'warn');
+        remoteRecommendation.innerHTML='<strong>'+info[0]+'</strong><br><span class="muted">'+info[1]+' 最終判断は担当者が行ってください。</span>'+
+          '<div class="supportQuickActions" style="margin-top:8px"><button id="ticketRemoteUseRecommendation" class="'+(mode==='resolved'?'green':mode==='escalate'?'orange':'primary')+'" type="button">'+
+          ({resolved:'「解決して完了」を選ぶ',continue:'「継続対応」を選ぶ',escalate:'「自社へ引継ぎ」を選ぶ'}[mode])+'</button></div>';
+        remoteRecommendation.classList.remove('hidden');
+        $('#ticketRemoteUseRecommendation')?.addEventListener('click',()=>{
+          document.querySelector('.ticketRemoteOutcome[data-outcome="'+mode+'"]')?.click();
+        });
+      };
+      if(remoteResultNote){
+        remoteResultNote.addEventListener('input',updateRemoteRecommendation);
+        updateRemoteRecommendation();
+      }
 
       document.querySelectorAll('.ticketRemoteOutcome').forEach(btn=>{
         btn.onclick=async()=>{
