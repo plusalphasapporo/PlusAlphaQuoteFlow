@@ -8725,7 +8725,12 @@
           if(ticketId && files.length) await uploadSupportAttachments(ticketId,files,'customer');
           notice('#ticketMsg','問い合わせを送信しました。'+(files.length?' 写真 '+files.length+'件を添付しました。':''),true);
           $('#ticketForm').reset();
-          setTimeout(()=>go('support'),450);
+          if(ticketId){
+            toast('問い合わせを登録しました。内容を確認できます。');
+            await openTicketWorkspace(ticketId);
+          }else{
+            setTimeout(()=>go('support'),450);
+          }
         }catch(err){notice('#ticketMsg',err.message||String(err));}
         finally{if(btn)btn.disabled=false;}
       };
@@ -9587,8 +9592,12 @@
           p_priority:$('#assetTicketPriority').value
         });
         closeModal();
-        toast('問い合わせを登録しました'+(result?.ticket_number?' '+result.ticket_number:''));
-        await renderAssetDetail(a.id);
+        toast('問い合わせを登録しました。案件カルテを開きます'+(result?.ticket_number?' '+result.ticket_number:''));
+        if(result?.id){
+          await openTicketWorkspace(result.id);
+        }else{
+          await renderAssetDetail(a.id);
+        }
       }
     });
 
@@ -9893,8 +9902,12 @@
           p_priority:$('#contractTicketPriority').value
         });
         closeModal();
-        toast('問い合わせを登録しました'+(result?.ticket_number?' '+result.ticket_number:''));
-        await renderContractDetail(ct.id);
+        toast('問い合わせを登録しました。案件カルテを開きます'+(result?.ticket_number?' '+result.ticket_number:''));
+        if(result?.id){
+          await openTicketWorkspace(result.id);
+        }else{
+          await renderContractDetail(ct.id);
+        }
       }
     });
 
