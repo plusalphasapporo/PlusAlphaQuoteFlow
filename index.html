@@ -144,7 +144,7 @@
     @media(max-width:680px){.supportTodayGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
     .supportCaseCards{display:grid;gap:10px;margin-top:12px}
     .supportCaseCard{border:1px solid var(--line);border-left:5px solid #94a3b8;border-radius:16px;background:#fff;padding:15px;box-shadow:0 4px 15px rgba(15,23,42,.04)}
-    .supportCaseCard.urgent{border-left-color:#dc2626}.supportCaseCard.high{border-left-color:#f59e0b}.supportCaseCard.remote{border-left-color:#ea580c}.supportCaseCard.pending-result{border-left-color:#b91c1c;background:#fffafa}
+    .supportCaseCard.urgent{border-left-color:#dc2626}.supportCaseCard.high{border-left-color:#f59e0b}.supportCaseCard.remote{border-left-color:#ea580c}.supportCaseCard.pending-result{border-left-color:#b91c1c;background:#fffafa}.supportCaseCard.queue-warning{border-left-color:#f59e0b;background:#fffbeb}.supportCaseCard.queue-critical{border-left-color:#b91c1c;background:#fff7f7}
     .supportCaseCardHead{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:start}
     .supportCaseCardNo{font-size:11px;color:var(--muted);font-weight:900}
     .supportCaseCardTitle{font-size:17px;font-weight:900;margin-top:3px;line-height:1.35}
@@ -1093,6 +1093,21 @@
     const days=Math.floor(hours/24);
     const rem=hours%24;
     return days+'日'+(rem?String(rem)+'時間':'');
+  }
+
+  function supportQueueAlertBadge(level){
+    if(level==='critical') return '<span class="hold">滞留超過</span>';
+    if(level==='warning') return '<span class="pill warn">長時間滞留</span>';
+    return '';
+  }
+
+  function supportQueueThresholdText(action){
+    return ({
+      customer_reply_waiting:'黄 12時間 / 赤 24時間',
+      internal_review_waiting:'黄 1時間 / 赤 2時間',
+      teamviewer_waiting:'黄 30分 / 赤 1時間',
+      internal_handoff_waiting:'黄 2時間 / 赤 4時間'
+    }[action]||'');
   }
 
   function supportAssigneeLabel(a){
@@ -2112,6 +2127,9 @@
         support_next_action:nextActionMap[x.id]?.support_next_action||((x.status==='closed')?'completed':'in_progress'),
         support_next_action_changed_at:nextActionMap[x.id]?.support_next_action_changed_at||null,
         support_next_action_waiting_seconds:Number(nextActionMap[x.id]?.waiting_seconds||0),
+        support_next_action_alert_level:nextActionMap[x.id]?.alert_level||'normal',
+        support_next_action_warning_after_seconds:Number(nextActionMap[x.id]?.warning_after_seconds||0),
+        support_next_action_critical_after_seconds:Number(nextActionMap[x.id]?.critical_after_seconds||0),
         deadline_state:deadlineMap[x.id]?.deadline_state||'unset',
         first_response_due_at:deadlineMap[x.id]?.first_response_due_at||null,
         resolution_due_at:deadlineMap[x.id]?.resolution_due_at||null,
@@ -2223,7 +2241,7 @@
       const topWorkHtml=topWork.length?topWork.map(t=>
         '<div class="supportCompactItem">'+
           '<div><strong>'+esc(t.customer_name||'—')+' / '+esc(t.subject||'')+'</strong>'+
-            '<div class="meta">'+supportRequestTypeBadge(t.request_type)+supportStageBadge(t.support_stage)+supportNextActionBadge(t.support_next_action)+'<span class="pill">滞留 '+esc(supportQueueAgeText(t.support_next_action_waiting_seconds))+'</span>'+supportDeadlineBadge(t.deadline_state)+supportAssigneeBadge(t.support_assignment)+'</div>'+
+            '<div class="meta">'+supportRequestTypeBadge(t.request_type)+supportStageBadge(t.support_stage)+supportNextActionBadge(t.support_next_action)+supportQueueAlertBadge(t.support_next_action_alert_level)+'<span class="pill">滞留 '+esc(supportQueueAgeText(t.support_next_action_waiting_seconds))+'</span>'+supportDeadlineBadge(t.deadline_state)+supportAssigneeBadge(t.support_assignment)+'</div>'+
           '</div>'+
           '<button class="primary supportPriorityOpen" type="button" data-id="'+esc(t.id)+'">開く</button>'+
         '</div>'
@@ -2256,10 +2274,10 @@
         '<section class="supportHomeSection"><div class="supportHomeSectionHead"><div><h2>次の行動キュー</h2><p>案件を「次に何をするか」で自動分類しています。</p></div><button id="supportNextQueueAll" class="ghost" type="button">案件一覧</button></div>'+
           '<div class="supportTodayGrid">'+
             '<button class="supportTodayTile danger supportNextQueueOpen" type="button" data-view="immediate"><span>今すぐ対応</span><strong>'+esc(tickets.filter(t=>t.status!=="closed"&&t.support_next_action==="in_progress").length)+'</strong><em>対応・返信が必要</em></button>'+
-            '<button class="supportTodayTile supportNextQueueOpen" type="button" data-view="customer_wait"><span>顧客返信待ち</span><strong>'+esc(tickets.filter(t=>t.status!=="closed"&&t.support_next_action==="customer_reply_waiting").length)+'</strong><em>顧客からの返答待ち</em></button>'+
-            '<button class="supportTodayTile warn supportNextQueueOpen" type="button" data-view="internal_review"><span>社内確認待ち</span><strong>'+esc(tickets.filter(t=>t.status!=="closed"&&t.support_next_action==="internal_review_waiting").length)+'</strong><em>確認後に再対応</em></button>'+
-            '<button class="supportTodayTile warn supportNextQueueOpen" type="button" data-view="teamviewer"><span>TeamViewer待ち</span><strong>'+esc(tickets.filter(t=>t.status!=="closed"&&(t.support_next_action==="teamviewer_waiting"||teamviewerPendingIds.has(String(t.id)))).length)+'</strong><em>接続・結果入力</em></button>'+
-            '<button class="supportTodayTile supportNextQueueOpen" type="button" data-view="handoff"><span>自社引継ぎ待ち</span><strong>'+esc(tickets.filter(t=>t.status!=="closed"&&t.support_next_action==="internal_handoff_waiting").length)+'</strong><em>自社側の対応待ち</em></button>'+
+            (()=>{const q=tickets.filter(t=>t.status!=="closed"&&t.support_next_action==="customer_reply_waiting");const c=q.filter(t=>t.support_next_action_alert_level==="critical").length;const w=q.filter(t=>t.support_next_action_alert_level==="warning").length;return '<button class="supportTodayTile '+(c?'danger':w?'warn':'')+' supportNextQueueOpen" type="button" data-view="customer_wait"><span>顧客返信待ち</span><strong>'+esc(q.length)+'</strong><em>'+(c?'赤 '+c+'件':w?'黄 '+w+'件':'顧客からの返答待ち')+'</em></button>'})()+
+            (()=>{const q=tickets.filter(t=>t.status!=="closed"&&t.support_next_action==="internal_review_waiting");const c=q.filter(t=>t.support_next_action_alert_level==="critical").length;const w=q.filter(t=>t.support_next_action_alert_level==="warning").length;return '<button class="supportTodayTile '+(c?'danger':w?'warn':'')+' supportNextQueueOpen" type="button" data-view="internal_review"><span>社内確認待ち</span><strong>'+esc(q.length)+'</strong><em>'+(c?'赤 '+c+'件':w?'黄 '+w+'件':'確認後に再対応')+'</em></button>'})()+
+            (()=>{const q=tickets.filter(t=>t.status!=="closed"&&(t.support_next_action==="teamviewer_waiting"||teamviewerPendingIds.has(String(t.id))));const c=q.filter(t=>t.support_next_action_alert_level==="critical").length;const w=q.filter(t=>t.support_next_action_alert_level==="warning").length;return '<button class="supportTodayTile '+(c?'danger':w?'warn':'')+' supportNextQueueOpen" type="button" data-view="teamviewer"><span>TeamViewer待ち</span><strong>'+esc(q.length)+'</strong><em>'+(c?'赤 '+c+'件':w?'黄 '+w+'件':'接続・結果入力')+'</em></button>'})()+
+            (()=>{const q=tickets.filter(t=>t.status!=="closed"&&t.support_next_action==="internal_handoff_waiting");const c=q.filter(t=>t.support_next_action_alert_level==="critical").length;const w=q.filter(t=>t.support_next_action_alert_level==="warning").length;return '<button class="supportTodayTile '+(c?'danger':w?'warn':'')+' supportNextQueueOpen" type="button" data-view="handoff"><span>自社引継ぎ待ち</span><strong>'+esc(q.length)+'</strong><em>'+(c?'赤 '+c+'件':w?'黄 '+w+'件':'自社側の対応待ち')+'</em></button>'})()+
           '</div>'+
         '</section>'+
         ((unreadItems.length||handoffUpdateItems.length)?'<section class="supportHomeSection"><div class="supportHomeSectionHead"><div><h2>新着</h2><p>未確認だけ表示します。</p></div><span class="hold">'+esc(unreadItems.length+handoffUpdateItems.length)+'件</span></div>'+
@@ -6793,7 +6811,7 @@
     })():'—';
     const assistSectionNo=internal?'02':'01';
     const supportStageControl=support && t.status!=='closed'
-      ? '<div class="notice"><div class="row between"><div><strong>現在の対応工程</strong><div style="margin-top:6px">'+supportStageBadge(supportStage)+'</div><div style="margin-top:8px"><strong>次の行動：</strong> '+supportNextActionBadge(nextActionState?.support_next_action||'in_progress')+' <span class="pill">滞留 '+esc(supportQueueAgeText(nextActionState?.waiting_seconds||0))+'</span></div><div style="margin-top:8px"><strong>サポート担当：</strong> '+supportAssigneeBadge(assignmentState)+'</div></div><div class="supportQuickActions">'+
+      ? '<div class="notice"><div class="row between"><div><strong>現在の対応工程</strong><div style="margin-top:6px">'+supportStageBadge(supportStage)+'</div><div style="margin-top:8px"><strong>次の行動：</strong> '+supportNextActionBadge(nextActionState?.support_next_action||'in_progress')+' '+supportQueueAlertBadge(nextActionState?.alert_level||'normal')+' <span class="pill">滞留 '+esc(supportQueueAgeText(nextActionState?.waiting_seconds||0))+'</span><div class="muted" style="margin-top:4px">'+esc(supportQueueThresholdText(nextActionState?.support_next_action||''))+'</div></div><div style="margin-top:8px"><strong>サポート担当：</strong> '+supportAssigneeBadge(assignmentState)+'</div></div><div class="supportQuickActions">'+
           (!assignmentState?.support_assigned_user_id?'<button id="ticketClaimSupport" class="primary" type="button">自分が担当する</button>':'')+
           (assignmentState?.is_mine?'<button id="ticketReleaseSupport" class="ghost" type="button">担当を解除</button>':'')+
           (supportStage==='unhandled'?'<button id="ticketStageStart" class="primary" type="button">対応開始</button>':'')+
@@ -8170,6 +8188,9 @@
       support_next_action:nextActionMap[x.id]?.support_next_action||((x.status==='closed')?'completed':'in_progress'),
       support_next_action_changed_at:nextActionMap[x.id]?.support_next_action_changed_at||null,
       support_next_action_waiting_seconds:Number(nextActionMap[x.id]?.waiting_seconds||0),
+      support_next_action_alert_level:nextActionMap[x.id]?.alert_level||'normal',
+      support_next_action_warning_after_seconds:Number(nextActionMap[x.id]?.warning_after_seconds||0),
+      support_next_action_critical_after_seconds:Number(nextActionMap[x.id]?.critical_after_seconds||0),
       deadline_state:deadlineMap[x.id]?.deadline_state||'unset',
       first_response_due_at:deadlineMap[x.id]?.first_response_due_at||null,
       resolution_due_at:deadlineMap[x.id]?.resolution_due_at||null,
@@ -8262,6 +8283,9 @@
       });
       filtered=[...filtered].sort((a,b)=>{
         if(state.sort==='queue_priority'&&support){
+          const alertRank=t=>t.support_next_action_alert_level==='critical'?0:t.support_next_action_alert_level==='warning'?1:2;
+          const ar=alertRank(a)-alertRank(b);
+          if(ar!==0) return ar;
           const queueRank=t=>{
             if(view==='immediate'){
               if(t.deadline_state==='overdue') return 0;
@@ -8310,7 +8334,7 @@
       if(support){
         $('#supportCaseListHost').innerHTML=filtered.length
           ? '<div class="supportCaseCards">'+filtered.map(t=>{
-              const cardClass=t.teamviewer_result_pending?'pending-result':t.priority==='urgent'?'urgent':t.priority==='high'?'high':t.support_stage==='teamviewer_waiting'?'remote':'';
+              const cardClass=t.support_next_action_alert_level==='critical'?'queue-critical':t.support_next_action_alert_level==='warning'?'queue-warning':t.teamviewer_result_pending?'pending-result':t.priority==='urgent'?'urgent':t.priority==='high'?'high':t.support_stage==='teamviewer_waiting'?'remote':'';
               return '<article class="supportCaseCard '+cardClass+'">'+
                 '<div class="supportCaseCardHead">'+
                   '<div>'+
@@ -8321,6 +8345,7 @@
                       supportRequestTypeBadge(t.request_type)+
                       supportStageBadge(t.support_stage)+
                       supportNextActionBadge(t.support_next_action)+
+                      supportQueueAlertBadge(t.support_next_action_alert_level)+
                       supportDeadlineBadge(t.deadline_state)+
                       (t.teamviewer_result_pending?'<span class="hold">TV結果未入力</span>':'')+
                       (t.priority==='urgent'?'<span class="hold">緊急</span>':t.priority==='high'?'<span class="pill warn">高優先度</span>':'')+
@@ -8334,7 +8359,7 @@
                   '<div class="supportCaseFact"><span>最終更新</span><strong>'+esc(dateTimeText(t.last_message_at||t.updated_at))+'</strong></div>'+
                   '<div class="supportCaseFact"><span>自社担当</span><strong>'+esc(t.assigned_internal_user_name||'未設定')+'</strong></div>'+
                   '<div class="supportCaseFact"><span>次の行動</span><strong>'+esc(supportNextActionLabel(t.support_next_action))+'</strong></div>'+
-                  '<div class="supportCaseFact"><span>滞留時間</span><strong>'+esc(supportQueueAgeText(t.support_next_action_waiting_seconds))+'</strong></div>'+
+                  '<div class="supportCaseFact"><span>滞留時間</span><strong>'+esc(supportQueueAgeText(t.support_next_action_waiting_seconds))+'</strong><small class="muted">'+esc(supportQueueThresholdText(t.support_next_action))+'</small></div>'+
                 '</div>'+
                 '<div class="supportCaseCardActions"><button class="primary ticketDetail" type="button" data-id="'+esc(t.id)+'">'+(t.status!=='closed'&&t.support_stage==='unhandled'?'対応を開始':'案件カルテを開く')+'</button></div>'+
               '</article>';
@@ -8350,7 +8375,7 @@
               '<td>'+supportAssigneeBadge(t.support_assignment)+'</td>'+
               '<td>'+supportStageBadge(t.support_stage)+(t.teamviewer_result_pending?'<br><span class="hold">TV結果未入力</span>':'')+'</td>'+
               '<td>'+supportNextActionBadge(t.support_next_action)+'</td>'+
-              '<td><strong>'+esc(supportQueueAgeText(t.support_next_action_waiting_seconds))+'</strong></td>'+
+              '<td><strong>'+esc(supportQueueAgeText(t.support_next_action_waiting_seconds))+'</strong><br>'+supportQueueAlertBadge(t.support_next_action_alert_level)+'</td>'+
               '<td>'+supportDeadlineBadge(t.deadline_state)+'</td>'+
               '<td>'+esc(t.customer_name||'—')+'</td>'+
               '<td>'+esc(t.subject||'')+'</td>'+
