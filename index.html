@@ -1673,6 +1673,7 @@
           await refreshInternalUnreadHandoffBadge();
         }
         if(currentPage==='home') await renderHome();
+        else if(role==='support_staff'&&currentPage==='support_cases'&&!activeTicketId) await renderSupport();
       }catch(_){}
     };
 
@@ -8311,7 +8312,7 @@
           if(view==='internal_review' && !(t.status!=='closed'&&t.support_next_action==='internal_review_waiting')) return false;
           if(view==='teamviewer' && !(t.status!=='closed'&&(t.support_next_action==='teamviewer_waiting'||t.teamviewer_result_pending))) return false;
           if(view==='handoff' && !(t.status!=='closed'&&t.support_next_action==='internal_handoff_waiting')) return false;
-          if(view==='attention' && !(t.status!=='closed' && (t.teamviewer_result_pending||t.deadline_state==='overdue'||t.deadline_state==='due_today'||t.priority==='urgent'||t.support_stage==='support_review_waiting'))) return false;
+          if(view==='attention' && !(t.status!=='closed' && (t.support_next_action_alert_level==='critical'||t.support_next_action_alert_level==='warning'||t.teamviewer_result_pending||t.deadline_state==='overdue'||t.deadline_state==='due_today'||t.priority==='urgent'||t.support_stage==='support_review_waiting'))) return false;
           if(view==='mine' && !(t.status!=='closed'&&t.support_assignment?.is_mine)) return false;
           if(view==='all_open' && t.status==='closed') return false;
           if(view==='closed' && t.status!=='closed') return false;
