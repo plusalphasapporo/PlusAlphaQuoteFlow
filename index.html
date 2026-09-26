@@ -630,6 +630,7 @@
   let deadlineWatchTimer=null;
   let lastDeadlineAlertKey='';
   let lastUnansweredAlertKey='';
+  let lastQueueDwellAlertKey='';
   let supportRealtimeChannel=null;
   let internalHandoffRealtimeChannel=null;
   let messageRealtimeChannel=null;
@@ -1177,9 +1178,10 @@
   async function refreshSupportUnreadBadge(){
     if(bootData?.context?.role!=='support_staff') return {count:0,items:[]};
     try{
-      const [unread,unanswered,handoffUpdates,deadlineStates,callUnread]=await Promise.all([
+      const [unread,unanswered,nextActionStates,handoffUpdates,deadlineStates,callUnread]=await Promise.all([
         rpc('support_unread_notifications'),
         rpc('support_unanswered_messages'),
+        rpc('support_next_action_states'),
         rpc('support_unread_handoff_updates'),
         rpc('support_deadline_states'),
         rpc('callconnect_unread_notifications')
@@ -1191,11 +1193,16 @@
       const unansweredWarningCount=Number(unanswered?.warning_count||0);
       const unansweredCriticalCount=Number(unanswered?.critical_count||0);
       const unansweredAlertCount=unansweredAttentionCount+unansweredWarningCount+unansweredCriticalCount;
-      const count=Number(unread?.count||0)+Number(handoffUpdates?.count||0)+overdueCount+dueTodayCount+Number(callUnread?.count||0)+unansweredAlertCount;
+      const queueCriticalItems=(nextActionStates||[]).filter(x=>x.alert_level==='critical');
+      const queueWarningItems=(nextActionStates||[]).filter(x=>x.alert_level==='warning');
+      const queueCriticalCount=queueCriticalItems.length;
+      const queueWarningCount=queueWarningItems.length;
+      const queueAlertCount=queueCriticalCount+queueWarningCount;
+      const count=Number(unread?.count||0)+Number(handoffUpdates?.count||0)+overdueCount+dueTodayCount+Number(callUnread?.count||0)+unansweredAlertCount+queueAlertCount;
       const badge=$('#notificationCount');
       badge.classList.remove('attention','warning','critical');
-      if(unansweredCriticalCount) badge.classList.add('critical');
-      else if(unansweredWarningCount) badge.classList.add('warning');
+      if(unansweredCriticalCount||queueCriticalCount) badge.classList.add('critical');
+      else if(unansweredWarningCount||queueWarningCount) badge.classList.add('warning');
       else if(unansweredAttentionCount) badge.classList.add('attention');
       if(count>0){
         badge.textContent=count>99?'99+':String(count);
@@ -1205,7 +1212,10 @@
       }
       const notificationBtn=$('#notificationBtn');
       if(notificationBtn){
-        notificationBtn.title='通知'+(unansweredAlertCount?' / 未返信: 緊急 '+unansweredCriticalCount+'・警告 '+unansweredWarningCount+'・注意 '+unansweredAttentionCount:'');
+        const parts=[];
+        if(unansweredAlertCount) parts.push('未返信: 緊急 '+unansweredCriticalCount+'・警告 '+unansweredWarningCount+'・注意 '+unansweredAttentionCount);
+        if(queueAlertCount) parts.push('滞留: 赤 '+queueCriticalCount+'・黄 '+queueWarningCount);
+        notificationBtn.title='通知'+(parts.length?' / '+parts.join(' / '):'');
       }
       return {
         count,
@@ -1214,13 +1224,16 @@
         unanswered_attention_count:unansweredAttentionCount,
         unanswered_warning_count:unansweredWarningCount,
         unanswered_critical_count:unansweredCriticalCount,
+        queue_alerts:[...queueCriticalItems,...queueWarningItems],
+        queue_warning_count:queueWarningCount,
+        queue_critical_count:queueCriticalCount,
         handoff_updates:handoffUpdates?.items||[],
         deadline_attention:deadlineAttention,
         overdue_count:overdueCount,
         due_today_count:dueTodayCount
       };
     }catch(_){
-      return {count:0,items:[],unanswered:[],unanswered_attention_count:0,unanswered_warning_count:0,unanswered_critical_count:0};
+      return {count:0,items:[],unanswered:[],unanswered_attention_count:0,unanswered_warning_count:0,unanswered_critical_count:0,queue_alerts:[],queue_warning_count:0,queue_critical_count:0};
     }
   }
 
@@ -1499,6 +1512,7 @@
             }catch(err){toast(err.message||String(err));}
           };
           if(currentPage==='home') await renderHome();
+          else if(currentPage==='support_cases'&&!activeTicketId) await renderSupport();
         }
       })
       .on('postgres_changes',{event:'UPDATE',schema:'public',table:'support_tickets'},async payload=>{
@@ -1565,6 +1579,7 @@
         }
 
         if(currentPage==='home') await renderHome();
+        else if(currentPage==='support_cases'&&!activeTicketId) await renderSupport();
       })
       .on('postgres_changes',{event:'UPDATE',schema:'public',table:'support_handoffs'},async payload=>{
         const unread=await refreshSupportUnreadBadge();
@@ -1620,9 +1635,10 @@
 
     const refresh=async(showToast=false)=>{
       try{
-        const [states,unanswered]=await Promise.all([
+        const [states,unanswered,nextActionStates]=await Promise.all([
           rpc('support_deadline_states'),
-          role==='support_staff'?rpc('support_unanswered_messages'):Promise.resolve(null)
+          role==='support_staff'?rpc('support_unanswered_messages'):Promise.resolve(null),
+          role==='support_staff'?rpc('support_next_action_states'):Promise.resolve([])
         ]);
         const overdue=(states||[]).filter(x=>x.deadline_state==='overdue');
         const dueToday=(states||[]).filter(x=>x.deadline_state==='due_today');
@@ -1642,11 +1658,22 @@
             toast('未返信アラート更新：緊急 '+critical+'件 / 警告 '+warning+'件 / 注意 '+attention+'件');
           }
           lastUnansweredAlertKey=unansweredKey;
+
+          const queueAlerts=(nextActionStates||[]).filter(x=>x.alert_level==='warning'||x.alert_level==='critical');
+          const queueAlertKey=queueAlerts.map(x=>String(x.ticket_id)+':'+String(x.alert_level)).sort().join('|');
+          const queueCritical=queueAlerts.filter(x=>x.alert_level==='critical').length;
+          const queueWarning=queueAlerts.filter(x=>x.alert_level==='warning').length;
+          if(showToast && lastQueueDwellAlertKey && queueAlertKey!==lastQueueDwellAlertKey && (queueCritical||queueWarning)){
+            toast('滞留警告更新：赤 '+queueCritical+'件 / 黄 '+queueWarning+'件');
+          }
+          lastQueueDwellAlertKey=queueAlertKey;
+
           await refreshSupportUnreadBadge();
         }else{
           await refreshInternalUnreadHandoffBadge();
         }
         if(currentPage==='home') await renderHome();
+        else if(role==='support_staff'&&currentPage==='support_cases'&&!activeTicketId) await renderSupport();
       }catch(_){}
     };
 
@@ -1743,9 +1770,10 @@
         const deadlineCount=(deadlineStates||[]).filter(x=>x.deadline_state==='overdue'||x.deadline_state==='due_today').length;
         count=Number(biz?.kpis?.urgent_open_tickets||0)+Number(unreadHandoffs?.count||0)+deadlineCount+Number(callUnread?.count||0);
       }else if(role==='support_staff'){
-        const [unread,unanswered,handoffUpdates,deadlineStates,callUnread]=await Promise.all([
+        const [unread,unanswered,nextActionStates,handoffUpdates,deadlineStates,callUnread]=await Promise.all([
           rpc('support_unread_notifications'),
           rpc('support_unanswered_messages'),
+          rpc('support_next_action_states'),
           rpc('support_unread_handoff_updates'),
           rpc('support_deadline_states'),
           rpc('callconnect_unread_notifications')
@@ -1755,13 +1783,19 @@
         const unansweredWarningCount=Number(unanswered?.warning_count||0);
         const unansweredCriticalCount=Number(unanswered?.critical_count||0);
         const unansweredAlertCount=unansweredAttentionCount+unansweredWarningCount+unansweredCriticalCount;
-        count=Number(unread?.count||0)+Number(handoffUpdates?.count||0)+deadlineCount+Number(callUnread?.count||0)+unansweredAlertCount;
+        const queueCriticalCount=(nextActionStates||[]).filter(x=>x.alert_level==='critical').length;
+        const queueWarningCount=(nextActionStates||[]).filter(x=>x.alert_level==='warning').length;
+        const queueAlertCount=queueCriticalCount+queueWarningCount;
+        count=Number(unread?.count||0)+Number(handoffUpdates?.count||0)+deadlineCount+Number(callUnread?.count||0)+unansweredAlertCount+queueAlertCount;
         const badge=$('#notificationCount');
         badge.classList.remove('attention','warning','critical');
-        if(unansweredCriticalCount) badge.classList.add('critical');
-        else if(unansweredWarningCount) badge.classList.add('warning');
+        if(unansweredCriticalCount||queueCriticalCount) badge.classList.add('critical');
+        else if(unansweredWarningCount||queueWarningCount) badge.classList.add('warning');
         else if(unansweredAttentionCount) badge.classList.add('attention');
-        $('#notificationBtn').title='通知'+(unansweredAlertCount?' / 未返信: 緊急 '+unansweredCriticalCount+'・警告 '+unansweredWarningCount+'・注意 '+unansweredAttentionCount:'');
+        const parts=[];
+        if(unansweredAlertCount) parts.push('未返信: 緊急 '+unansweredCriticalCount+'・警告 '+unansweredWarningCount+'・注意 '+unansweredAttentionCount);
+        if(queueAlertCount) parts.push('滞留: 赤 '+queueCriticalCount+'・黄 '+queueWarningCount);
+        $('#notificationBtn').title='通知'+(parts.length?' / '+parts.join(' / '):'');
       }else if(role==='customer_user'){
         const h=await rpc('customer_portal_home');
         count=(h?.recent_tickets||[]).filter(x=>x.status!=='closed').length;
@@ -1781,6 +1815,13 @@
       if(['support_staff','internal_admin','internal_staff'].includes(role)){
         const cc=await refreshCallConnectUnread();
         if(Number(cc?.count||0)>0) return go('support_callconnect');
+        if(role==='support_staff'){
+          const nextActions=await rpc('support_next_action_states').catch(()=>[]);
+          if((nextActions||[]).some(x=>x.alert_level==='warning'||x.alert_level==='critical')){
+            supportQueueView='attention';
+            return go('support_cases');
+          }
+        }
         return go('home');
       }
       return go(role==='customer_user'?'customer_status':'support');
@@ -8271,7 +8312,7 @@
           if(view==='internal_review' && !(t.status!=='closed'&&t.support_next_action==='internal_review_waiting')) return false;
           if(view==='teamviewer' && !(t.status!=='closed'&&(t.support_next_action==='teamviewer_waiting'||t.teamviewer_result_pending))) return false;
           if(view==='handoff' && !(t.status!=='closed'&&t.support_next_action==='internal_handoff_waiting')) return false;
-          if(view==='attention' && !(t.status!=='closed' && (t.teamviewer_result_pending||t.deadline_state==='overdue'||t.deadline_state==='due_today'||t.priority==='urgent'||t.support_stage==='support_review_waiting'))) return false;
+          if(view==='attention' && !(t.status!=='closed' && (t.support_next_action_alert_level==='critical'||t.support_next_action_alert_level==='warning'||t.teamviewer_result_pending||t.deadline_state==='overdue'||t.deadline_state==='due_today'||t.priority==='urgent'||t.support_stage==='support_review_waiting'))) return false;
           if(view==='mine' && !(t.status!=='closed'&&t.support_assignment?.is_mine)) return false;
           if(view==='all_open' && t.status==='closed') return false;
           if(view==='closed' && t.status!=='closed') return false;
@@ -11063,6 +11104,7 @@
         }
         lastDeadlineAlertKey='';
         lastUnansweredAlertKey='';
+        lastQueueDwellAlertKey='';
         bootData=null;
         currentPage='home';
         if(!manualLogout){
