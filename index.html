@@ -616,7 +616,9 @@
   let lastDeadlineAlertKey='';
   let supportRealtimeChannel=null;
   let internalHandoffRealtimeChannel=null;
+  let messageRealtimeChannel=null;
   let callconnectNotificationChannel=null;
+  let activeTicketId=null;
   let callconnectNotificationPollTimer=null;
   let teamviewerStatusTimer=null;
   let lastCallConnectPopupId='';
@@ -1557,6 +1559,44 @@
     document.addEventListener('visibilitychange',()=>{
       if(document.visibilityState==='visible') refresh(false);
     },{once:true});
+  }
+
+  async function startMessageRealtime(){
+    if(messageRealtimeChannel){
+      try{await supabase.removeChannel(messageRealtimeChannel);}catch(_){}
+      messageRealtimeChannel=null;
+    }
+    const role=bootData?.context?.role;
+    if(!['support_staff','internal_admin','internal_staff','customer_user'].includes(role)) return;
+
+    messageRealtimeChannel=supabase
+      .channel('support-message-live-'+role)
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'support_messages'},async payload=>{
+        const msg=payload.new||{};
+        if(!msg?.ticket_id) return;
+
+        const isActive=String(activeTicketId||'')===String(msg.ticket_id);
+        const important=String(msg.body||'').startsWith('【重要】');
+        const label=important?'重要メッセージ':'新着メッセージ';
+
+        if(isActive){
+          try{
+            await renderTicketDetail(msg.ticket_id);
+            setTimeout(()=>$('#ticketMessageList')?.scrollIntoView({behavior:'smooth',block:'end'}),120);
+          }catch(err){
+            console.error('Realtime message refresh failed',err);
+          }
+        }else{
+          toast(label+'：案件に新しいメッセージがあります');
+        }
+
+        try{
+          if(role==='support_staff') await refreshSupportUnreadBadge();
+          else if(role==='internal_admin'||role==='internal_staff') await refreshInternalUnreadHandoffBadge();
+          else await setupGlobalHeader();
+        }catch(_){}
+      })
+      .subscribe();
   }
 
   async function startInternalHandoffRealtime(){
@@ -6519,6 +6559,7 @@
   }
 
   async function renderTicketDetail(ticketId){
+    activeTicketId=ticketId||null;
     if(teamviewerStatusTimer){
       clearInterval(teamviewerStatusTimer);
       teamviewerStatusTimer=null;
@@ -6892,7 +6933,7 @@
         '</div><div id="ticketAttachmentGallery" class="attachmentGallery"></div>'+dataTable(['ファイル名','送信元','公開範囲','サイズ(bytes)','作成日'],attachmentRows)+'<div id="ticketAttachmentMsg" class="notice hidden"></div></section>'+
       '</section>';
 
-    $('#ticketDetailClose').onclick=()=>{$('#ticketDetailHost').innerHTML='';};
+    $('#ticketDetailClose').onclick=()=>{activeTicketId=null;$('#ticketDetailHost').innerHTML='';};
     $('#ticketDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
     bindSupportDraftInputs(t.id,'message',{body:'#ticketMessageBody',important:'#ticketMessageImportant',visibility:'#ticketMessageVisibility'});
     bindSupportDraftInputs(t.id,'handoff',{reason:'#handoffReason',next_action:'#handoffNextAction'});
@@ -10312,6 +10353,7 @@
       await setupGlobalHeader();
       await startSupportRealtime();
       await startInternalHandoffRealtime();
+      await startMessageRealtime();
       await startCallConnectNotificationRealtime();
       await startDeadlineWatch();
       await go('home');
