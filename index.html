@@ -7814,6 +7814,11 @@
                 '<span class="pill good">根拠 '+esc(evidenceCount)+'件</span>'+
               '</div>'+
               '<div style="white-space:pre-wrap;margin-top:10px;line-height:1.7">'+esc(assistAnswer||'該当する根拠を確認して対応してください。')+'</div>'+
+              '<div class="supportQuickActions" style="margin-top:12px">'+
+                '<button id="ticketAssistStartWork" class="primary" type="button">この内容で作業開始</button>'+
+                '<button id="ticketAssistReplyCustomer" class="ghost" type="button">顧客へ返信</button>'+
+                '<button id="ticketAssistUseRemote" class="orange" type="button">TeamViewerで対応</button>'+
+              '</div>'+
               '<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line)">'+
                 '<strong>この回答の根拠</strong>'+
                 '<div class="muted" style="margin-top:6px">'+
@@ -7856,6 +7861,55 @@
           : '<div class="empty" style="margin-top:12px">類似する過去案件は見つかりませんでした。</div>';
 
         host.innerHTML=aiAssistHtml+knowledgeHtml+ticketHtml;
+
+        const assistStartWork=$('#ticketAssistStartWork');
+        if(assistStartWork) assistStartWork.onclick=async()=>{
+          assistStartWork.disabled=true;
+          try{
+            if(!assignmentState?.support_assigned_user_id){
+              await rpc('claim_support_ticket',{p_ticket_id:t.id}).catch(()=>{});
+            }
+            await rpc('set_support_workflow_stage',{p_ticket_id:t.id,p_stage:'in_progress'});
+            toast('対応候補を確認して作業を開始しました');
+            await renderTicketDetail(t.id);
+          }catch(err){
+            toast(err.message||String(err));
+          }finally{
+            assistStartWork.disabled=false;
+          }
+        };
+
+        const assistReplyCustomer=$('#ticketAssistReplyCustomer');
+        if(assistReplyCustomer) assistReplyCustomer.onclick=()=>{
+          const body=$('#ticketMessageBody');
+          if(body){
+            body.value=assistAnswer||'確認した内容をもとに対応いたします。';
+            body.dispatchEvent(new Event('input',{bubbles:true}));
+          }
+          const visibility=$('#ticketMessageVisibility');
+          if(visibility && [...visibility.options].some(o=>o.value==='customer')){
+            visibility.value='customer';
+            visibility.dispatchEvent(new Event('change',{bubbles:true}));
+          }
+          const nextAction=$('#ticketMessageNextAction');
+          if(nextAction) nextAction.value='customer_reply_waiting';
+          body?.scrollIntoView({behavior:'smooth',block:'center'});
+          setTimeout(()=>body?.focus(),250);
+          toast('顧客向け返信欄に対応候補を下書きしました');
+        };
+
+        const assistUseRemote=$('#ticketAssistUseRemote');
+        if(assistUseRemote) assistUseRemote.onclick=()=>{
+          const remote=$('#ticketRemoteAction');
+          if(remote){
+            remote.value=(assistAnswer||'案件内容を確認し、必要な設定・復旧作業を実施').slice(0,600);
+            remote.dispatchEvent(new Event('input',{bubbles:true}));
+          }
+          const panel=$('#supportRemoteWorkspace');
+          panel?.scrollIntoView({behavior:'smooth',block:'start'});
+          setTimeout(()=>($('#ticketRemoteAction')||$('#ticketTeamViewerCreate'))?.focus(),250);
+          toast(remote?'TeamViewerの対応内容に反映しました':'TeamViewer欄を開きました');
+        };
 
         document.querySelectorAll('.ticketKnowledgeUse').forEach(btn=>btn.onclick=()=>{
           const article=knowledgeSource.find(x=>String(x.id)===String(btn.dataset.id));
