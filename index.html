@@ -7792,7 +7792,11 @@
 
         const topKnowledge=scoredKnowledge[0]?.x||null;
         const topTicket=scoredTickets[0]?.x||null;
+        const topKnowledgeScore=scoredKnowledge[0]?.score||0;
+        const topTicketScore=scoredTickets[0]?.score||0;
+        const bestEvidenceScore=Math.max(topKnowledgeScore,topTicketScore);
         const evidenceCount=scoredKnowledge.length+scoredTickets.length;
+        const weakEvidence=evidenceCount===0||bestEvidenceScore<8;
         let assistAnswer='';
         if(topKnowledge){
           const body=String(topKnowledge.body||'').trim();
@@ -7808,8 +7812,19 @@
         const stepsSource=(assistAnswer||'').split(/\n+/).map(x=>x.replace(/^[・●\-\d\.\)\s]+/,'').trim()).filter(Boolean);
         const assistSteps=(stepsSource.length?stepsSource:['内容を確認する','必要な設定・復旧作業を実施する','結果を確認して記録する']).slice(0,6);
 
+        const escalationHtml=weakEvidence
+          ? '<section class="notice error" style="margin-top:12px">'+
+              '<strong>有力な解決候補が見つかっていません。</strong><br>'+
+              '<span class="muted">推測で作業を続けず、遠隔確認または管理者への引き継ぎを推奨します。</span>'+
+              '<div class="supportQuickActions" style="margin-top:10px">'+
+                '<button id="ticketWeakUseRemote" class="orange" type="button">TeamViewerで確認</button>'+
+                '<button id="ticketWeakHandoff" class="primary" type="button">管理者へ即引き継ぎ</button>'+
+              '</div>'+
+            '</section>'
+          : '';
+
         const aiAssistHtml=evidenceCount
-          ? '<section class="notice ok" style="margin-top:12px">'+
+          ? escalationHtml+'<section class="notice ok" style="margin-top:12px">'+
               '<div class="row between" style="gap:10px;align-items:flex-start;flex-wrap:wrap">'+
                 '<div><strong>対応候補</strong><div class="muted" style="margin-top:4px">'+
                   (aiState==='connected'?'AI連携時も、下記の根拠を回答とセットで表示します。':'現在は根拠検索から作成した対応候補です。AI連携は '+esc(aiStateText)+' です。')+
@@ -7849,7 +7864,7 @@
                 '</div>'+
               '</div>'+
             '</section>'
-          : '<div class="notice" style="margin-top:12px"><strong>対応候補を作成できませんでした。</strong><br><span class="muted">根拠となるナレッジ・過去案件が見つかっていません。推測で回答は作成しません。</span></div>';
+          : escalationHtml+'<div class="notice" style="margin-top:12px"><strong>対応候補を作成できませんでした。</strong><br><span class="muted">根拠となるナレッジ・過去案件が見つかっていません。推測で回答は作成しません。</span></div>';
 
         const knowledgeHtml=scoredKnowledge.length
           ? '<div class="row between" style="margin:10px 0"><strong>候補ナレッジ</strong><span class="muted">'+scoredKnowledge.length+'件 / 根拠を表示</span></div>'+
@@ -7882,6 +7897,34 @@
           : '<div class="empty" style="margin-top:12px">類似する過去案件は見つかりませんでした。</div>';
 
         host.innerHTML=aiAssistHtml+knowledgeHtml+ticketHtml;
+
+        const weakUseRemote=$('#ticketWeakUseRemote');
+        if(weakUseRemote) weakUseRemote.onclick=()=>{
+          const remote=$('#ticketRemoteAction');
+          if(remote && !remote.value.trim()){
+            remote.value='有力な解決候補が見つからないため、TeamViewerで現象・設定・エラー内容を直接確認する';
+          }
+          $('#supportRemoteWorkspace')?.scrollIntoView({behavior:'smooth',block:'start'});
+          setTimeout(()=>($('#ticketRemoteAction')||$('#ticketTeamViewerCreate'))?.focus(),250);
+          toast('TeamViewer確認へ移動しました');
+        };
+
+        const weakHandoff=$('#ticketWeakHandoff');
+        if(weakHandoff) weakHandoff.onclick=()=>{
+          const instant=$('#supportTicketInstantHandoff');
+          if(instant){
+            instant.click();
+            setTimeout(()=>{
+              if($('#instantHandoffReason')) $('#instantHandoffReason').value='対応方法不明';
+              if($('#instantHandoffNote')) $('#instantHandoffNote').value='ナレッジ・過去案件を再検索しましたが、有力な解決候補が見つかりませんでした。';
+            },100);
+          }else{
+            $('#ticketHandoffBox')?.classList.remove('hidden');
+            if($('#handoffReason')) $('#handoffReason').value='再検索でも有力な解決候補が見つからないため';
+            if($('#handoffNextAction')) $('#handoffNextAction').value='自社管理者で詳細確認し、追加調査または現地対応要否を判断';
+            $('#ticketHandoffBox')?.scrollIntoView({behavior:'smooth',block:'center'});
+          }
+        };
 
         const assistStepStateKey='quoteflow:assist-steps:'+String(t.id);
         const readAssistStepState=()=>assistSteps.map((_,i)=>({
