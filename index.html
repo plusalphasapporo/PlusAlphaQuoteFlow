@@ -6671,12 +6671,22 @@
 
     const visibilityLabel=v=>({customer:'顧客向け',support:'サポート内',internal:'社内のみ'}[v]||v||'顧客向け');
     const messagesHtml=messages.length
-      ? messages.map(m=>
-          '<div class="item">'+
-            '<div class="row between"><strong>'+esc(customer?'メッセージ':visibilityLabel(m.visibility))+'</strong><span class="muted">'+esc(dateText(m.created_at))+'</span></div>'+
-            '<p style="white-space:pre-wrap">'+esc(m.body||'')+'</p>'+
-          '</div>'
-        ).join('')
+      ? messages.map((m,idx)=>{
+          const body=String(m.body||'');
+          const important=body.startsWith('【重要】');
+          const author=m.sender_name||m.created_by_name||m.author_name||'';
+          return '<article class="item ticketMessageCard" data-visibility="'+esc(m.visibility||'customer')+'" data-body="'+esc(body.toLowerCase())+'">'+
+            '<div class="row between"><div class="row">'+
+              '<strong>'+(important?'【重要】 ':'')+esc(customer?'メッセージ':visibilityLabel(m.visibility))+'</strong>'+
+              (author?'<span class="pill">'+esc(author)+'</span>':'')+
+            '</div><span class="muted">'+esc(dateTimeText(m.created_at))+'</span></div>'+
+            '<p style="white-space:pre-wrap">'+esc(body)+'</p>'+
+            '<div class="row" style="margin-top:8px">'+
+              '<button class="ghost ticketMessageReply" type="button" data-index="'+idx+'">引用返信</button>'+
+              '<button class="ghost ticketMessageCopy" type="button" data-index="'+idx+'">コピー</button>'+
+            '</div>'+
+          '</article>';
+        }).join('')
       : '<div class="empty">メッセージはまだありません。</div>';
 
     const attachmentSourceLabel=a=>({customer:'顧客から',internal:'自社から',support:'サポート会社'}[a.uploader_group]||'送信元不明');
@@ -6832,8 +6842,27 @@
         actionButtons+
         customerRemoteSupport+
         (!customer?'<section class="section"><div class="row between"><div><h3>対応履歴タイムライン</h3><p class="sectionDesc">受付からTeamViewer・引継ぎ・作業報告までを時系列で確認します。</p></div><span class="pill">'+esc(timelineEvents.length)+'件</span></div>'+timelineHtml+'</section>':'')+
-        '<section class="section"><h3>対応履歴・メッセージ</h3>'+messagesHtml+
-          '<form id="ticketMessageForm" class="card section" style="box-shadow:none">'+visibilitySelect+'<div class="field"><label>返信</label><textarea id="ticketMessageBody" rows="4" required></textarea></div><button class="primary" type="submit">メッセージを送信</button></form><div id="ticketMessageMsg" class="notice hidden"></div></section>'+
+        '<section class="section">'+
+          '<div class="row between"><div><h3>対応履歴・メッセージ</h3><p class="sectionDesc">顧客向け・サポート内・社内メモを案件内で整理します。</p></div><span class="pill">'+esc(messages.length)+'件</span></div>'+
+          (messages.length?'<div class="row" style="margin:10px 0"><input id="ticketMessageSearch" placeholder="メッセージ検索" style="flex:1;min-width:220px;padding:10px 12px;border:1px solid var(--line);border-radius:10px"><select id="ticketMessageFilter" style="min-width:150px;padding:10px 12px;border:1px solid var(--line);border-radius:10px"><option value="all">すべて</option><option value="customer">顧客向け</option><option value="support">サポート内</option>'+(internal?'<option value="internal">社内のみ</option>':'')+'</select></div>':'')+
+          '<div id="ticketMessageList">'+messagesHtml+'</div>'+
+          '<form id="ticketMessageForm" class="card section" style="box-shadow:none">'+
+            visibilitySelect+
+            '<div class="row" style="margin:8px 0;gap:6px">'+
+              '<button class="ghost ticketMessageTemplate" type="button" data-text="お問い合わせありがとうございます。内容を確認しておりますので、少々お待ちください。">受付連絡</button>'+
+              '<button class="ghost ticketMessageTemplate" type="button" data-text="現在、原因を確認しています。確認でき次第ご連絡いたします。">確認中</button>'+
+              '<button class="ghost ticketMessageTemplate" type="button" data-text="遠隔で確認するため、TeamViewerでの接続をお願いいたします。">TeamViewer案内</button>'+
+              '<button class="ghost ticketMessageTemplate" type="button" data-text="対応が完了しました。ご確認をお願いいたします。">完了案内</button>'+
+            '</div>'+
+            '<div class="field"><label>返信</label><textarea id="ticketMessageBody" rows="5" required placeholder="対応内容を入力してください"></textarea><div class="row between"><small class="muted">Ctrl + Enter で送信</small><small id="ticketMessageCount" class="muted">0文字</small></div></div>'+
+            '<div class="row between" style="gap:8px">'+
+              '<div class="row">'+
+                (!customer?'<button id="ticketMessageInternalNote" class="ghost" type="button">'+(support?'サポート内メモ':'社内メモ')+'</button>':'')+
+                '<label class="row" style="gap:6px"><input id="ticketMessageImportant" type="checkbox"> 重要</label>'+
+              '</div>'+
+              '<button class="primary" type="submit">メッセージを送信</button>'+
+            '</div>'+
+          '</form><div id="ticketMessageMsg" class="notice hidden"></div></section>'+
         (!customer?'<section class="section"><h3>引き継ぎ履歴</h3>'+dataTable(internal?['状態','理由','次の対応','作成日','操作']:['状態','理由','次の対応','作成日'],handoffRows)+'</section>':'')+
         '<section class="section"><div class="row between"><div><h3>写真・添付ファイル</h3><p class="sectionDesc">'+(support?'顧客または自社から届いた写真を確認します。':customer?'サポート会社へ追加の写真を送れます。':'サポート会社へ追加の写真を送れます。')+'</p></div>'+
           ((customer||internal)&&t.status!=='closed'?'<label class="ghost" style="display:inline-flex;align-items:center;cursor:pointer">＋ 写真を追加<input id="ticketAttachmentInput" type="file" accept="image/*,.pdf" multiple style="display:none"></label>':'')+
@@ -6842,8 +6871,68 @@
 
     $('#ticketDetailClose').onclick=()=>{$('#ticketDetailHost').innerHTML='';};
     $('#ticketDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
-    bindSupportDraftInputs(t.id,'message',{body:'#ticketMessageBody'});
+    bindSupportDraftInputs(t.id,'message',{body:'#ticketMessageBody',important:'#ticketMessageImportant',visibility:'#ticketMessageVisibility'});
     bindSupportDraftInputs(t.id,'handoff',{reason:'#handoffReason',next_action:'#handoffNextAction'});
+
+    const messageBodyEl=$('#ticketMessageBody');
+    const messageCountEl=$('#ticketMessageCount');
+    const refreshMessageCount=()=>{if(messageCountEl) messageCountEl.textContent=String((messageBodyEl?.value||'').length)+'文字';};
+    if(messageBodyEl){
+      refreshMessageCount();
+      messageBodyEl.addEventListener('input',refreshMessageCount);
+      messageBodyEl.addEventListener('keydown',e=>{
+        if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){
+          e.preventDefault();
+          $('#ticketMessageForm')?.requestSubmit();
+        }
+      });
+    }
+
+    document.querySelectorAll('.ticketMessageTemplate').forEach(btn=>btn.onclick=()=>{
+      if(!messageBodyEl) return;
+      const text=btn.dataset.text||'';
+      messageBodyEl.value=(messageBodyEl.value?messageBodyEl.value+'\n':'')+text;
+      messageBodyEl.dispatchEvent(new Event('input',{bubbles:true}));
+      messageBodyEl.focus();
+    });
+
+    const internalNoteBtn=$('#ticketMessageInternalNote');
+    if(internalNoteBtn) internalNoteBtn.onclick=()=>{
+      const vis=$('#ticketMessageVisibility');
+      if(vis) vis.value=support?'support':'internal';
+      if(messageBodyEl && !messageBodyEl.value) messageBodyEl.placeholder=support?'サポート会社内だけに残すメモ':'自社だけに残す社内メモ';
+      vis?.dispatchEvent(new Event('change',{bubbles:true}));
+      messageBodyEl?.focus();
+      toast(support?'サポート内メモに切り替えました':'社内メモに切り替えました');
+    };
+
+    const filterMessages=()=>{
+      const q=($('#ticketMessageSearch')?.value||'').trim().toLowerCase();
+      const vis=$('#ticketMessageFilter')?.value||'all';
+      document.querySelectorAll('.ticketMessageCard').forEach(card=>{
+        const okQ=!q||String(card.dataset.body||'').includes(q);
+        const okV=vis==='all'||card.dataset.visibility===vis;
+        card.classList.toggle('hidden',!(okQ&&okV));
+      });
+    };
+    $('#ticketMessageSearch')?.addEventListener('input',filterMessages);
+    $('#ticketMessageFilter')?.addEventListener('change',filterMessages);
+
+    document.querySelectorAll('.ticketMessageReply').forEach(btn=>btn.onclick=()=>{
+      const m=messages[Number(btn.dataset.index)];
+      if(!m||!messageBodyEl) return;
+      const excerpt=String(m.body||'').slice(0,300);
+      messageBodyEl.value=(messageBodyEl.value?messageBodyEl.value+'\n\n':'')+'> '+excerpt.replace(/\n/g,'\n> ')+'\n\n';
+      messageBodyEl.dispatchEvent(new Event('input',{bubbles:true}));
+      messageBodyEl.focus();
+      messageBodyEl.scrollIntoView({behavior:'smooth',block:'center'});
+    });
+    document.querySelectorAll('.ticketMessageCopy').forEach(btn=>btn.onclick=async()=>{
+      const m=messages[Number(btn.dataset.index)];
+      if(!m) return;
+      try{await navigator.clipboard.writeText(String(m.body||''));toast('メッセージをコピーしました');}
+      catch(_){toast('コピーできませんでした');}
+    });
 
     if(support){
       const jump=(selector)=>{
@@ -7330,8 +7419,11 @@
       e.preventDefault();
       const btn=e.submitter;if(btn)btn.disabled=true;
       try{
+        const rawBody=$('#ticketMessageBody').value.trim();
+        if(!rawBody) throw new Error('メッセージを入力してください。');
+        const body=$('#ticketMessageImportant')?.checked?'【重要】\n'+rawBody:rawBody;
         await rpc('post_ticket_message',{
-          p_ticket_id:t.id,p_visibility:$('#ticketMessageVisibility').value,p_body:$('#ticketMessageBody').value.trim()
+          p_ticket_id:t.id,p_visibility:$('#ticketMessageVisibility').value,p_body:body
         });
         clearSupportDraft(t.id,'message');
         notice('#ticketMessageMsg','メッセージを送信しました。',true);
