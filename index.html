@@ -1512,7 +1512,7 @@
             }catch(err){toast(err.message||String(err));}
           };
           if(currentPage==='home') await renderHome();
-        else if(role==='support_staff'&&currentPage==='support_cases'&&!activeTicketId) await renderSupport();
+          else if(currentPage==='support_cases'&&!activeTicketId) await renderSupport();
         }
       })
       .on('postgres_changes',{event:'UPDATE',schema:'public',table:'support_tickets'},async payload=>{
