@@ -168,6 +168,10 @@
     .messageVisibilityBanner.customer{background:#fff7ed;border:1px solid #fdba74;color:#9a3412}
     .messageVisibilityBanner.support{background:#eff6ff;border:1px solid #93c5fd;color:#1d4ed8}
     .messageVisibilityBanner.internal{background:#f1f5f9;border:1px solid #cbd5e1;color:#334155}
+    .messageVisibilityBanner.replyMismatch{box-shadow:inset 0 0 0 2px #dc2626}
+    .messageReplyContext{margin:10px 0;padding:10px 12px;border:1px solid #bfdbfe;border-left:4px solid #2563eb;border-radius:12px;background:#f8fbff}
+    .messageReplyContextHead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
+    .messageReplyContextBody{font-size:13px;color:#475569;white-space:pre-wrap;max-height:88px;overflow:auto}
     @media(max-width:1100px){.supportCaseFacts{grid-template-columns:repeat(2,minmax(0,1fr))}}
     @media(max-width:680px){.supportCaseCardHead{grid-template-columns:1fr}.supportCaseFacts{grid-template-columns:1fr}.supportCaseCardActions .primary{width:100%}}
     body[data-role="support_staff"] .workspaceHead{border-color:#dbeafe}
@@ -6923,6 +6927,7 @@
           '<form id="ticketMessageForm" class="card section" style="box-shadow:none">'+
             visibilitySelect+
             (!customer?'<div id="ticketMessageVisibilityBanner" class="messageVisibilityBanner customer">このメッセージは顧客に表示されます</div>':'')+
+            '<div id="ticketMessageReplyContext" class="messageReplyContext hidden"></div>'+
             '<div class="row" style="margin:8px 0;gap:6px">'+
               '<button class="ghost ticketMessageTemplate" type="button" data-text="お問い合わせありがとうございます。内容を確認しておりますので、少々お待ちください。">受付連絡</button>'+
               '<button class="ghost ticketMessageTemplate" type="button" data-text="現在、原因を確認しています。確認でき次第ご連絡いたします。">確認中</button>'+
@@ -6953,6 +6958,30 @@
     const messageBodyEl=$('#ticketMessageBody');
     const messageVisibilityEl=$('#ticketMessageVisibility');
     const messageVisibilityBanner=$('#ticketMessageVisibilityBanner');
+    const messageReplyContextEl=$('#ticketMessageReplyContext');
+    let messageReplyContext=null;
+    const renderMessageReplyContext=()=>{
+      if(!messageReplyContextEl) return;
+      if(!messageReplyContext){
+        messageReplyContextEl.classList.add('hidden');
+        messageReplyContextEl.innerHTML='';
+        return;
+      }
+      const author=messageReplyContext.author||'送信者不明';
+      const when=dateTimeText(messageReplyContext.created_at);
+      const vis=visibilityLabel(messageReplyContext.visibility);
+      messageReplyContextEl.classList.remove('hidden');
+      messageReplyContextEl.innerHTML=
+        '<div class="messageReplyContextHead"><div class="row"><strong>返信先</strong><span class="pill">'+esc(vis)+'</span><span class="muted">'+esc(author)+' / '+esc(when)+'</span></div>'+
+        '<button id="ticketMessageReplyCancel" class="ghost" type="button">返信先を解除</button></div>'+
+        '<div class="messageReplyContextBody">'+esc(messageReplyContext.excerpt||'')+'</div>';
+      $('#ticketMessageReplyCancel')?.addEventListener('click',()=>{
+        messageReplyContext=null;
+        renderMessageReplyContext();
+        updateMessageVisibilityBanner();
+        messageBodyEl?.focus();
+      });
+    };
     const updateMessageVisibilityBanner=()=>{
       if(!messageVisibilityEl||!messageVisibilityBanner) return;
       const v=messageVisibilityEl.value||'customer';
@@ -6962,7 +6991,9 @@
         internal:['internal','自社内だけに表示されます。顧客・サポート会社には表示されません。']
       }[v]||['customer','顧客に表示されます。'];
       messageVisibilityBanner.className='messageVisibilityBanner '+meta[0];
-      messageVisibilityBanner.textContent=meta[1];
+      const mismatch=!!(messageReplyContext && v!==messageReplyContext.visibility);
+      messageVisibilityBanner.classList.toggle('replyMismatch',mismatch);
+      messageVisibilityBanner.textContent=meta[1]+(mismatch?' 返信先の公開範囲と異なります。送信前に確認してください。':'');
     };
     if(messageVisibilityEl){
       updateMessageVisibilityBanner();
@@ -7093,11 +7124,23 @@
     document.querySelectorAll('.ticketMessageReply').forEach(btn=>btn.onclick=()=>{
       const m=messages[Number(btn.dataset.index)];
       if(!m||!messageBodyEl) return;
-      const excerpt=String(m.body||'').slice(0,300);
-      messageBodyEl.value=(messageBodyEl.value?messageBodyEl.value+'\n\n':'')+'> '+excerpt.replace(/\n/g,'\n> ')+'\n\n';
-      messageBodyEl.dispatchEvent(new Event('input',{bubbles:true}));
+      const excerpt=String(m.body||'').replace(/^【重要】\s*/,'').slice(0,300);
+      messageReplyContext={
+        author:m.sender_name||m.created_by_name||m.author_name||'送信者不明',
+        created_at:m.created_at,
+        visibility:m.visibility||'customer',
+        excerpt
+      };
+      if(messageVisibilityEl){
+        const allowed=[...messageVisibilityEl.options].some(o=>o.value===messageReplyContext.visibility);
+        if(allowed) messageVisibilityEl.value=messageReplyContext.visibility;
+      }
+      renderMessageReplyContext();
+      updateMessageVisibilityBanner();
+      messageVisibilityEl?.dispatchEvent(new Event('change',{bubbles:true}));
       messageBodyEl.focus();
       messageBodyEl.scrollIntoView({behavior:'smooth',block:'center'});
+      toast('返信先を設定しました');
     });
     document.querySelectorAll('.ticketMessageCopy').forEach(btn=>btn.onclick=async()=>{
       const m=messages[Number(btn.dataset.index)];
@@ -7596,6 +7639,11 @@
         if(!rawBody && !files.length) throw new Error('メッセージまたは添付ファイルを入力してください。');
 
         const visibility=$('#ticketMessageVisibility').value;
+        if(messageReplyContext && visibility!==messageReplyContext.visibility){
+          const from=visibilityLabel(messageReplyContext.visibility);
+          const to=visibilityLabel(visibility);
+          if(!confirm('返信先は「'+from+'」ですが、送信先は「'+to+'」です。\n公開範囲が異なるまま送信してよろしいですか？')) return;
+        }
         if(!customer && visibility==='customer'){
           const preview=(rawBody||'添付ファイルのみ').replace(/\s+/g,' ').slice(0,120);
           if(!confirm('この内容は顧客に表示されます。送信してよろしいですか？\n\n'+preview)) return;
@@ -7608,8 +7656,11 @@
         const attachmentNote=files.length
           ? '【添付】\n'+files.map(f=>'・'+f.name).join('\n')
           : '';
+        const replyNote=messageReplyContext
+          ? '【返信先】 '+String(messageReplyContext.author||'送信者不明')+' / '+dateTimeText(messageReplyContext.created_at)+' / '+visibilityLabel(messageReplyContext.visibility)+'\n> '+String(messageReplyContext.excerpt||'').replace(/\n/g,'\n> ')
+          : '';
         const baseBody=rawBody || '添付ファイルを送信しました。';
-        const composed=[baseBody,attachmentNote].filter(Boolean).join('\n\n');
+        const composed=[replyNote,baseBody,attachmentNote].filter(Boolean).join('\n\n');
         const body=$('#ticketMessageImportant')?.checked?'【重要】\n'+composed:composed;
 
         await rpc('post_ticket_message',{
