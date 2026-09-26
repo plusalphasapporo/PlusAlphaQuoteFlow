@@ -7386,7 +7386,26 @@
           ['番号','件名','状態','優先度','作成日','操作'],
           filtered.map(t=>'<tr><td><strong>'+esc(t.ticket_number||'—')+'</strong></td><td>'+esc(t.subject||'')+'</td><td>'+esc(statusText(t.status))+'</td><td>'+esc(t.priority||'normal')+'</td><td>'+esc(dateText(t.created_at))+'</td><td><button class="linkBtn ticketDetail" type="button" data-id="'+esc(t.id)+'">詳細</button></td></tr>')
         );
-        document.querySelectorAll('.ticketDetail').forEach(btn=>btn.onclick=async()=>{btn.disabled=true;try{if(bootData?.context?.role==='customer_user') await renderTicketDetail(btn.dataset.id); else await openTicketWorkspace(btn.dataset.id);}catch(err){toast(err.message||String(err));}finally{btn.disabled=false;}});
+        document.querySelectorAll('.ticketDetail').forEach(btn=>btn.onclick=async()=>{
+        btn.disabled=true;
+        try{
+          if(bootData?.context?.role==='customer_user'){
+            await renderTicketDetail(btn.dataset.id);
+            return;
+          }
+          const ticket=data.find(x=>String(x.id)===String(btn.dataset.id));
+          if(support && ticket && ticket.status!=='closed' && ticket.support_stage==='unhandled'){
+            await rpc('claim_support_ticket',{p_ticket_id:ticket.id}).catch(()=>{});
+            await rpc('set_support_workflow_stage',{p_ticket_id:ticket.id,p_stage:'in_progress'}).catch(()=>{});
+            toast('対応を開始しました');
+          }
+          await openTicketWorkspace(btn.dataset.id);
+        }catch(err){
+          toast(err.message||String(err));
+        }finally{
+          btn.disabled=false;
+        }
+      });
       };
       bindListToolbar('ticketList',renderRows);
       renderRows();
@@ -7538,7 +7557,7 @@
                   '<div class="supportCaseFact"><span>最終更新</span><strong>'+esc(dateTimeText(t.last_message_at||t.updated_at))+'</strong></div>'+
                   '<div class="supportCaseFact"><span>自社担当</span><strong>'+esc(t.assigned_internal_user_name||'未設定')+'</strong></div>'+
                 '</div>'+
-                '<div class="supportCaseCardActions"><button class="primary ticketDetail" type="button" data-id="'+esc(t.id)+'">案件カルテを開く</button></div>'+
+                '<div class="supportCaseCardActions"><button class="primary ticketDetail" type="button" data-id="'+esc(t.id)+'">'+(t.status!=='closed'&&t.support_stage==='unhandled'?'対応を開始':'案件カルテを開く')+'</button></div>'+
               '</article>';
             }).join('')+'</div>'
           : '<div class="empty">該当する案件はありません。</div>';
