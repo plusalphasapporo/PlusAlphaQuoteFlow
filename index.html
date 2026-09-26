@@ -158,6 +158,12 @@
     .supportCaseFilterBtn{background:transparent;color:#526174;padding:9px 12px;border-radius:10px}
     .supportCaseFilterBtn.active{background:#fff;color:#164b9f;box-shadow:0 2px 10px rgba(15,23,42,.08)}
     .ticketMessageCard.messageNew{border-left:4px solid #2563eb;background:#f8fbff}
+    .messageDropZone{border:1px dashed #94a3b8;border-radius:12px;padding:12px;background:#f8fafc;transition:.15s}
+    .messageDropZone.dragover{border-color:#2563eb;background:#eff6ff}
+    .messageFilePreviewGrid{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+    .messageFilePreview{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;padding:7px 9px;background:#fff;max-width:100%}
+    .messageFilePreview img{width:44px;height:44px;object-fit:cover;border-radius:7px}
+    .messageFilePreviewMeta{min-width:0}.messageFilePreviewMeta strong{display:block;font-size:12px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.messageFilePreviewMeta small{display:block;color:var(--muted)}
     @media(max-width:1100px){.supportCaseFacts{grid-template-columns:repeat(2,minmax(0,1fr))}}
     @media(max-width:680px){.supportCaseCardHead{grid-template-columns:1fr}.supportCaseFacts{grid-template-columns:1fr}.supportCaseCardActions .primary{width:100%}}
     body[data-role="support_staff"] .workspaceHead{border-color:#dbeafe}
@@ -6919,7 +6925,7 @@
               '<button class="ghost ticketMessageTemplate" type="button" data-text="対応が完了しました。ご確認をお願いいたします。">完了案内</button>'+
             '</div>'+
             '<div class="field"><label>返信</label><textarea id="ticketMessageBody" rows="5" placeholder="対応内容を入力してください"></textarea><div class="row between"><small class="muted">Ctrl + Enter で送信</small><small id="ticketMessageCount" class="muted">0文字</small></div></div>'+
-            '<div class="field"><label>写真・ファイルを添付</label><input id="ticketMessageFiles" type="file" accept="image/*,.pdf,.txt,.csv,.doc,.docx,.xls,.xlsx" multiple><small class="muted">写真・PDF・Officeファイルなどをこのメッセージと一緒に送れます。</small><div id="ticketMessageFileList" class="muted" style="margin-top:6px"></div></div>'+
+            '<div id="ticketMessageDropZone" class="field messageDropZone"><label>写真・ファイルを添付</label><input id="ticketMessageFiles" type="file" accept="image/*,.pdf,.txt,.csv,.doc,.docx,.xls,.xlsx" multiple><small class="muted">選択・ドラッグ＆ドロップ・スクリーンショット貼り付け（Ctrl+V）に対応します。</small><div id="ticketMessageFileList" class="messageFilePreviewGrid"></div></div>'+
             '<div class="row between" style="gap:8px">'+
               '<div class="row">'+
                 (!customer?'<button id="ticketMessageInternalNote" class="ghost" type="button">'+(support?'サポート内メモ':'社内メモ')+'</button>':'')+
@@ -6942,14 +6948,72 @@
     const messageBodyEl=$('#ticketMessageBody');
     const messageFilesEl=$('#ticketMessageFiles');
     const messageFileListEl=$('#ticketMessageFileList');
+    const messageDropZone=$('#ticketMessageDropZone');
+    let messagePendingFiles=[];
+
+    const syncMessageFileInput=()=>{
+      if(!messageFilesEl || typeof DataTransfer==='undefined') return;
+      const dt=new DataTransfer();
+      messagePendingFiles.forEach(file=>dt.items.add(file));
+      messageFilesEl.files=dt.files;
+    };
+    const addMessageFiles=(files)=>{
+      [...(files||[])].forEach(file=>{
+        const key=[file.name,file.size,file.lastModified].join(':');
+        if(!messagePendingFiles.some(x=>[x.name,x.size,x.lastModified].join(':')===key)) messagePendingFiles.push(file);
+      });
+      syncMessageFileInput();
+      refreshMessageFileList();
+    };
     const refreshMessageFileList=()=>{
       if(!messageFileListEl) return;
-      const files=[...(messageFilesEl?.files||[])];
-      messageFileListEl.textContent=files.length
-        ? files.map(f=>f.name+' ('+Math.max(1,Math.round((f.size||0)/1024))+'KB)').join(' / ')
+      messageFileListEl.innerHTML=messagePendingFiles.length
+        ? messagePendingFiles.map((f,idx)=>{
+            const imageLike=String(f.type||'').startsWith('image/');
+            const imageUrl=imageLike?URL.createObjectURL(f):'';
+            return '<div class="messageFilePreview">'+
+              (imageLike?'<img src="'+esc(imageUrl)+'" alt="'+esc(f.name)+'">':'<span class="pill">'+esc((f.name.split('.').pop()||'FILE').toUpperCase())+'</span>')+
+              '<div class="messageFilePreviewMeta"><strong>'+esc(f.name)+'</strong><small>'+esc(Math.max(1,Math.round((f.size||0)/1024)))+'KB</small></div>'+
+              '<button class="ghost messageFileRemove" type="button" data-index="'+idx+'">削除</button>'+
+            '</div>';
+          }).join('')
         : '';
+      document.querySelectorAll('.messageFileRemove').forEach(btn=>btn.onclick=()=>{
+        messagePendingFiles.splice(Number(btn.dataset.index),1);
+        syncMessageFileInput();
+        refreshMessageFileList();
+      });
     };
-    if(messageFilesEl) messageFilesEl.addEventListener('change',refreshMessageFileList);
+    if(messageFilesEl) messageFilesEl.addEventListener('change',()=>addMessageFiles(messageFilesEl.files));
+
+    if(messageDropZone){
+      ['dragenter','dragover'].forEach(type=>messageDropZone.addEventListener(type,e=>{
+        e.preventDefault(); e.stopPropagation(); messageDropZone.classList.add('dragover');
+      }));
+      ['dragleave','drop'].forEach(type=>messageDropZone.addEventListener(type,e=>{
+        e.preventDefault(); e.stopPropagation(); messageDropZone.classList.remove('dragover');
+      }));
+      messageDropZone.addEventListener('drop',e=>addMessageFiles(e.dataTransfer?.files||[]));
+    }
+
+    if(messageBodyEl){
+      messageBodyEl.addEventListener('paste',e=>{
+        const pasted=[...(e.clipboardData?.items||[])]
+          .filter(item=>item.kind==='file')
+          .map(item=>item.getAsFile())
+          .filter(Boolean);
+        if(pasted.length){
+          e.preventDefault();
+          const stamped=pasted.map((file,idx)=>{
+            if(file.name && file.name!=='image.png') return file;
+            const ext=(file.type||'image/png').split('/')[1]||'png';
+            return new File([file],'screenshot-'+Date.now()+'-'+(idx+1)+'.'+ext,{type:file.type||'image/png',lastModified:Date.now()});
+          });
+          addMessageFiles(stamped);
+          toast('貼り付けた画像を添付しました');
+        }
+      });
+    }
 
     const messageCountEl=$('#ticketMessageCount');
     const refreshMessageCount=()=>{if(messageCountEl) messageCountEl.textContent=String((messageBodyEl?.value||'').length)+'文字';};
@@ -7504,7 +7568,7 @@
       const btn=e.submitter;if(btn)btn.disabled=true;
       try{
         const rawBody=$('#ticketMessageBody').value.trim();
-        const files=[...($('#ticketMessageFiles')?.files||[])];
+        const files=[...messagePendingFiles];
         if(!rawBody && !files.length) throw new Error('メッセージまたは添付ファイルを入力してください。');
 
         const visibility=$('#ticketMessageVisibility').value;
