@@ -6942,6 +6942,14 @@
       return mins<60?mins+'分':Math.floor(mins/60)+'時間'+(mins%60?String(mins%60)+'分':'');
     })():'—';
     const assistSectionNo=internal?'02':'01';
+    const supportPrimaryStep=(()=>{
+      if(t.status==='closed') return {label:'完了済み',hint:'対応履歴・作業報告を確認できます。',target:'history'};
+      if(supportStage==='unhandled') return {label:'① 受付内容を確認',hint:'依頼内容・写真・顧客情報を確認して対応を開始します。',target:'content'};
+      if(latestTeamViewerSession && teamviewerSessionClosed && !latestTeamViewerSession.outcome) return {label:'④ TeamViewer結果を記録',hint:'遠隔対応の結果を入力して、完了・継続・引継ぎを決めます。',target:'remote'};
+      if(supportStage==='teamviewer_waiting'||(latestTeamViewerSession&&!teamviewerSessionClosed)) return {label:'③ TeamViewer対応',hint:'接続・遠隔確認を進めます。',target:'remote'};
+      if(['internal_handoff_waiting','internal_in_progress','support_review_waiting'].includes(supportStage)) return {label:'引継ぎ状況を確認',hint:'同じ案件カルテのまま対応状況を確認します。',target:'history'};
+      return {label:'② 対応方法を確認',hint:'AI・ナレッジ・過去案件から対応方法を確認します。',target:'assist'};
+    })();
     const supportStageControl=support && t.status!=='closed'
       ? '<div class="notice"><div class="row between"><div><strong>現在の対応工程</strong><div style="margin-top:6px">'+supportStageBadge(supportStage)+'</div><div style="margin-top:8px"><strong>次の行動：</strong> '+supportNextActionBadge(nextActionState?.support_next_action||'in_progress')+' '+supportQueueAlertBadge(nextActionState?.notification_active!==false?(nextActionState?.alert_level||'normal'):'normal')+' <span class="pill">滞留 '+esc(supportQueueAgeText(nextActionState?.waiting_seconds||0))+'</span><div class="muted" style="margin-top:4px">'+esc(supportQueueThresholdText(nextActionState?.support_next_action||''))+'</div></div><div style="margin-top:8px"><strong>対応管理：</strong> '+(supportAttentionBadge(nextActionState)||'<span class="pill">未設定</span>')+(nextActionState?.support_attention_note?'<div class="muted" style="margin-top:4px">'+esc(nextActionState.support_attention_note)+'</div>':'')+'</div><div style="margin-top:8px"><strong>サポート担当：</strong> '+supportAssigneeBadge(assignmentState)+'</div></div><div class="supportQuickActions">'+
           (!assignmentState?.support_assigned_user_id?'<button id="ticketClaimSupport" class="primary" type="button">自分が担当する</button>':'')+
@@ -6954,21 +6962,29 @@
       : '<div class="notice"><strong>現在の対応工程：</strong> '+supportStageBadge(supportStage||'completed')+'</div>';
     const firstLineAssist=!customer
       ? '<section id="supportAssistWorkspace" class="formSection"><div class="formSectionHead"><span class="sectionNo">'+assistSectionNo+'</span><h3>サポート対応フロー</h3></div>'+
+          '<div class="notice ok" style="margin-bottom:12px">'+
+            '<div class="row between" style="gap:12px;align-items:center;flex-wrap:wrap">'+
+              '<div><strong>今やること：'+esc(supportPrimaryStep.label)+'</strong><div class="muted" style="margin-top:4px">'+esc(supportPrimaryStep.hint)+'</div></div>'+
+              (t.status!=='closed'?'<button id="supportPrimaryNext" class="primary" type="button">ここから進める</button>':'')+
+            '</div>'+
+          '</div>'+
           '<div class="supportMainActions">'+
-            '<button id="ticketActionAi" class="supportMainAction" type="button"><strong>AI・ナレッジ</strong><small>症状から原因と対応方法を探す</small></button>'+
-            '<button id="ticketActionRemote" class="supportMainAction orange" type="button"><strong>TeamViewer</strong><small>顧客PCへ遠隔で設定・確認する</small></button>'+
-            '<button id="ticketActionCustomer" class="supportMainAction" type="button"><strong>顧客・機器</strong><small>契約・機器・連絡先を確認する</small></button>'+
-            (t.status!=='closed'?'<button id="ticketActionIncident" class="supportMainAction warn" type="button"><strong>障害として登録</strong><small>この問い合わせを障害案件として分類する</small></button>':'')+
-            (t.status!=='closed'?'<button id="ticketActionSetting" class="supportMainAction" type="button"><strong>設定依頼として登録</strong><small>この問い合わせを設定依頼として分類する</small></button>':'')+
-            (t.status!=='closed'?'<button id="ticketActionFinish" class="supportMainAction green" type="button"><strong>解決・引継ぎ</strong><small>完了または自社担当への引継ぎへ進む</small></button>':'')+
+            '<button id="ticketActionAi" class="supportMainAction" type="button"><strong>対応方法</strong><small>AI・ナレッジ・過去案件</small></button>'+
+            '<button id="ticketActionRemote" class="supportMainAction orange" type="button"><strong>TeamViewer</strong><small>必要な場合だけ遠隔対応</small></button>'+
+            '<button id="ticketActionFinish" class="supportMainAction green" type="button"><strong>作業報告</strong><small>結果を記録して完了</small></button>'+
+          '</div>'+
+          '<div class="supportQuickActions" style="margin:8px 0 12px">'+
+            '<button id="ticketActionCustomer" class="ghost" type="button">顧客・機器を確認</button>'+
+            (t.status!=='closed'?'<button id="ticketActionIncident" class="ghost" type="button">障害として登録</button>':'')+
+            (t.status!=='closed'?'<button id="ticketActionSetting" class="ghost" type="button">設定依頼として登録</button>':'')+
           '</div>'+
           '<div id="ticketClassificationPanel" class="supportClassificationPanel hidden"></div>'+
           '<div class="supportFlow">'+
-            '<div class="supportStep done"><span class="supportStepNum">1</span><strong>受付</strong><small>'+esc(intakeSource)+'</small></div>'+
-            '<div class="supportStep '+(supportStage==='unhandled'?'active':'done')+'"><span class="supportStepNum">2</span><strong>依頼内容・写真確認</strong><small>'+supportRequestTypeLabel(t.request_type)+' / '+esc(attachments.length)+'件の写真・添付</small></div>'+
-            '<div class="supportStep '+(supportStage==='in_progress'&&!latestTeamViewerSession?'active':(latestTeamViewerSession||['teamviewer_waiting','internal_handoff_waiting','internal_in_progress','support_review_waiting','completed'].includes(supportStage)?'done':''))+'"><span class="supportStepNum">3</span><strong>AI・ナレッジ</strong><small>AI・ナレッジ・マニュアルで原因切り分け</small></div>'+
-            '<div class="supportStep '+(['teamviewer_waiting'].includes(supportStage)?'active':(latestTeamViewerSession?'done':''))+'"><span class="supportStepNum">4</span><strong>TeamViewer</strong><small>必要時のみ顧客PCへ遠隔接続</small></div>'+
-            '<div class="supportStep '+(['internal_handoff_waiting','internal_in_progress','support_review_waiting'].includes(supportStage)?'active':(supportStage==='completed'?'done':''))+'"><span class="supportStepNum">5</span><strong>完了 / 自社引継ぎ</strong><small>難しい場合は自社担当へ</small></div>'+
+            '<div class="supportStep '+(supportStage==='unhandled'?'active':'done')+'"><span class="supportStepNum">1</span><strong>受付確認</strong><small>内容・写真・顧客</small></div>'+
+            '<div class="supportStep '+(supportStage==='in_progress'&&!latestTeamViewerSession?'active':(latestTeamViewerSession||supportStage==='completed'?'done':''))+'"><span class="supportStepNum">2</span><strong>対応</strong><small>ナレッジ・作業</small></div>'+
+            '<div class="supportStep '+((supportStage==='teamviewer_waiting'||(latestTeamViewerSession&&!teamviewerSessionClosed))?'active':(latestTeamViewerSession?'done':''))+'"><span class="supportStepNum">3</span><strong>TeamViewer</strong><small>必要な場合のみ</small></div>'+
+            '<div class="supportStep '+((latestTeamViewerSession&&teamviewerSessionClosed&&!latestTeamViewerSession.outcome)?'active':(t.status==='closed'?'done':''))+'"><span class="supportStepNum">4</span><strong>報告</strong><small>対応結果を記録</small></div>'+
+            '<div class="supportStep '+(t.status==='closed'?'done':(['internal_handoff_waiting','internal_in_progress','support_review_waiting'].includes(supportStage)?'active':''))+'"><span class="supportStepNum">5</span><strong>完了</strong><small>または管理者へ引継ぎ</small></div>'+
           '</div>'+
           '<div class="supportWorkGrid">'+
             '<div>'+
@@ -7482,6 +7498,7 @@
       };
       const contentJump=$('#supportTicketContentJump');
       const customerJump=$('#supportTicketCustomerJump');
+      const primaryNext=$('#supportPrimaryNext');
       const actionAi=$('#ticketActionAi');
       const actionRemote=$('#ticketActionRemote');
       const actionCustomer=$('#ticketActionCustomer');
@@ -7587,6 +7604,21 @@
         };
       };
 
+      if(primaryNext) primaryNext.onclick=()=>{
+        const target=supportPrimaryStep.target;
+        if(target==='content'){
+          jump('#ticketAttachmentGallery');
+          setTimeout(()=>$('#ticketStageStart')?.focus()||$('#ticketClaimSupport')?.focus(),250);
+        }else if(target==='remote'){
+          jump('#supportRemoteWorkspace');
+          setTimeout(()=>($('#ticketRemoteResultNote')||$('#ticketRemoteAction')||$('#ticketTeamViewerCreate'))?.focus(),250);
+        }else if(target==='history'){
+          jump('#ticketMessageList');
+        }else{
+          jump('#supportAssistWorkspace');
+          setTimeout(()=>$('#ticketKnowledgeSearch')?.focus(),250);
+        }
+      };
       if(actionAi) actionAi.onclick=()=>{
         jump('#supportAssistWorkspace');
         setTimeout(()=>$('#ticketKnowledgeSearch')?.focus(),250);
