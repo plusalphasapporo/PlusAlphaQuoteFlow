@@ -6675,6 +6675,11 @@
                 '<button id="supportTicketCustomerJump" class="ghost" type="button">顧客・機器</button>'+
                 '<button id="supportTicketAiJump" class="ghost" type="button">AI・ナレッジ</button>'+
                 '<button id="supportTicketRemoteJump" class="orange" type="button">TeamViewer</button>'+
+                (t.status!=='closed'
+                  ? (['internal_handoff_waiting','internal_in_progress','support_review_waiting'].includes(supportStage)
+                      ? '<button class="ghost" type="button" disabled>引継ぎ中</button>'
+                      : '<button id="supportTicketInstantHandoff" class="orange" type="button">即引き継ぎ</button>')
+                  : '')+
                 (t.status!=='closed'?'<button id="supportTicketCompleteQuick" class="green" type="button">完了</button>':'')+
               '</div>'+
             '</div>'+
@@ -6743,6 +6748,66 @@
       };
       const quickComplete=$('#supportTicketCompleteQuick');
       if(quickComplete) quickComplete.onclick=()=>$('#ticketCloseBtn')?.click();
+
+      const instantHandoff=$('#supportTicketInstantHandoff');
+      if(instantHandoff) instantHandoff.onclick=()=>{
+        mountAppModal(
+          '<div class="appModalHead">'+
+            '<div><h2>即引き継ぎ</h2><p>この案件を同じカルテのまま自社管理者へ引き継ぎます。</p></div>'+
+            '<button id="instantHandoffClose" class="ghost" type="button">×</button>'+
+          '</div>'+
+          '<div class="appModalBody">'+
+            '<div class="notice"><strong>'+esc(t.ticket_number||'—')+' / '+esc(cust?.name||'顧客未登録')+'</strong><br>'+esc(t.subject||'')+'</div>'+
+            '<div class="modalGrid2">'+
+              '<div class="field"><label>引き継ぎ理由</label><select id="instantHandoffReason">'+
+                '<option value="">選択してください</option>'+
+                '<option value="対応方法不明">対応方法不明</option>'+
+                '<option value="権限不足">権限不足</option>'+
+                '<option value="重大障害">重大障害</option>'+
+                '<option value="顧客判断が必要">顧客判断が必要</option>'+
+                '<option value="復旧しない">復旧しない</option>'+
+                '<option value="その他">その他</option>'+
+              '</select></div>'+
+              '<div class="field"><label>緊急度</label><select id="instantHandoffUrgency">'+
+                '<option value="通常">通常</option>'+
+                '<option value="高">高</option>'+
+                '<option value="緊急">緊急</option>'+
+              '</select></div>'+
+            '</div>'+
+            '<div class="field"><label>補足（任意）</label><textarea id="instantHandoffNote" rows="3" placeholder="実施済み対応や管理者に確認してほしいこと"></textarea></div>'+
+            '<div id="instantHandoffMsg" class="notice hidden"></div>'+
+          '</div>'+
+          '<div class="appModalFoot">'+
+            '<button id="instantHandoffCancel" class="ghost" type="button">キャンセル</button>'+
+            '<button id="instantHandoffSubmit" class="orange" type="button">自社へ即引き継ぐ</button>'+
+          '</div>'
+        );
+        $('#instantHandoffClose').onclick=closeAppModal;
+        $('#instantHandoffCancel').onclick=closeAppModal;
+        $('#instantHandoffSubmit').onclick=async()=>{
+          const btn=$('#instantHandoffSubmit');
+          const reason=$('#instantHandoffReason').value;
+          const urgency=$('#instantHandoffUrgency').value;
+          const note=$('#instantHandoffNote').value.trim();
+          if(!reason) return notice('#instantHandoffMsg','引き継ぎ理由を選択してください。');
+          btn.disabled=true;
+          try{
+            const reasonText='【緊急度: '+urgency+'】'+reason+(note?'\n'+note:'');
+            await rpc('handoff_ticket_to_internal',{
+              p_ticket_id:t.id,
+              p_reason:reasonText,
+              p_next_action:'自社管理者で案件カルテを確認し、そのまま対応を継続'
+            });
+            closeAppModal();
+            toast('自社へ即引き継ぎしました');
+            await renderTicketDetail(t.id);
+          }catch(err){
+            notice('#instantHandoffMsg',err.message||String(err));
+          }finally{
+            btn.disabled=false;
+          }
+        };
+      };
 
       if(actionAi) actionAi.onclick=()=>{
         jump('#supportAssistWorkspace');
