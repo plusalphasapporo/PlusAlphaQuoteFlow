@@ -183,6 +183,8 @@
     .internalTicketOverviewItem{padding:11px 12px;border:1px solid var(--line);border-radius:12px;background:#f8fafc;min-width:0}
     .internalTicketOverviewItem span{display:block;font-size:11px;color:var(--muted);font-weight:800}.internalTicketOverviewItem strong{display:block;margin-top:4px;font-size:13px;line-height:1.5;overflow-wrap:anywhere}
     .internalTicketOverviewItem.wide{grid-column:span 2}.internalTicketQuick{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px}
+    .internalSupportMessageMode{border:2px solid #93c5fd;background:#eff6ff;box-shadow:0 10px 28px rgba(37,99,235,.08)}
+    .internalSupportMessageMode::before{content:"サポート会社へ補足送信";display:block;font-size:12px;font-weight:900;color:#1d4ed8;margin-bottom:10px}
     @media(max-width:900px){.internalTicketTopbar{top:72px;grid-template-columns:1fr}.internalTicketTopbar .supportQuickActions button{width:100%}.internalTicketOverviewGrid{grid-template-columns:1fr 1fr}.internalTicketOverviewItem.wide{grid-column:span 2}}
     @media(max-width:640px){.internalTicketTopbar{position:static}.internalTicketOverviewGrid{grid-template-columns:1fr}.internalTicketOverviewItem.wide{grid-column:span 1}.internalTicketQuick button{flex:1 1 100%}}
     .supportReceptionBar{background:#0f2748;color:#fff;border-radius:18px;padding:18px;margin:14px 0;box-shadow:0 14px 34px rgba(15,39,72,.16)}
@@ -8437,13 +8439,25 @@
       };
       const messageBtn=$('#internalTicketMessage');
       if(messageBtn) messageBtn.onclick=()=>{
+        const form=$('#ticketMessageForm');
         const vis=$('#ticketMessageVisibility');
         if(vis){
           vis.value='support';
           vis.dispatchEvent(new Event('change',{bubbles:true}));
         }
+        if(form){
+          form.classList.add('internalSupportMessageMode');
+          form.dataset.quickMode='support';
+        }
+        const submit=$('#ticketMessageSubmit');
+        if(submit){
+          submit.disabled=false;
+          submit.textContent='サポート会社へ補足を送信';
+          submit.className='primary';
+        }
         internalJump('#ticketMessageForm');
         setTimeout(()=>$('#ticketMessageBody')?.focus(),220);
+        toast('サポート会社への補足送信に切り替えました');
       };
       const attachmentBtn=$('#internalTicketAttachments');
       if(attachmentBtn) attachmentBtn.onclick=()=>internalJump('#ticketAttachmentGallery');
