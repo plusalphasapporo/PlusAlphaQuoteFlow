@@ -7620,6 +7620,14 @@
       ? (supportUnanswered?.items||[]).find(x=>String(x.ticket_id)===String(t.id))||null
       : null;
     const customerReplyWaiting=support&&nextActionState?.support_next_action==='customer_reply_waiting';
+    const customerReplyBody=String(pendingCustomerReply?.message_body||pendingCustomerReply?.message_excerpt||'').trim();
+    const customerReplyLooksUnresolved=!!customerReplyBody && /(まだ.{0,8}(直|改善|解決|でき)|直っていない|直らない|治っていない|改善しない|解決していない|できない|出来ない|再発|同じ症状|同じエラー|エラーが出|動かない|つながらない|繋がらない)/i.test(customerReplyBody);
+    const customerReplyResumeQuery=[
+      customerReplyBody,
+      t.subject||'',
+      asset?.model_name||'',
+      asset?.asset_number||''
+    ].filter(Boolean).join(' ').replace(/\s+/g,' ').trim().slice(0,220);
 
     const latestCompletedInternalHandoff=[...handoffs]
       .filter(h=>h.state==='completed')
@@ -7718,13 +7726,22 @@
             '<span class="pill '+(pendingCustomerReply?'warn':'good')+'">'+(pendingCustomerReply?'要対応':'返信済み・待機中')+'</span>'+
           '</div>'+
           (pendingCustomerReply
-            ? '<div class="supportReturnReviewGrid">'+
+            ? (customerReplyLooksUnresolved?'<div class="notice warn" style="margin-top:12px"><strong>未解決の可能性があります</strong><br><span class="muted">顧客の返答に「まだ直らない」「できない」「再発」などの表現があります。内容を確認して再対応してください。</span></div>':'')+
+              '<div class="supportReturnReviewGrid">'+
                 '<div class="supportReturnReviewBox"><span>顧客からの最新返答</span><strong>'+esc(pendingCustomerReply.message_body||pendingCustomerReply.message_excerpt||'内容なし')+'</strong></div>'+
                 '<div class="supportReturnReviewBox"><span>受信日時</span><strong>'+esc(dateTimeText(pendingCustomerReply.last_customer_message_at))+'</strong></div>'+
+                '<div class="supportReturnReviewBox"><span>前回の対応手順</span><strong>'+esc(completedSupportSteps.length?completedSupportSteps.map((x,i)=>(i+1)+'. '+String(x.step||'')+(x.note?'\n確認結果: '+String(x.note):'')).join('\n\n'):'完了済みの対応手順はありません。')+'</strong></div>'+
+                '<div class="supportReturnReviewBox"><span>前回のTeamViewer / 自社対応</span><strong>'+esc([
+                  latestTeamViewerSession?.work_note?'TeamViewer: '+String(latestTeamViewerSession.work_note):'',
+                  latestInternalReturnText?'自社対応: '+latestInternalReturnText:''
+                ].filter(Boolean).join('\n\n')||'記録なし')+'</strong></div>'+
               '</div>'+
+              '<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:800">再対応用の検索語を確認</summary><div class="notice" style="margin-top:8px;white-space:pre-wrap">'+esc(customerReplyResumeQuery||initialSupportSearchQuery)+'</div></details>'+
               (!supportReadOnlyByOther
                 ? '<div class="supportQuickActions" style="margin-top:12px">'+
-                    '<button id="ticketCustomerReplyResume" class="primary" type="button">再対応を開始</button>'+
+                    '<button id="ticketCustomerReplyAi" class="primary" type="button">AI・ナレッジで再確認</button>'+
+                    '<button id="ticketCustomerReplyRemote" class="orange" type="button">TeamViewerで再対応</button>'+
+                    '<button id="ticketCustomerReplyHandoff" class="ghost" type="button">自社へ再引継ぎ</button>'+
                     '<button id="ticketCustomerReplyComplete" class="green" type="button">解決として作業報告へ</button>'+
                   '</div>'
                 : '<div class="notice warn" style="margin-top:12px">他のサポート担当者が対応中のため、現在は閲覧のみです。</div>')
@@ -8678,23 +8695,69 @@
       const returnReport=$('#ticketReturnReport');
       if(returnReport) returnReport.onclick=()=>$('#ticketCloseBtn')?.click();
 
-      const customerReplyResume=$('#ticketCustomerReplyResume');
-      if(customerReplyResume) customerReplyResume.onclick=async()=>{
-        customerReplyResume.disabled=true;
-        $('#ticketCustomerReplyComplete')?.setAttribute('disabled','disabled');
+      const resumeFromCustomerReply=async(mode,button)=>{
+        if(button) button.disabled=true;
+        document.querySelectorAll('#supportCustomerReplyWorkspace button').forEach(x=>{
+          if(x!==button) x.disabled=true;
+        });
         try{
           await rpc('set_support_next_action',{p_ticket_id:t.id,p_next_action:'in_progress'});
-          toast('顧客の返答を確認し、再対応を開始しました');
+          toast(mode==='remote'?'顧客の返答を引き継いでTeamViewer再対応へ進みます':'顧客の返答を引き継いで再対応を開始しました');
           await renderTicketDetail(t.id);
           setTimeout(()=>{
+            if(mode==='remote'){
+              jump('#supportRemoteWorkspace');
+              const action=$('#ticketRemoteAction');
+              if(action && !action.value.trim()){
+                action.value='顧客再連絡：'+customerReplyBody;
+                action.dispatchEvent(new Event('input',{bubbles:true}));
+              }
+              setTimeout(()=>(action||$('#ticketTeamViewerCreate'))?.focus(),220);
+              return;
+            }
             jump('#supportKnowledgeWorkspace');
-            setTimeout(()=>$('#ticketKnowledgeSearch')?.focus(),220);
-          },120);
+            const search=$('#ticketKnowledgeSearch');
+            if(search && customerReplyResumeQuery){
+              search.value=customerReplyResumeQuery;
+              search.dispatchEvent(new Event('input',{bubbles:true}));
+            }
+            setTimeout(()=>search?.focus(),220);
+          },140);
         }catch(err){notice('#ticketCustomerReplyMsg',err.message||String(err));}
         finally{
-          customerReplyResume.disabled=false;
-          $('#ticketCustomerReplyComplete')?.removeAttribute('disabled');
+          if(button) button.disabled=false;
+          document.querySelectorAll('#supportCustomerReplyWorkspace button').forEach(x=>x.disabled=false);
         }
+      };
+
+      const customerReplyAi=$('#ticketCustomerReplyAi');
+      if(customerReplyAi) customerReplyAi.onclick=()=>resumeFromCustomerReply('ai',customerReplyAi);
+
+      const customerReplyRemote=$('#ticketCustomerReplyRemote');
+      if(customerReplyRemote) customerReplyRemote.onclick=()=>resumeFromCustomerReply('remote',customerReplyRemote);
+
+      const customerReplyHandoff=$('#ticketCustomerReplyHandoff');
+      if(customerReplyHandoff) customerReplyHandoff.onclick=()=>{
+        const handoff=$('#supportTicketInstantHandoff');
+        if(!handoff) return notice('#ticketCustomerReplyMsg','自社引継ぎ操作を開けませんでした。');
+        handoff.click();
+        setTimeout(()=>{
+          const attempted=$('#instantHandoffAttempted');
+          const next=$('#instantHandoffNextAction');
+          if(attempted && !attempted.value.trim()){
+            attempted.value=[
+              completedSupportSteps.length?'前回対応:\n'+completedSupportSteps.map((x,i)=>(i+1)+'. '+String(x.step||'')+(x.note?'（'+String(x.note)+'）':'')).join('\n'):'',
+              latestTeamViewerSession?.work_note?'TeamViewer: '+String(latestTeamViewerSession.work_note):'',
+              latestInternalReturnText?'自社対応: '+latestInternalReturnText:'',
+              '顧客再連絡: '+customerReplyBody
+            ].filter(Boolean).join('\n\n');
+            attempted.dispatchEvent(new Event('input',{bubbles:true}));
+          }
+          if(next && !next.value.trim()){
+            next.value='顧客から「'+customerReplyBody.slice(0,120)+'」との再連絡あり。前回対応を踏まえ、追加確認・判断をお願いします。';
+            next.dispatchEvent(new Event('input',{bubbles:true}));
+          }
+        },180);
       };
 
       const customerReplyComplete=$('#ticketCustomerReplyComplete');
