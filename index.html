@@ -150,9 +150,12 @@
     .supportCaseCardTitle{font-size:17px;font-weight:900;margin-top:3px;line-height:1.35}
     .supportCaseCardCustomer{font-size:13px;color:#334155;margin-top:5px;font-weight:800}
     .supportCaseBadges{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
-    .supportCaseFacts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:12px}
+    .supportCaseFacts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:12px}
     .supportCaseFact{background:#f8fafc;border:1px solid #edf1f6;border-radius:11px;padding:9px 10px}
     .supportCaseFact span{display:block;color:var(--muted);font-size:10px;font-weight:900}.supportCaseFact strong{display:block;margin-top:3px;font-size:12px}
+    .supportCaseMore{margin-top:10px;border-top:1px solid #edf1f6;padding-top:9px}
+    .supportCaseMore summary{cursor:pointer;font-size:12px;font-weight:900;color:#526174}
+    .supportCaseMoreGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:9px}
     .supportCaseCardActions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px;padding-top:11px;border-top:1px solid #edf1f6}
     .supportCaseCardActions .primary{min-width:150px}
     .supportCaseFilterBar{display:flex;gap:6px;flex-wrap:wrap;padding:7px;background:#eaf0f8;border:1px solid #d8e2ef;border-radius:14px;margin:12px 0}
@@ -173,8 +176,8 @@
     .messageReplyContext{margin:10px 0;padding:10px 12px;border:1px solid #bfdbfe;border-left:4px solid #2563eb;border-radius:12px;background:#f8fbff}
     .messageReplyContextHead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
     .messageReplyContextBody{font-size:13px;color:#475569;white-space:pre-wrap;max-height:88px;overflow:auto}
-    @media(max-width:1100px){.supportCaseFacts{grid-template-columns:repeat(2,minmax(0,1fr))}}
-    @media(max-width:680px){.supportCaseCardHead{grid-template-columns:1fr}.supportCaseFacts{grid-template-columns:1fr}.supportCaseCardActions .primary{width:100%}}
+    @media(max-width:1100px){.supportCaseMoreGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @media(max-width:680px){.supportCaseCardHead{grid-template-columns:1fr}.supportCaseFacts,.supportCaseMoreGrid{grid-template-columns:1fr}.supportCaseCardActions{flex-direction:column}.supportCaseCardActions .primary,.supportCaseCardActions .ghost{width:100%}}
     body[data-role="support_staff"] .workspaceHead{border-color:#dbeafe}
     body[data-role="support_staff"] .pageIntro{margin-top:10px}
     @media(max-width:980px){.supportConsoleHero,.supportDeskGrid{grid-template-columns:1fr}}
@@ -9609,11 +9612,7 @@
                     '<div class="supportCaseCardCustomer">'+esc(t.customer_name||'顧客未登録')+'</div>'+
                     '<div class="supportCaseBadges">'+
                       supportRequestTypeBadge(t.request_type)+
-                      supportStageBadge(t.support_stage)+
-                      supportNextActionBadge(t.support_next_action)+
                       supportQueueAlertBadge(t.support_next_action_notification_active?t.support_next_action_alert_level:'normal')+
-                      supportAttentionBadge(t)+
-                      supportDeadlineBadge(t.deadline_state)+
                       (t.teamviewer_result_pending?'<span class="hold">TV結果未入力</span>':'')+
                       (t.priority==='urgent'?'<span class="hold">緊急</span>':t.priority==='high'?'<span class="pill warn">高優先度</span>':'')+
                     '</div>'+
@@ -9625,11 +9624,17 @@
                   (listNowHint?'<div class="muted" style="margin-top:4px">'+esc(listNowHint)+'</div>':'')+
                 '</div>'+
                 '<div class="supportCaseFacts">'+
-                  '<div class="supportCaseFact"><span>機器</span><strong>'+esc(t.asset_number||t.asset_model_name||'未指定')+'</strong></div>'+
                   '<div class="supportCaseFact"><span>期限</span><strong>'+esc(dateTimeText(t.resolution_due_at||t.first_response_due_at))+'</strong></div>'+
-                  '<div class="supportCaseFact"><span>滞留</span><strong>'+esc(supportQueueAgeText(t.support_next_action_waiting_seconds))+'</strong></div>'+
                   '<div class="supportCaseFact"><span>担当</span><strong>'+esc(t.support_assignment?.support_assigned_user_name||'未担当')+'</strong></div>'+
                 '</div>'+
+                '<details class="supportCaseMore"><summary>詳細情報を表示</summary><div class="supportCaseMoreGrid">'+
+                  '<div class="supportCaseFact"><span>工程</span><strong>'+esc(supportStageLabel(t.support_stage))+'</strong></div>'+
+                  '<div class="supportCaseFact"><span>次の行動</span><strong>'+esc(supportNextActionLabel(t.support_next_action))+'</strong></div>'+
+                  '<div class="supportCaseFact"><span>滞留</span><strong>'+esc(supportQueueAgeText(t.support_next_action_waiting_seconds))+'</strong></div>'+
+                  '<div class="supportCaseFact"><span>機器</span><strong>'+esc(t.asset_number||t.asset_model_name||'未指定')+'</strong></div>'+
+                  '<div class="supportCaseFact"><span>期限状態</span><strong>'+esc(supportDeadlineLabel(t.deadline_state))+'</strong></div>'+
+                  '<div class="supportCaseFact"><span>対応予定</span><strong>'+esc(t.support_planned_at?dateTimeText(t.support_planned_at):'未設定')+'</strong></div>'+
+                '</div></details>'+
                 '<div class="supportCaseCardActions"><button class="ghost supportAttentionPlanOpen" type="button" data-id="'+esc(t.id)+'">確認・予定</button><button class="primary ticketDetail" type="button" data-id="'+esc(t.id)+'" data-start="'+(canStartNow?'1':'0')+'" data-action="'+esc(caseActionTarget)+'">'+esc(caseActionLabel)+'</button></div>'+
               '</article>';
             }).join('')+'</div>'
