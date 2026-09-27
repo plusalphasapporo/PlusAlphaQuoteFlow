@@ -8522,15 +8522,20 @@
 
       const instantHandoff=$('#supportTicketInstantHandoff');
       if(instantHandoff) instantHandoff.onclick=()=>{
+        const recordedWork=[
+          ...completedSupportSteps.map((x,i)=>(i+1)+'. '+String(x.step||'')+(x.note?'（'+String(x.note)+'）':'')),
+          ...(latestTeamViewerSession?.work_note?['TeamViewer: '+String(latestTeamViewerSession.work_note)]:[])
+        ].filter(Boolean).join('\n');
         mountAppModal(
           '<div class="appModalHead">'+
-            '<div><h2>即引き継ぎ</h2><p>この案件を同じカルテのまま自社管理者へ引き継ぎます。</p></div>'+
+            '<div><h2>即引き継ぎ</h2><p>自社がこの画面だけで次の対応を開始できる状態にして引き継ぎます。</p></div>'+
             '<button id="instantHandoffClose" class="ghost" type="button">×</button>'+
           '</div>'+
           '<div class="appModalBody">'+
             '<div class="notice"><strong>'+esc(t.ticket_number||'—')+' / '+esc(cust?.name||'顧客未登録')+'</strong><br>'+esc(t.subject||'')+'</div>'+
+            '<div class="notice ok"><strong>引継ぎ時に必ず残す内容</strong><br><span class="muted">理由・実施済み対応・自社が次にすることを分けて記録します。「自社が次にすること」は自社側の案件カルテ上部にそのまま表示されます。</span></div>'+
             '<div class="modalGrid2">'+
-              '<div class="field"><label>引き継ぎ理由</label><select id="instantHandoffReason">'+
+              '<div class="field"><label>引き継ぎ理由 <span class="muted">必須</span></label><select id="instantHandoffReason">'+
                 '<option value="">選択してください</option>'+
                 '<option value="対応方法不明">対応方法不明</option>'+
                 '<option value="権限不足">権限不足</option>'+
@@ -8545,12 +8550,14 @@
                 '<option value="緊急">緊急</option>'+
               '</select></div>'+
             '</div>'+
-            '<div class="field"><label>補足（任意）</label><textarea id="instantHandoffNote" rows="3" placeholder="実施済み対応や管理者に確認してほしいこと"></textarea></div>'+
+            '<div class="field"><label>ここまで実施したこと <span class="muted">必須</span></label><textarea id="instantHandoffAttempted" rows="5" placeholder="確認した内容、実施した設定、TeamViewer対応、結果など">'+esc(recordedWork)+'</textarea><small class="muted">案件内に完了済みの対応記録がある場合は自動で下書きします。内容を確認・追記してください。</small></div>'+
+            '<div class="field"><label>自社が次にすること <span class="muted">必須</span></label><textarea id="instantHandoffNextAction" rows="4" placeholder="例：管理者権限で○○設定を確認し、必要なら現地対応の要否を判断"></textarea></div>'+
+            '<div class="field"><label>補足（任意）</label><textarea id="instantHandoffNote" rows="3" placeholder="顧客への注意事項、確認してほしい情報など"></textarea></div>'+
             '<div id="instantHandoffMsg" class="notice hidden"></div>'+
           '</div>'+
           '<div class="appModalFoot">'+
             '<button id="instantHandoffCancel" class="ghost" type="button">キャンセル</button>'+
-            '<button id="instantHandoffSubmit" class="orange" type="button">自社へ即引き継ぐ</button>'+
+            '<button id="instantHandoffSubmit" class="orange" type="button">この内容で自社へ即引き継ぐ</button>'+
           '</div>'
         );
         $('#instantHandoffClose').onclick=closeAppModal;
@@ -8558,21 +8565,32 @@
         bindSupportDraftInputs(t.id,'instant_handoff',{
           reason:'#instantHandoffReason',
           urgency:'#instantHandoffUrgency',
+          attempted:'#instantHandoffAttempted',
+          next_action:'#instantHandoffNextAction',
           note:'#instantHandoffNote'
         });
         $('#instantHandoffSubmit').onclick=async()=>{
           const btn=$('#instantHandoffSubmit');
           const reason=$('#instantHandoffReason').value;
           const urgency=$('#instantHandoffUrgency').value;
+          const attempted=$('#instantHandoffAttempted').value.trim();
+          const nextAction=$('#instantHandoffNextAction').value.trim();
           const note=$('#instantHandoffNote').value.trim();
           if(!reason) return notice('#instantHandoffMsg','引き継ぎ理由を選択してください。');
+          if(!attempted) return notice('#instantHandoffMsg','ここまで実施したことを入力してください。');
+          if(!nextAction) return notice('#instantHandoffMsg','自社が次にすることを入力してください。');
           btn.disabled=true;
           try{
-            const reasonText='【緊急度: '+urgency+'】'+reason+(note?'\n'+note:'');
+            const reasonText=[
+              '【緊急度】'+urgency,
+              '【引継ぎ理由】'+reason,
+              '【実施済み対応】\n'+attempted,
+              note?'【補足】\n'+note:''
+            ].filter(Boolean).join('\n\n');
             await rpc('handoff_ticket_to_internal',{
               p_ticket_id:t.id,
               p_reason:reasonText,
-              p_next_action:'自社管理者で案件カルテを確認し、そのまま対応を継続'
+              p_next_action:nextAction
             });
             clearSupportDraft(t.id,'instant_handoff');
             clearSupportDraft(t.id,'handoff');
