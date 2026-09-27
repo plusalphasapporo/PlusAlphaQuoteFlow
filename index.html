@@ -9608,8 +9608,20 @@
                 otherAssigned?'案件を確認':
                 '案件を開く';
               const topPriority=index===0&&t.status!=='closed'&&view!=='closed';
+              const topPriorityReason=(()=>{
+                if(!topPriority) return '';
+                if(t.deadline_state==='overdue') return '対応期限を超過しています';
+                if(t.priority==='urgent') return '緊急案件です';
+                if(t.teamviewer_result_pending) return 'TeamViewer結果の入力が残っています';
+                if(t.deadline_state==='due_today') return '本日が対応期限です';
+                if(t.support_next_action_notification_active&&t.support_next_action_alert_level==='critical') return '長時間滞留しています';
+                if(t.support_next_action_notification_active&&t.support_next_action_alert_level==='warning') return '滞留時間が長くなっています';
+                if(t.support_stage==='unhandled') return '未対応の案件です';
+                if(t.support_assignment?.is_mine) return '自分が担当中の案件です';
+                return 'キュー優先順で最上位です';
+              })();
               return '<article class="supportCaseCard '+cardClass+(topPriority?' top-priority':'')+'">'+
-                (topPriority?'<div class="supportTopPriorityLabel">最優先・この案件から対応</div>':'')+
+                (topPriority?'<div class="supportTopPriorityLabel">最優先・この案件から対応</div><div class="muted" style="margin-bottom:8px"><strong>理由：</strong>'+esc(topPriorityReason)+'</div>':'')+
                 '<div class="supportCaseCardHead">'+
                   '<div>'+
                     '<div class="supportCaseCardNo">'+esc(t.ticket_number||'—')+'</div>'+
