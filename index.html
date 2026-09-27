@@ -172,6 +172,15 @@
     .supportTicketFact span{display:block;font-size:11px;color:var(--muted);font-weight:800}.supportTicketFact strong{display:block;margin-top:4px;font-size:14px}
     @media(max-width:900px){.supportTicketTopbar{top:72px;grid-template-columns:1fr}.supportTicketTopbar .supportQuickActions{width:100%}.supportTicketTopbar .supportQuickActions button{width:100%}}
     @media(max-width:640px){.supportTicketFacts{grid-template-columns:1fr}.supportTicketTopbar{position:static}}
+    .internalTicketTopbar{position:sticky;top:82px;z-index:13;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:center;background:#16355f;color:#fff;border:1px solid #315b8e;border-radius:16px;padding:15px 16px;margin:12px 0 12px;box-shadow:0 12px 30px rgba(22,53,95,.15)}
+    .internalTicketTopbar .summary{min-width:0}.internalTicketTopbar .summary>strong{display:block;font-size:17px}.internalTicketTopbar .summary>small{display:block;color:#cfe0f5;margin-top:3px}
+    .internalTicketTopbar .supportTopCommand{background:rgba(255,255,255,.09)}.internalTicketTopbar .supportQuickActions{margin:0}.internalTicketTopbar .supportQuickActions button{background:#fff}
+    .internalTicketOverviewGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:10px 0 14px}
+    .internalTicketOverviewItem{padding:11px 12px;border:1px solid var(--line);border-radius:12px;background:#f8fafc;min-width:0}
+    .internalTicketOverviewItem span{display:block;font-size:11px;color:var(--muted);font-weight:800}.internalTicketOverviewItem strong{display:block;margin-top:4px;font-size:13px;line-height:1.5;overflow-wrap:anywhere}
+    .internalTicketOverviewItem.wide{grid-column:span 2}.internalTicketQuick{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px}
+    @media(max-width:900px){.internalTicketTopbar{top:72px;grid-template-columns:1fr}.internalTicketTopbar .supportQuickActions button{width:100%}.internalTicketOverviewGrid{grid-template-columns:1fr 1fr}.internalTicketOverviewItem.wide{grid-column:span 2}}
+    @media(max-width:640px){.internalTicketTopbar{position:static}.internalTicketOverviewGrid{grid-template-columns:1fr}.internalTicketOverviewItem.wide{grid-column:span 1}.internalTicketQuick button{flex:1 1 100%}}
     .supportReceptionBar{background:#0f2748;color:#fff;border-radius:18px;padding:18px;margin:14px 0;box-shadow:0 14px 34px rgba(15,39,72,.16)}
     .supportReceptionBar h2{margin:0;font-size:21px}.supportReceptionBar .sectionDesc{color:#c9d8ec}
     .supportReceptionBar .supportPhoneLookup{border-color:#34577f;background:#fff;color:var(--ink)}
@@ -7892,12 +7901,69 @@
         '</details>'
       : '';
 
+    const internalStage=supportStage||((t.status==='closed')?'completed':'unhandled');
+    const internalPrimaryStep=(()=>{
+      if(t.status==='closed'){
+        return {label:'対応完了',hint:'作業報告・対応履歴を確認できます。',button:'作業報告・履歴を見る',target:'history',tone:'ghost'};
+      }
+      if(activeInternalHandoff?.state==='pending'){
+        return {label:'自社引継ぎを受理',hint:activeInternalHandoff.next_action||'サポート会社からの引継ぎ内容を確認し、自社対応を開始します。',button:'引継ぎ対応へ',target:'handoff',tone:'orange'};
+      }
+      if(activeInternalHandoff?.state==='accepted'||internalStage==='internal_in_progress'){
+        return {label:'自社で対応中',hint:activeInternalHandoff?.next_action||'自社側で必要な確認・判断・作業を進め、結果を記録します。',button:'自社対応を続ける',target:'handoff',tone:'orange'};
+      }
+      if(internalStage==='internal_handoff_waiting'){
+        return {label:'自社引継ぎ内容を確認',hint:'サポート会社から自社へ判断・対応依頼が届いています。',button:'引継ぎ内容を見る',target:'handoff',tone:'orange'};
+      }
+      if(internalStage==='teamviewer_waiting'){
+        return {label:'TeamViewer対応状況を確認',hint:'サポート会社が遠隔対応中、または接続待ちです。必要な補足があれば共有します。',button:'現在状況を見る',target:'status',tone:'primary'};
+      }
+      if(internalStage==='support_review_waiting'){
+        return {label:'サポート会社の再確認待ち',hint:'自社対応結果をサポート会社が確認しています。追加連絡があれば同じ案件で確認します。',button:'対応履歴を見る',target:'status',tone:'primary'};
+      }
+      if(internalStage==='in_progress'){
+        return {label:'サポート会社が対応中',hint:'現在の工程・担当・メッセージを確認できます。必要な情報はサポート会社へ補足できます。',button:'対応状況を見る',target:'status',tone:'primary'};
+      }
+      return {label:'サポート会社の対応開始待ち',hint:'受付内容・対象機器・契約が正しいか確認し、必要な補足を送ります。',button:'受付内容を確認',target:'content',tone:'primary'};
+    })();
+
+    const internalTopPanel=internal
+      ? '<div class="internalTicketTopbar">'+
+          '<div class="summary">'+
+            '<strong>'+esc(cust?.name||'顧客未登録')+' / '+esc(t.subject||'')+'</strong>'+
+            '<small>'+esc(t.ticket_number||'—')+' ・ '+esc(supportRequestTypeLabel(t.request_type))+' ・ '+esc(supportStageLabel(internalStage))+' ・ '+esc(supportDeadlineLabel(deadlineState?.deadline_state))+'</small>'+
+            '<div class="supportTopCommand"><strong>自社が今すること：'+esc(internalPrimaryStep.label)+'</strong><span>'+esc(internalPrimaryStep.hint)+'</span></div>'+
+            '<div class="supportTopMeta">'+
+              '<span class="pill">サポート担当 '+esc(supportAssigneeLabel(assignmentState))+'</span>'+
+              '<span class="pill">自社担当 '+esc(t.assigned_internal_user_name||'未設定')+'</span>'+
+              '<span class="pill">期限 '+esc(dateTimeText(deadlineState?.resolution_due_at||deadlineState?.first_response_due_at))+'</span>'+
+              (t.priority==='urgent'?'<span class="pill">緊急</span>':t.priority==='high'?'<span class="pill">高優先度</span>':'')+
+            '</div>'+
+          '</div>'+
+          '<div class="supportQuickActions"><button id="internalTicketPrimaryAction" class="'+esc(internalPrimaryStep.tone||'primary')+'" type="button" data-target="'+esc(internalPrimaryStep.target)+'">'+esc(internalPrimaryStep.button)+'</button></div>'+
+        '</div>'+
+        '<div class="internalTicketOverviewGrid">'+
+          '<div class="internalTicketOverviewItem"><span>顧客</span><strong>'+esc(cust?.customer_code||'—')+' / '+esc(cust?.name||'未登録')+'</strong></div>'+
+          '<div class="internalTicketOverviewItem"><span>主担当者・連絡先</span><strong>'+esc(primary?.name||'未登録')+' / '+esc(primary?.phone||primary?.email||'連絡先未登録')+'</strong></div>'+
+          '<div class="internalTicketOverviewItem"><span>対象機器</span><strong>'+(asset?esc(asset.asset_number||'—')+' / '+esc(asset.model_name||''):'未指定')+'</strong></div>'+
+          '<div class="internalTicketOverviewItem"><span>契約</span><strong>'+(contract?esc(contract.contract_number||'—')+' / '+esc(statusText(contract.status)):'未指定')+'</strong></div>'+
+          '<div class="internalTicketOverviewItem wide"><span>受付内容</span><strong>'+esc((displayDescription||'内容なし').slice(0,220))+(String(displayDescription||'').length>220?'…':'')+'</strong></div>'+
+          '<div class="internalTicketOverviewItem"><span>サポート会社の現在状況</span><strong>'+esc(supportStageLabel(internalStage))+' / '+esc(supportNextActionLabel(nextActionState?.support_next_action||((t.status==='closed')?'completed':'in_progress')))+'</strong></div>'+
+        '</div>'+
+        '<div class="internalTicketQuick">'+
+          '<button id="internalTicketCustomer" class="ghost" type="button">顧客カルテ</button>'+
+          '<button id="internalTicketMessage" class="ghost" type="button">サポート会社へ補足</button>'+
+          (attachments.length?'<button id="internalTicketAttachments" class="ghost" type="button">写真・添付 '+esc(attachments.length)+'件</button>':'')+
+          '<button id="internalTicketEdit" class="ghost" type="button">案件情報を編集</button>'+
+        '</div>'
+      : '';
+
     const actionButtons=!customer&&(!support||!supportReadOnlyByOther)
       ? '<div class="row" style="margin-top:14px">'+
           (t.status==='closed'?'<button id="ticketReopenBtn" class="green" type="button">問い合わせを再開</button>':'<button id="ticketCloseBtn" class="green" type="button">作業報告・完了</button>')+
-          (t.status!=='closed'?'<button id="ticketHandoffToggle" class="ghost" type="button">自社へ引き継ぐ</button>':'')+
+          (support&&t.status!=='closed'?'<button id="ticketHandoffToggle" class="ghost" type="button">自社へ引き継ぐ</button>':'')+
         '</div>'+
-        (t.status!=='closed'
+        (support&&t.status!=='closed'
           ? '<div id="ticketHandoffBox" class="hidden" style="margin-top:12px"><div class="field"><label>引き継ぎ理由</label><textarea id="handoffReason" rows="2"></textarea></div><div class="field"><label>次に行うこと</label><textarea id="handoffNextAction" rows="2"></textarea></div><button id="ticketHandoffBtn" class="orange" type="button">引き継ぎを登録</button></div>'
           : '')+
         '<div id="ticketActionMsg" class="notice hidden"></div>'
@@ -7928,19 +7994,15 @@
               '<div class="supportTicketFact"><span>問い合わせ内容</span><strong>'+esc((displayDescription||'内容なし').slice(0,140))+(String(displayDescription||'').length>140?'…':'')+'</strong></div>'+
               '<div class="supportTicketFact"><span>顧客 / 対象</span><strong>'+esc(cust?.name||'顧客未登録')+' / '+esc(asset?.asset_number||asset?.model_name||'機器未指定')+'</strong></div>'+
             '</div>'+supportTopSummary
-          : kpis([
-              ['種別',supportRequestTypeLabel(t.request_type)],
-              ['サポート担当',supportAssigneeLabel(assignmentState)],
-              ['対応工程',supportStageLabel(supportStage||((t.status==='closed')?'completed':'unhandled'))],
-              ['期限',supportDeadlineLabel(deadlineState?.deadline_state)],
-              ['状態',statusText(t.status)],
-              ['優先度',t.priority||'normal'],
-              ['作成日',dateText(t.created_at)],
-              ['更新日',dateText(t.updated_at)],
-              ['受付経路',intakeSource],
-              ['契約',contract?.contract_number||'未指定'],
-              ['機器',asset?.asset_number||'未指定']
-            ]))+
+          : internal
+            ? internalTopPanel
+            : kpis([
+                ['種別',supportRequestTypeLabel(t.request_type)],
+                ['状態',statusText(t.status)],
+                ['優先度',t.priority||'normal'],
+                ['作成日',dateText(t.created_at)],
+                ['更新日',dateText(t.updated_at)]
+              ]))+
         (support?firstLineAssist:'')+
         internalHandoffPanel+
         '<div id="supportTicketCustomerContext" class="modalGrid2">'+
@@ -8215,6 +8277,43 @@
       try{await navigator.clipboard.writeText(String(m.body||''));toast('メッセージをコピーしました');}
       catch(_){toast('コピーできませんでした');}
     });
+
+    if(internal){
+      const internalJump=(selector)=>{
+        const el=$(selector);
+        if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
+      };
+      const primary=$('#internalTicketPrimaryAction');
+      if(primary) primary.onclick=()=>{
+        const target=primary.dataset.target||'content';
+        if(target==='handoff') return internalJump('#internalHandoffWorkspace');
+        if(target==='history'||target==='status') return internalJump('#ticketMessageList');
+        return internalJump('#supportTicketCustomerContext');
+      };
+      const customerBtn=$('#internalTicketCustomer');
+      if(customerBtn) customerBtn.onclick=async()=>{
+        customerBtn.disabled=true;
+        try{
+          await go('customers');
+          await renderCustomerDetail(t.customer_id);
+        }catch(err){toast(err.message||String(err));}
+        finally{customerBtn.disabled=false;}
+      };
+      const messageBtn=$('#internalTicketMessage');
+      if(messageBtn) messageBtn.onclick=()=>{
+        const vis=$('#ticketMessageVisibility');
+        if(vis){
+          vis.value='support';
+          vis.dispatchEvent(new Event('change',{bubbles:true}));
+        }
+        internalJump('#ticketMessageForm');
+        setTimeout(()=>$('#ticketMessageBody')?.focus(),220);
+      };
+      const attachmentBtn=$('#internalTicketAttachments');
+      if(attachmentBtn) attachmentBtn.onclick=()=>internalJump('#ticketAttachmentGallery');
+      const editBtn=$('#internalTicketEdit');
+      if(editBtn) editBtn.onclick=()=>internalJump('#ticketProfileForm');
+    }
 
     if(support){
       const jump=(selector)=>{
