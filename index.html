@@ -694,7 +694,7 @@
     'customer_ticket_detail','internal_numbering_settings','internal_accounts_list',
     'internal_account_companies','internal_audit_workspace','internal_document_profile','internal_demo_seed_status','internal_company_settings','internal_entity_audit_history',
     'internal_products_list','internal_lease_rates_list','internal_order_profitability','internal_customer_unified_workspace','internal_receiving_workspace','internal_order_operation','role_knowledge_articles',
-    'support_customer_directory','support_asset_directory','support_handoff_history','support_customer_context','support_customer_phone_search','support_workflow_states','support_ticket_workflow_state','support_next_action_states','support_ticket_next_action_state','support_unread_notifications','support_unanswered_messages','support_repeat_ticket_states','support_unread_handoff_updates','support_deadline_states','support_ticket_deadline_state','support_assignment_states','support_ticket_assignment_state','callconnect_dashboard','callconnect_api_settings','callconnect_unread_notifications','callconnect_customer_directory',
+    'support_customer_directory','support_asset_directory','support_handoff_history','support_customer_context','support_customer_phone_search','support_workflow_states','support_ticket_workflow_state','support_next_action_states','support_ticket_next_action_state','support_unread_notifications','support_unanswered_messages','support_repeat_ticket_states','support_unread_handoff_updates','support_deadline_states','support_ticket_deadline_state','support_assignment_states','support_ticket_assignment_state','callconnect_dashboard','callconnect_api_settings','openai_settings','callconnect_unread_notifications','callconnect_customer_directory',
     'internal_case_directory','internal_handoff_history','internal_knowledge_articles',
     'internal_support_cases_list','teamviewer_api_settings','teamviewer_ticket_sessions','teamviewer_pending_results'
   ]);
@@ -6170,12 +6170,13 @@
     const role=bootData.context?.role;
     if(role!=='internal_admin') throw new Error('管理者のみ利用できます。');
 
-    const [company,cfg,docProfile,demoStatus,callconnectApi,teamviewerApi]=await Promise.all([
+    const [company,cfg,docProfile,demoStatus,callconnectApi,openaiApi,teamviewerApi]=await Promise.all([
       rpc('internal_company_settings'),
       rpc('internal_numbering_settings'),
       rpc('internal_document_profile'),
       rpc('internal_demo_seed_status'),
       rpc('callconnect_api_settings'),
+      rpc('openai_settings'),
       rpc('teamviewer_api_settings')
     ]);
     const quote=cfg?.quote||{};
@@ -6279,6 +6280,29 @@
           '<div id="callconnectApiTestMsg" class="notice hidden"></div>'+
         '</section>'+
         '<section class="card section">'+
+          '<div class="formSectionHead"><span class="sectionNo">05</span><h2>OpenAI / 通話文字起こし</h2></div>'+
+          '<p class="sectionDesc">CallConnectの録音音声をOpenAIで文字起こしします。API KeyはSupabase Vaultに保存し、保存後は画面へ再表示しません。</p>'+
+          '<div class="grid">'+
+            '<div class="kpi"><div class="label">OpenAI API Key</div><div class="value">'+esc(openaiApi?.api_key_configured?'登録済み':'未登録')+'</div></div>'+
+            '<div class="kpi"><div class="label">文字起こしモデル</div><div class="value">'+esc(openaiApi?.transcription_model||'gpt-4o-mini-transcribe')+'</div></div>'+
+            '<div class="kpi"><div class="label">接続状態</div><div class="value">'+esc(openaiApi?.last_api_check_status==='connected'?'接続済み':(openaiApi?.last_api_check_status||'未確認'))+'</div></div>'+
+            '<div class="kpi"><div class="label">最終文字起こし</div><div class="value">'+esc(openaiApi?.last_transcription_at?dateTimeText(openaiApi.last_transcription_at):'—')+'</div></div>'+
+          '</div>'+
+          '<form id="openaiApiKeyForm">'+
+            '<div class="field"><label>OpenAI API Key</label><input id="openaiApiKey" type="password" autocomplete="new-password" placeholder="'+(openaiApi?.api_key_configured?'新しいキーに変更する場合のみ入力':'OpenAI Platformで発行したAPI Keyを入力')+'"></div>'+
+            '<div class="notice">API KeyはQuoteFlowの画面や通話データには保存せず、Supabase Vaultに暗号化して保管します。</div>'+
+            '<div class="row"><button class="primary" type="submit">'+(openaiApi?.api_key_configured?'OpenAI API Keyを更新':'OpenAI API Keyを登録')+'</button>'+
+              (openaiApi?.api_key_configured?'<button id="clearOpenAiApiKey" class="orange" type="button">API Keyを削除</button>':'')+
+            '</div>'+
+          '</form>'+
+          (openaiApi?.last_api_error?'<div class="notice error">最終エラー: '+esc(openaiApi.last_api_error)+'</div>':'')+
+          '<div id="openaiApiKeyMsg" class="notice hidden"></div>'+
+          '<div class="supportQuickActions" style="margin-top:14px">'+
+            '<button id="testOpenAiTranscription" class="primary" type="button" '+(openaiApi?.api_key_configured?'':'disabled')+'>最新の録音で文字起こしテスト</button>'+
+          '</div>'+
+          '<div id="openaiTranscriptionMsg" class="notice hidden"></div>'+
+        '</section>'+
+        '<section class="card section">'+
           '<h2>現在の連携構成</h2>'+
           '<div class="supportFlow">'+
             '<div class="supportStep done"><span class="supportStepNum">1</span><strong>Webhook</strong><small>通話終了後の履歴・顧客照合・案件化</small></div>'+
@@ -6288,7 +6312,7 @@
           '</div>'+
         '</section>'+
         '<section class="card section">'+
-          '<div class="formSectionHead"><span class="sectionNo">05</span><h2>TeamViewer API</h2></div>'+
+          '<div class="formSectionHead"><span class="sectionNo">06</span><h2>TeamViewer API</h2></div>'+
           '<p class="sectionDesc">案件カルテから有人サポートセッションを発行します。トークンはSupabase Vaultで暗号化し、保存後は画面へ再表示しません。</p>'+
           '<div class="grid">'+
             '<div class="kpi"><div class="label">APIトークン</div><div class="value">'+esc(teamviewerApi?.token_configured?'登録済み':'未登録')+'</div></div>'+
@@ -6500,6 +6524,58 @@
           notice('#callconnectApiTestMsg',err.message||String(err));
         }finally{
           syncCallConnectRecords.disabled=false;
+        }
+      };
+    }
+
+    const openaiApiForm=$('#openaiApiKeyForm');
+    if(openaiApiForm){
+      openaiApiForm.onsubmit=async e=>{
+        e.preventDefault();
+        const btn=e.submitter;if(btn)btn.disabled=true;
+        try{
+          const key=$('#openaiApiKey').value.trim();
+          if(!key) throw new Error('OpenAI API Keyを入力してください。');
+          await rpc('save_openai_api_key',{p_api_key:key});
+          $('#openaiApiKey').value='';
+          notice('#openaiApiKeyMsg','OpenAI API Keyを安全に保存しました。最新の録音で文字起こしテストを実行できます。',true);
+          toast('OpenAI API Keyを保存しました');
+          setTimeout(()=>renderSettings('integrations'),500);
+        }catch(err){notice('#openaiApiKeyMsg',err.message||String(err));}
+        finally{if(btn)btn.disabled=false;}
+      };
+    }
+
+    const clearOpenAiApiKey=$('#clearOpenAiApiKey');
+    if(clearOpenAiApiKey){
+      clearOpenAiApiKey.onclick=async()=>{
+        if(!confirm('OpenAI API Keyを削除しますか？')) return;
+        clearOpenAiApiKey.disabled=true;
+        try{
+          await rpc('clear_openai_api_key');
+          toast('OpenAI API Keyを削除しました');
+          await renderSettings('integrations');
+        }catch(err){notice('#openaiApiKeyMsg',err.message||String(err));}
+        finally{clearOpenAiApiKey.disabled=false;}
+      };
+    }
+
+    const testOpenAiTranscription=$('#testOpenAiTranscription');
+    if(testOpenAiTranscription){
+      testOpenAiTranscription.onclick=async()=>{
+        testOpenAiTranscription.disabled=true;
+        try{
+          notice('#openaiTranscriptionMsg','CallConnectの最新録音をOpenAIで文字起こししています...',true);
+          const {data,error}=await supabase.functions.invoke('callconnect-openai-transcribe',{body:{latest:true,force:true}});
+          if(error) throw error;
+          if(data?.error) throw new Error(data?.message||data.error);
+          notice('#openaiTranscriptionMsg','文字起こしに成功しました。Record ID: '+esc(data?.record_id||'—')+' / モデル: '+esc(data?.model||'—'),true);
+          toast('通話の文字起こしに成功しました');
+          setTimeout(()=>renderSettings('integrations'),1000);
+        }catch(err){
+          notice('#openaiTranscriptionMsg',err.message||String(err));
+        }finally{
+          testOpenAiTranscription.disabled=false;
         }
       };
     }
