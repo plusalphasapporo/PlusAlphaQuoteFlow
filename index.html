@@ -7620,6 +7620,26 @@
     const latestInternalReturnText=latestInternalReturnMessage
       ? String(latestInternalReturnMessage.body||'').replace(/^【自社対応結果】\s*/,'').trim()
       : '';
+    const internalReturnCustomerResult=(()=>{
+      const raw=String(latestInternalReturnText||'').trim();
+      if(!raw) return '';
+      return raw
+        .split(/\n(?=サポート会社への共有\s*[:：])/)[0]
+        .replace(/^実施内容・確認結果\s*[:：]\s*/,'')
+        .replace(/^【[^】]+】\s*/,'')
+        .trim();
+    })();
+    const buildInternalReturnCustomerDraft=()=>{
+      const subject=String(t.subject||'お問い合わせ内容').trim();
+      const result=internalReturnCustomerResult;
+      return [
+        'お世話になっております。',
+        'ご連絡いただいておりました「'+subject+'」について、確認・対応を行いました。',
+        result?'\n実施・確認内容は以下のとおりです。\n'+result:'',
+        '\nお手数ですが、現在の状態をご確認いただけますでしょうか。',
+        '問題が続いている場合や気になる点がございましたら、そのままご返信ください。'
+      ].filter(Boolean).join('\n');
+    };
     const supportPrimaryStep=(()=>{
       if(t.status==='closed') return {label:'完了済み',button:'対応履歴を確認',hint:'対応履歴・作業報告を確認できます。',target:'history',tone:'ghost'};
       if(supportStage==='unhandled') return {label:'① 受付内容を確認',button:'受付確認して対応開始',hint:'依頼内容・写真・顧客情報を確認後、そのまま対応方法検索へ進みます。',target:'content',tone:'primary'};
@@ -7671,6 +7691,7 @@
             ? '<div class="supportQuickActions" style="margin-top:12px">'+
                 '<button id="ticketReturnResume" class="primary" type="button">追加対応を開始</button>'+
                 '<button id="ticketReturnReply" class="orange" type="button">顧客へ回答する</button>'+
+                '<button id="ticketReturnDraftPreview" class="ghost" type="button">返信下書きを確認</button>'+
                 '<button id="ticketReturnReport" class="green" type="button">作業報告へ進む</button>'+
               '</div>'
             : '<div class="notice warn" style="margin-top:12px">他のサポート担当者が対応中のため、現在は閲覧のみです。</div>')+
@@ -8563,19 +8584,62 @@
         finally{returnResume.disabled=false;}
       };
 
-      const returnReply=$('#ticketReturnReply');
-      if(returnReply) returnReply.onclick=()=>{
+      const prepareInternalReturnReply=({previewOnly=false}={})=>{
+        const draft=buildInternalReturnCustomerDraft();
+        if(previewOnly){
+          mountAppModal(
+            '<div class="appModalHead"><div><h2>顧客向け返信下書き</h2><p>自社対応結果から、内部共有部分を除いて作成しています。送信前に内容を確認してください。</p></div><button id="returnDraftClose" class="ghost" type="button">×</button></div>'+
+            '<div class="appModalBody"><div class="notice"><strong>送信先：顧客</strong><br><span class="muted">この時点ではまだ送信されません。</span></div>'+
+              '<div class="field"><label>返信下書き</label><textarea id="returnDraftPreviewBody" rows="10">'+esc(draft)+'</textarea></div>'+
+            '</div>'+
+            '<div class="appModalFoot"><button id="returnDraftCancel" class="ghost" type="button">閉じる</button><button id="returnDraftUse" class="primary" type="button">この下書きを返信欄へ入れる</button></div>'
+          );
+          $('#returnDraftClose').onclick=closeAppModal;
+          $('#returnDraftCancel').onclick=closeAppModal;
+          $('#returnDraftUse').onclick=()=>{
+            const edited=String($('#returnDraftPreviewBody')?.value||'').trim();
+            closeAppModal();
+            const vis=$('#ticketMessageVisibility');
+            if(vis && [...vis.options].some(o=>o.value==='customer')){
+              vis.value='customer';
+              vis.dispatchEvent(new Event('change',{bubbles:true}));
+            }
+            const body=$('#ticketMessageBody');
+            if(body && !body.value.trim()){
+              body.value=edited;
+              body.dispatchEvent(new Event('input',{bubbles:true}));
+            }
+            const next=$('#ticketMessageNextAction');
+            if(next) next.value='customer_reply_waiting';
+            jump('#ticketMessageForm');
+            setTimeout(()=>body?.focus(),220);
+            toast(body?.value.trim()===edited?'顧客向け返信を下書きしました':'既存の返信下書きを残しました');
+          };
+          return;
+        }
+
         const vis=$('#ticketMessageVisibility');
         if(vis && [...vis.options].some(o=>o.value==='customer')){
           vis.value='customer';
           vis.dispatchEvent(new Event('change',{bubbles:true}));
         }
+        const body=$('#ticketMessageBody');
+        if(body && !body.value.trim()){
+          body.value=draft;
+          body.dispatchEvent(new Event('input',{bubbles:true}));
+        }
         const next=$('#ticketMessageNextAction');
         if(next) next.value='customer_reply_waiting';
         jump('#ticketMessageForm');
-        setTimeout(()=>$('#ticketMessageBody')?.focus(),220);
-        toast('顧客向け回答に切り替えました');
+        setTimeout(()=>body?.focus(),220);
+        toast(body?.value.trim()===draft?'自社対応結果から顧客向け返信を下書きしました':'既存の返信下書きを残しました');
       };
+
+      const returnReply=$('#ticketReturnReply');
+      if(returnReply) returnReply.onclick=()=>prepareInternalReturnReply();
+
+      const returnDraftPreview=$('#ticketReturnDraftPreview');
+      if(returnDraftPreview) returnDraftPreview.onclick=()=>prepareInternalReturnReply({previewOnly:true});
 
       const returnReport=$('#ticketReturnReport');
       if(returnReport) returnReport.onclick=()=>$('#ticketCloseBtn')?.click();
