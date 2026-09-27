@@ -887,6 +887,8 @@
   let callconnectNotificationChannel=null;
   let activeTicketId=null;
   let callconnectNotificationPollTimer=null;
+  let callconnectTranscriptSyncTimer=null;
+  let callconnectTranscriptSyncRunning=false;
   let teamviewerStatusTimer=null;
   let lastCallConnectPopupId='';
   let pendingCallConnectIntake=null;
@@ -1858,6 +1860,41 @@
         }
       };
     }
+  }
+
+  async function syncPendingCallConnectTranscripts(){
+    const role=bootData?.context?.role;
+    if(!['internal_admin','internal_staff','support_staff'].includes(role)) return null;
+    if(callconnectTranscriptSyncRunning||!navigator.onLine) return null;
+    callconnectTranscriptSyncRunning=true;
+    try{
+      const {data,error}=await supabase.functions.invoke('callconnect-records-sync',{body:{mode:'transcript_pending'}});
+      if(error) throw error;
+      if(data?.error) throw new Error(data.error);
+      if(Number(data?.transcript_saved_count||0)>0){
+        toast('CallConnect文字起こしを自動更新しました');
+        if(currentPage==='support_callconnect'&&!activeTicketId){
+          try{await renderSupportCallConnect();}catch(_){}
+        }
+      }
+      return data||null;
+    }catch(err){
+      console.warn('CallConnect transcript auto sync failed',err);
+      return null;
+    }finally{
+      callconnectTranscriptSyncRunning=false;
+    }
+  }
+
+  async function startCallConnectTranscriptAutoSync(){
+    if(callconnectTranscriptSyncTimer){
+      clearInterval(callconnectTranscriptSyncTimer);
+      callconnectTranscriptSyncTimer=null;
+    }
+    const role=bootData?.context?.role;
+    if(!['internal_admin','internal_staff','support_staff'].includes(role)) return;
+    await syncPendingCallConnectTranscripts();
+    callconnectTranscriptSyncTimer=setInterval(syncPendingCallConnectTranscripts,5*60*1000);
   }
 
   async function startCallConnectNotificationRealtime(){
@@ -14443,6 +14480,7 @@
       await startInternalHandoffRealtime();
       await startMessageRealtime();
       await startCallConnectNotificationRealtime();
+      await startCallConnectTranscriptAutoSync();
       await startDeadlineWatch();
       await go('home');
     }catch(err){
