@@ -163,6 +163,19 @@
     .supportTodayTile em{display:block;margin-top:8px;color:#64748b;font-size:11px;font-style:normal;font-weight:700}
     .supportTodayTile.danger{border-color:#fecaca;background:#fffafa}.supportTodayTile.danger strong{color:#b91c1c}
     .supportTodayTile.warn{border-color:#fed7aa;background:#fffbeb}.supportTodayTile.warn strong{color:#c2410c}
+    .internalCommandCenter{border:2px solid #dbeafe;background:linear-gradient(180deg,#f8fbff,#fff);box-shadow:0 12px 30px rgba(37,99,235,.07)}
+    .internalCommandHead{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:12px}
+    .internalCommandHead h2{margin:0}.internalCommandHead p{margin:4px 0 0;color:var(--muted);font-size:13px}
+    .internalActionStrip{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:9px;margin-top:12px}
+    .internalActionBtn{min-height:70px;text-align:left;border:1px solid var(--line);background:#fff;border-radius:13px;padding:11px 12px}
+    .internalActionBtn strong{display:block;font-size:13px}.internalActionBtn small{display:block;margin-top:4px;color:var(--muted);font-weight:600;line-height:1.4}
+    .internalActionBtn.primaryAction{background:#eff6ff;border-color:#93c5fd;color:#1d4ed8}.internalActionBtn.dangerAction{background:#fff7f7;border-color:#fecaca;color:#b91c1c}
+    .internalFocusList{display:grid;gap:9px;margin-top:12px}
+    .internalFocusCard{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;border:1px solid var(--line);border-left:5px solid #94a3b8;border-radius:13px;padding:12px 13px;background:#fff}
+    .internalFocusCard.danger{border-left-color:#dc2626;background:#fffafa}.internalFocusCard.warn{border-left-color:#f97316;background:#fffbeb}
+    .internalFocusCard strong{display:block}.internalFocusCard small{display:block;color:var(--muted);margin-top:4px;line-height:1.45}.internalFocusMeta{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}
+    @media(max-width:1100px){.internalActionStrip{grid-template-columns:repeat(3,minmax(0,1fr))}}
+    @media(max-width:680px){.internalActionStrip{grid-template-columns:repeat(2,minmax(0,1fr))}.internalFocusCard{grid-template-columns:1fr}.internalFocusCard button{width:100%}}
     .supportHomeSection{background:#fff;border:1px solid var(--line);border-radius:18px;padding:18px;margin-top:14px}
     .supportHomeSectionHead{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
     .supportHomeSectionHead h2{margin:0}.supportHomeSectionHead p{margin:4px 0 0;color:var(--muted);font-size:13px}
@@ -2097,6 +2110,48 @@
       const internalOverdue=internalDeadlineTickets.filter(t=>t.deadline_state==='overdue');
       const internalDueToday=internalDeadlineTickets.filter(t=>t.deadline_state==='due_today');
       const internalUnset=internalDeadlineTickets.filter(t=>t.deadline_state==='unset');
+      const internalUrgent=internalSupportTickets.filter(t=>t.status!=='closed'&&t.priority==='urgent');
+      const internalHigh=internalSupportTickets.filter(t=>t.status!=='closed'&&t.priority==='high');
+      const internalUnassigned=internalSupportTickets.filter(t=>t.status!=='closed'&&!t.assigned_internal_user_id);
+      const internalFocusTickets=[...internalSupportTickets]
+        .filter(t=>t.status!=='closed'&&(
+          t.deadline_state==='overdue'||
+          t.deadline_state==='due_today'||
+          t.priority==='urgent'||
+          t.priority==='high'||
+          !t.assigned_internal_user_id
+        ))
+        .sort((a,b)=>{
+          const rank=t=>{
+            if(t.deadline_state==='overdue') return 0;
+            if(t.priority==='urgent') return 1;
+            if(t.deadline_state==='due_today') return 2;
+            if(t.priority==='high') return 3;
+            if(!t.assigned_internal_user_id) return 4;
+            return 9;
+          };
+          const r=rank(a)-rank(b);
+          return r!==0?r:timeValue(b.updated_at||b.created_at)-timeValue(a.updated_at||a.created_at);
+        })
+        .slice(0,6);
+      const internalFocusCards=internalFocusTickets.map(t=>{
+        const danger=t.deadline_state==='overdue'||t.priority==='urgent';
+        const warn=!danger&&(t.deadline_state==='due_today'||t.priority==='high');
+        const reason=t.deadline_state==='overdue'?'対応期限超過':
+          t.priority==='urgent'?'緊急案件':
+          t.deadline_state==='due_today'?'本日期限':
+          t.priority==='high'?'高優先度':
+          !t.assigned_internal_user_id?'自社担当未設定':'要確認';
+        return '<article class="internalFocusCard '+(danger?'danger':warn?'warn':'')+'">'+
+          '<div><strong>'+esc(t.ticket_number||'—')+' / '+esc(t.subject||'件名なし')+'</strong>'+
+            '<small>'+esc(t.customer_name||'顧客未登録')+' / '+esc(supportRequestTypeLabel(t.request_type))+'</small>'+
+            '<div class="internalFocusMeta"><span class="pill '+(danger?'bad':warn?'warn':'')+'">'+esc(reason)+'</span>'+
+              '<span class="pill">期限 '+esc(dateTimeText(t.resolution_due_at||t.first_response_due_at))+'</span>'+
+              '<span class="pill">担当 '+esc(t.assigned_internal_user_name||'未設定')+'</span></div>'+
+          '</div>'+
+          '<button class="primary internalFocusOpen" type="button" data-id="'+esc(t.id)+'">案件を開く</button>'+
+        '</article>';
+      }).join('');
       const internalDeadlineRows=internalDeadlineTickets.slice(0,10).map(t=>
         '<tr>'+
           '<td>'+supportDeadlineBadge(t.deadline_state)+'</td>'+
@@ -2157,19 +2212,42 @@
       );
 
       home.innerHTML=
-        pageIntro('ダッシュボード','今日やるべき業務を優先度順に表示します。各行からそのまま処理画面へ移動できます。')+
-        kpis([
-          ['承認待ち',ops.kpis?.approval_waiting],
-          ['受注化待ち',ops.kpis?.accepted_without_order],
-          ['発注未作成',ops.kpis?.orders_without_purchase_order],
-          ['入荷超過',ops.kpis?.receiving_overdue],
-          ['本日入荷',ops.kpis?.receiving_due_today],
-          ['本日納品',ops.kpis?.deliveries_today],
-          ['納品超過',ops.kpis?.deliveries_overdue],
-          ['新着引継ぎ',unreadHandoffs?.count||0],
-          ['期限超過',internalOverdue.length],
-          ['本日期限',internalDueToday.length]
-        ])+
+        pageIntro('自社TOP','自社で判断・対応が必要な案件を最優先で表示します。通常業務は下段に分けています。')+
+        '<section class="card section internalCommandCenter">'+
+          '<div class="internalCommandHead"><div><h2>自社対応センター</h2><p>まずここだけ確認すれば、サポート会社からの引継ぎ・緊急障害・期限案件を把握できます。</p></div><span class="pill">'+esc(ops.business_date||'')+'</span></div>'+
+          '<div class="supportTodayGrid">'+
+            '<button class="supportTodayTile danger internalJumpHandoffs" type="button"><span>新着引継ぎ</span><strong>'+esc(unreadHandoffs?.count||0)+'</strong><em>未確認の引継ぎ</em></button>'+
+            '<button class="supportTodayTile warn internalJumpHandoffs" type="button"><span>未処理引継ぎ</span><strong>'+esc((q||[]).length)+'</strong><em>受理・判断が必要</em></button>'+
+            '<button class="supportTodayTile danger internalJumpSupport" type="button"><span>緊急案件</span><strong>'+esc(internalUrgent.length)+'</strong><em>優先して確認</em></button>'+
+            '<button class="supportTodayTile danger internalJumpSupport" type="button"><span>期限超過</span><strong>'+esc(internalOverdue.length)+'</strong><em>すぐに確認</em></button>'+
+            '<button class="supportTodayTile warn internalJumpSupport" type="button"><span>本日期限</span><strong>'+esc(internalDueToday.length)+'</strong><em>本日中に判断</em></button>'+
+          '</div>'+
+          '<div class="internalActionStrip">'+
+            '<button class="internalActionBtn dangerAction internalQuickAction" data-action="incident" type="button"><strong>＋ 障害を登録</strong><small>自社で受けた障害をすぐ登録</small></button>'+
+            '<button class="internalActionBtn primaryAction internalQuickAction" data-action="setting" type="button"><strong>＋ 設定依頼</strong><small>設定作業をサポートへ依頼</small></button>'+
+            '<button class="internalActionBtn internalQuickAction" data-action="handoffs" type="button"><strong>引継ぎを確認</strong><small>サポート会社からの引継ぎ</small></button>'+
+            '<button class="internalActionBtn internalQuickAction" data-action="support" type="button"><strong>問い合わせ一覧</strong><small>全案件を確認・編集</small></button>'+
+            '<button class="internalActionBtn internalQuickAction" data-action="callconnect" type="button"><strong>CallConnect</strong><small>着信・不在着信を確認</small></button>'+
+            '<button class="internalActionBtn internalQuickAction" data-action="customers" type="button"><strong>顧客検索</strong><small>顧客カルテから確認</small></button>'+
+          '</div>'+
+          '<div style="margin-top:16px"><div class="row between"><div><strong>自社が今見る案件</strong><div class="muted" style="margin-top:3px">期限超過 → 緊急 → 本日期限 → 高優先度 → 担当未設定の順です。</div></div><span class="pill">'+esc(internalFocusTickets.length)+'件表示</span></div>'+
+            '<div class="internalFocusList">'+(internalFocusCards||'<div class="empty">現在、優先確認が必要な問い合わせはありません。</div>')+'</div>'+
+          '</div>'+
+        '</section>'+
+        '<section class="card section"><div class="row between"><div><h2>通常業務</h2><p class="sectionDesc">見積・受注・発注・入荷・納品などの業務状況です。</p></div></div>'+
+          kpis([
+            ['承認待ち',ops.kpis?.approval_waiting],
+            ['受注化待ち',ops.kpis?.accepted_without_order],
+            ['発注未作成',ops.kpis?.orders_without_purchase_order],
+            ['入荷超過',ops.kpis?.receiving_overdue],
+            ['本日入荷',ops.kpis?.receiving_due_today],
+            ['本日納品',ops.kpis?.deliveries_today],
+            ['納品超過',ops.kpis?.deliveries_overdue],
+            ['高優先度案件',internalHigh.length],
+            ['自社担当未設定',internalUnassigned.length],
+            ['期限未設定',internalUnset.length]
+          ])+
+        '</section>'+
         ((unreadHandoffs?.items||[]).length
           ? '<section class="card section"><div class="row between"><div><h2>サポート会社からの新着引継ぎ</h2><p class="sectionDesc">まだあなたが確認していない引継ぎです。内容確認後、そのまま受理できます。</p></div><span class="hold">'+esc(unreadHandoffs.count||0)+'件未読</span></div>'+
             dataTable(
@@ -2228,6 +2306,44 @@
         if(btn) btn.click();
       };
 
+      const openInternalSupportCreate=async(type)=>{
+        await go('support');
+        const toggle=$('#supportCaseCreateToggle');
+        const box=$('#supportCaseCreateBox');
+        if(box?.classList.contains('hidden')) toggle?.click();
+        const select=$('#supportCaseRequestType');
+        if(select){
+          select.value=type;
+          select.dispatchEvent(new Event('change',{bubbles:true}));
+        }
+        setTimeout(()=>{
+          $('#supportCaseCreateBox')?.scrollIntoView({behavior:'smooth',block:'start'});
+          $('#supportCaseCustomer')?.focus();
+        },120);
+      };
+
+      document.querySelectorAll('.internalQuickAction').forEach(btn=>btn.onclick=async()=>{
+        const action=btn.dataset.action||'';
+        if(action==='incident') return openInternalSupportCreate('incident');
+        if(action==='setting') return openInternalSupportCreate('setting_request');
+        if(action==='handoffs') return go('handoffs');
+        if(action==='support') return go('support');
+        if(action==='callconnect') return go('support_callconnect');
+        if(action==='customers') return go('customers');
+      });
+      document.querySelectorAll('.internalJumpHandoffs').forEach(btn=>btn.onclick=()=>go('handoffs'));
+      document.querySelectorAll('.internalJumpSupport').forEach(btn=>btn.onclick=()=>go('support'));
+      document.querySelectorAll('.internalFocusOpen').forEach(btn=>btn.onclick=async()=>{
+        btn.disabled=true;
+        try{
+          await go('support');
+          await openTicketWorkspace(btn.dataset.id);
+        }catch(err){toast(err.message||String(err));}
+        finally{btn.disabled=false;}
+      });
+      const dashCallConnect=$('.dashGoCallConnect');
+      if(dashCallConnect) dashCallConnect.onclick=()=>go('support_callconnect');
+
       document.querySelectorAll('.dashActionOpen').forEach(btn=>{
         btn.onclick=async()=>{
           const kind=btn.dataset.kind;
@@ -2277,9 +2393,12 @@
         finally{btn.disabled=false;}
       });
 
-      $('.dashGoProc').onclick=()=>renderProcurementWorkspace('receiving');
-      $('.dashGoDelivery').onclick=()=>renderProcurementWorkspace('delivery');
-      $('.dashGoSupport').onclick=()=>go('support');
+      const dashGoProc=$('.dashGoProc');
+      const dashGoDelivery=$('.dashGoDelivery');
+      const dashGoSupport=$('.dashGoSupport');
+      if(dashGoProc) dashGoProc.onclick=()=>renderProcurementWorkspace('receiving');
+      if(dashGoDelivery) dashGoDelivery.onclick=()=>renderProcurementWorkspace('delivery');
+      if(dashGoSupport) dashGoSupport.onclick=()=>go('support');
 
       document.querySelectorAll('.internalUnreadHandoffOpen').forEach(b=>b.onclick=async()=>{
         b.disabled=true;
