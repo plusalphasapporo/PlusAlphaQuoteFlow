@@ -7003,6 +7003,62 @@
       const mins=Math.max(1,Math.round((end-start)/60000));
       return mins<60?mins+'分':Math.floor(mins/60)+'時間'+(mins%60?String(mins%60)+'分':'');
     })():'—';
+    const extractInitialSupportSearchTerms=()=>{
+      const raw=[t.subject||'',displayDescription||'',asset?.model_name||'',asset?.asset_number||'']
+        .filter(Boolean).join(' ')
+        .normalize('NFKC')
+        .toLowerCase();
+      const terms=[];
+      const add=(...values)=>values.forEach(value=>{
+        const term=String(value||'').trim();
+        if(term.length>=2&&!terms.includes(term)) terms.push(term);
+      });
+
+      const hasFailure=/(できない|出来ない|できません|不可|動かない|出ない|でない|送れない|入れない|つながらない|繋がらない|失敗|エラー|error)/i.test(raw);
+
+      if(/複合機|コピー機/.test(raw)) add('複合機');
+      if(/プリンター|プリンタ/.test(raw)) add('プリンタ');
+      if(/印刷/.test(raw)){
+        add('印刷');
+        if(hasFailure) add('印刷できない');
+      }
+      if(/スキャン|スキャナー|スキャナ/.test(raw)){
+        add('スキャン');
+        if(hasFailure) add('スキャンできない');
+      }
+      if(/紙.{0,4}(詰|つま)|紙詰まり|紙つまり/.test(raw)) add('紙詰まり');
+      if(/ログイン|サインイン/.test(raw)){
+        add('ログイン');
+        if(hasFailure) add('ログインできない');
+      }
+      if(/outlook|メール|smtp|imap|pop3/.test(raw)) add('メール');
+      if(/wi-?fi|wifi|無線lan|ネットワーク|インターネット|lan接続/.test(raw)) add('ネットワーク');
+      if(/共有フォルダ|ファイルサーバ|nas/.test(raw)) add('共有フォルダ');
+      if(/teamviewer/.test(raw)) add('TeamViewer');
+      if(/エラー|error/.test(raw)) add('エラー');
+
+      const errorCodes=raw.match(/(?:0x[0-9a-f]{4,}|[a-z]{1,6}[-_]?[0-9]{3,})/gi)||[];
+      errorCodes.slice(0,2).forEach(add);
+
+      if(asset?.model_name) add(String(asset.model_name).trim());
+      if(asset?.asset_number) add(String(asset.asset_number).trim());
+
+      if(terms.length<2){
+        String(t.subject||'')
+          .normalize('NFKC')
+          .split(/[\s　、。・,\/\\\-:：()（）【】\[\]]+/)
+          .map(x=>x.trim())
+          .filter(x=>x.length>=2)
+          .filter(x=>!/^(について|お願い|依頼|問い合わせ|確認|対応|至急|緊急)$/.test(x))
+          .slice(0,5)
+          .forEach(add);
+      }
+      return terms.slice(0,8);
+    };
+    const initialSupportSearchTerms=extractInitialSupportSearchTerms();
+    const initialSupportSearchQuery=initialSupportSearchTerms.join(' ')||
+      [t.subject||'',displayDescription||''].filter(Boolean).join(' ').slice(0,160);
+
     const assistSectionNo=internal?'02':'01';
     const supportPrimaryStep=(()=>{
       if(t.status==='closed') return {label:'完了済み',button:'対応履歴を確認',hint:'対応履歴・作業報告を確認できます。',target:'history',tone:'ghost'};
@@ -7061,7 +7117,7 @@
                 '<div class="item"><strong>受付経路</strong><p>'+esc(intakeSource)+'</p></div>'+
                 '<div class="item"><strong>AI連携</strong><p>'+esc(aiStateText)+'</p></div>'+
               '</div>'+
-              '<div class="field"><label>AI・ナレッジ・マニュアル検索</label><input id="ticketKnowledgeSearch" value="'+esc((t.subject||'')+' '+displayDescription)+'" placeholder="症状・機種名・エラー内容など"></div>'+
+              '<div class="field"><label>AI・ナレッジ・マニュアル検索</label><input id="ticketKnowledgeSearch" value="'+esc(initialSupportSearchQuery)+'" placeholder="症状・機種名・エラー内容など"><small class="muted">問い合わせ内容から自動抽出: '+esc(initialSupportSearchTerms.join(' / ')||'抽出語なし')+'</small></div>'+
               '<div id="ticketKnowledgeCandidates"></div>'+
             '</div>'+
             '<div>'+
