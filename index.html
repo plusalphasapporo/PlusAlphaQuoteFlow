@@ -110,14 +110,17 @@
     .supportCallRow:first-child{border-top:0}
     .supportCallTime{font-size:12px;color:var(--muted)}
     .supportCallWho strong{display:block}.supportCallWho small{color:var(--muted)}
-    .supportTicketTopbar{position:sticky;top:82px;z-index:14;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;background:#0f2748;color:#fff;border:1px solid #28476f;border-radius:16px;padding:12px 14px;margin:12px 0 14px;box-shadow:0 12px 30px rgba(15,39,72,.16)}
-    .supportTicketTopbar .summary{min-width:0}.supportTicketTopbar .summary strong{display:block;font-size:16px}.supportTicketTopbar .summary small{display:block;color:#c9d8ec;margin-top:3px}
+    .supportTicketTopbar{position:sticky;top:82px;z-index:14;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:center;background:#0f2748;color:#fff;border:1px solid #28476f;border-radius:16px;padding:14px 16px;margin:12px 0 14px;box-shadow:0 12px 30px rgba(15,39,72,.16)}
+    .supportTicketTopbar .summary{min-width:0}.supportTicketTopbar .summary strong{display:block;font-size:17px}.supportTicketTopbar .summary small{display:block;color:#c9d8ec;margin-top:3px}
     .supportTicketTopbar .supportQuickActions{margin:0}.supportTicketTopbar .ghost{background:#fff}.supportTicketTopbar .green{background:#16a34a}
-    .supportTicketFacts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:10px 0 14px}
+    .supportTopCommand{margin-top:10px;padding:10px 12px;border:1px solid rgba(255,255,255,.16);border-radius:12px;background:rgba(255,255,255,.08)}
+    .supportTopCommand strong{display:block;font-size:13px}.supportTopCommand span{display:block;margin-top:4px;color:#d9e6f7;font-size:12px;line-height:1.55}
+    .supportTopMeta{display:flex;gap:8px;flex-wrap:wrap;margin-top:9px}.supportTopMeta .pill{background:rgba(255,255,255,.12);color:#fff;border-color:rgba(255,255,255,.15)}
+    .supportTicketFacts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:10px 0 14px}
     .supportTicketFact{padding:11px 12px;border:1px solid var(--line);border-radius:12px;background:#f8fafc}
     .supportTicketFact span{display:block;font-size:11px;color:var(--muted);font-weight:800}.supportTicketFact strong{display:block;margin-top:4px;font-size:14px}
-    @media(max-width:900px){.supportTicketFacts{grid-template-columns:repeat(2,minmax(0,1fr))}.supportTicketTopbar{top:72px}}
-    @media(max-width:640px){.supportTicketFacts{grid-template-columns:1fr}.supportTicketTopbar{position:static}.supportTicketTopbar .supportQuickActions{width:100%}.supportTicketTopbar .supportQuickActions button{flex:1}}
+    @media(max-width:900px){.supportTicketTopbar{top:72px;grid-template-columns:1fr}.supportTicketTopbar .supportQuickActions{width:100%}.supportTicketTopbar .supportQuickActions button{width:100%}}
+    @media(max-width:640px){.supportTicketFacts{grid-template-columns:1fr}.supportTicketTopbar{position:static}}
     .supportReceptionBar{background:#0f2748;color:#fff;border-radius:18px;padding:18px;margin:14px 0;box-shadow:0 14px 34px rgba(15,39,72,.16)}
     .supportReceptionBar h2{margin:0;font-size:21px}.supportReceptionBar .sectionDesc{color:#c9d8ec}
     .supportReceptionBar .supportPhoneLookup{border-color:#34577f;background:#fff;color:var(--ink)}
@@ -7395,16 +7398,25 @@
         '<div class="quoteDetailHead"><div><h2>サポート案件カルテ</h2><p class="sectionDesc">'+esc(t.ticket_number||'—')+' / '+supportRequestTypeLabel(t.request_type)+' / '+esc(t.subject||'')+'</p></div><button id="ticketDetailClose" class="ghost" type="button">閉じる</button></div>'+
         (support
           ? '<div class="supportTicketTopbar">'+
-              '<div class="summary"><strong>'+esc(cust?.name||'顧客未登録')+' / '+esc(t.subject||'')+'</strong><small>'+esc(t.ticket_number||'—')+' ・ '+esc(supportStageLabel(supportStage||((t.status==='closed')?'completed':'unhandled')))+' ・ '+esc(supportDeadlineLabel(deadlineState?.deadline_state))+'</small></div>'+
+              '<div class="summary">'+
+                '<strong>'+esc(cust?.name||'顧客未登録')+' / '+esc(t.subject||'')+'</strong>'+
+                '<small>'+esc(t.ticket_number||'—')+' ・ '+esc(supportStageLabel(supportStage||((t.status==='closed')?'completed':'unhandled')))+' ・ '+esc(supportDeadlineLabel(deadlineState?.deadline_state))+'</small>'+
+                '<div class="supportTopCommand"><strong>今やること：'+esc(supportPrimaryStep.label)+'</strong><span>'+esc(supportPrimaryStep.hint)+'</span></div>'+
+                '<div class="supportTopMeta">'+
+                  '<span class="pill">担当 '+esc(supportAssigneeLabel(assignmentState))+'</span>'+
+                  '<span class="pill">期限 '+esc(dateTimeText(deadlineState?.resolution_due_at||deadlineState?.first_response_due_at))+'</span>'+
+                  (t.priority==='urgent'?'<span class="pill">緊急</span>':t.priority==='high'?'<span class="pill">高優先度</span>':'')+
+                '</div>'+
+              '</div>'+
               '<div class="supportQuickActions">'+
-                '<button id="supportTopPrimaryAction" class="'+esc(supportPrimaryStep.tone||'primary')+'" type="button">'+esc(supportPrimaryStep.button||'ここから進める')+'</button>'+
+                (t.status!=='closed'&&!supportReadOnlyByOther
+                  ? '<button id="supportTopPrimaryAction" class="'+esc(supportPrimaryStep.tone||'primary')+'" type="button">'+esc(supportPrimaryStep.button||'ここから進める')+'</button>'
+                  : supportReadOnlyByOther?'<span class="pill warn">閲覧専用</span>':'')+
               '</div>'+
             '</div>'+
             '<div class="supportTicketFacts">'+
-              '<div class="supportTicketFact"><span>受付</span><strong>'+esc(intakeSource)+'</strong></div>'+
-              '<div class="supportTicketFact"><span>担当</span><strong>'+esc(supportAssigneeLabel(assignmentState))+'</strong></div>'+
-              '<div class="supportTicketFact"><span>優先度</span><strong>'+esc(t.priority||'normal')+'</strong></div>'+
-              '<div class="supportTicketFact"><span>対象機器</span><strong>'+esc(asset?.asset_number||'未指定')+'</strong></div>'+
+              '<div class="supportTicketFact"><span>問い合わせ内容</span><strong>'+esc((displayDescription||'内容なし').slice(0,140))+(String(displayDescription||'').length>140?'…':'')+'</strong></div>'+
+              '<div class="supportTicketFact"><span>顧客 / 対象</span><strong>'+esc(cust?.name||'顧客未登録')+' / '+esc(asset?.asset_number||asset?.model_name||'機器未指定')+'</strong></div>'+
             '</div>'+supportTopSummary
           : kpis([
               ['種別',supportRequestTypeLabel(t.request_type)],
