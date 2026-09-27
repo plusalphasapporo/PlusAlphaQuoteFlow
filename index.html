@@ -7856,7 +7856,7 @@
             '</div>'
           ).join('')+
           (callTranscriptItems.some(x=>x.transcript_text)
-            ? '<div class="supportQuickActions"><button id="ticketCallAiSummary" class="primary" type="button">AIで通話内容を整理</button></div><div id="ticketCallAiResult" class="notice hidden" style="white-space:pre-wrap;line-height:1.7"></div>'
+            ? '<div class="supportQuickActions"><button id="ticketCallAiSummary" class="primary" type="button">AIで通話内容を整理</button><button id="ticketCallAiClassify" class="ghost" type="button">障害・設定依頼を判定</button></div><div id="ticketCallAiResult" class="notice hidden" style="white-space:pre-wrap;line-height:1.7"></div><div id="ticketCallClassifyResult" class="hidden"></div>'
             : '')+
         '</section>'
       : '';
@@ -8615,6 +8615,70 @@
         }finally{ticketCallAiSummary.disabled=false;}
       };
     }
+
+    const ticketCallAiClassify=$('#ticketCallAiClassify');
+    if(ticketCallAiClassify){
+      ticketCallAiClassify.onclick=async()=>{
+        ticketCallAiClassify.disabled=true;
+        const host=$('#ticketCallClassifyResult');
+        try{
+          if(host){host.classList.remove('hidden');host.innerHTML='<div class="notice">分類候補を作成しています...</div>';}
+          const {data,error}=await supabase.functions.invoke('ai-assistant',{body:{ticketId:t.id,action:'call_classify'}});
+          if(error) throw error;
+          if(data?.error) throw new Error(data.error);
+          const x=data?.candidate||{};
+          const typeLabel=x.request_type==='incident'?'障害':x.request_type==='setting_request'?'設定依頼':'問い合わせ';
+          if(host){
+            host.innerHTML=
+              '<div class="card section" style="box-shadow:none;margin-top:10px;border:1px solid var(--line)">'+
+                '<div class="row between" style="gap:10px;align-items:flex-start;flex-wrap:wrap"><div><strong>AI分類候補：'+esc(typeLabel)+'</strong><div class="muted" style="margin-top:4px">AIは候補のみ表示します。確定は担当者が行います。</div></div><span class="pill">'+esc(typeLabel)+'</span></div>'+
+                '<div class="item"><strong>件名候補</strong><p>'+esc(x.subject||'確認できません')+'</p></div>'+
+                '<div class="item"><strong>問い合わせ要約</strong><p style="white-space:pre-wrap">'+esc(x.summary||'確認できません')+'</p></div>'+
+                (x.error_message?'<div class="item"><strong>症状・エラー</strong><p style="white-space:pre-wrap">'+esc(x.error_message)+'</p></div>':'')+
+                (x.requested_setting?'<div class="item"><strong>設定依頼内容</strong><p style="white-space:pre-wrap">'+esc(x.requested_setting)+'</p></div>':'')+
+                '<div class="item"><strong>現在の状態</strong><p style="white-space:pre-wrap">'+esc(x.current_state||'確認できません')+'</p></div>'+
+                '<div class="item"><strong>実施・案内済み</strong><p style="white-space:pre-wrap">'+esc(x.attempted_actions||'確認できません')+'</p></div>'+
+                '<div class="item"><strong>次にやること</strong><p style="white-space:pre-wrap">'+esc(x.next_action||'確認できません')+'</p></div>'+
+                '<div class="item"><strong>分類理由</strong><p style="white-space:pre-wrap">'+esc(x.reason||'確認できません')+'</p></div>'+
+                (t.status!=='closed'&&['incident','setting_request'].includes(x.request_type)
+                  ? '<div class="supportQuickActions"><button id="ticketCallApplyClassify" class="primary" type="button" data-type="'+esc(x.request_type)+'">この分類で確定する</button></div>'
+                  : '')+
+                '<div id="ticketCallClassifyMsg" class="notice hidden"></div>'+
+              '</div>';
+
+            const apply=$('#ticketCallApplyClassify');
+            if(apply){
+              apply.onclick=async()=>{
+                apply.disabled=true;
+                try{
+                  const details=x.request_type==='incident'
+                    ? {
+                        error_message:x.error_message||null,
+                        attempted_actions:x.attempted_actions||null,
+                        current_state:x.current_state||null,
+                        source:'callconnect_transcript_ai_candidate'
+                      }
+                    : {
+                        requested_setting:x.requested_setting||null,
+                        current_state:x.current_state||null,
+                        attempted_actions:x.attempted_actions||null,
+                        source:'callconnect_transcript_ai_candidate'
+                      };
+                  await rpc('classify_support_ticket',{p_ticket_id:t.id,p_request_type:x.request_type,p_request_details:details});
+                  toast(x.request_type==='incident'?'障害として確定しました':'設定依頼として確定しました');
+                  await renderTicketDetail(t.id);
+                }catch(err){
+                  notice('#ticketCallClassifyMsg',err.message||String(err));
+                }finally{apply.disabled=false;}
+              };
+            }
+          }
+        }catch(err){
+          if(host){host.classList.remove('hidden');host.innerHTML='<div class="notice error">分類候補の作成に失敗しました。原文を確認して手動で分類してください。<br>'+esc(String(err.message||err))+'</div>';}
+        }finally{ticketCallAiClassify.disabled=false;}
+      };
+    }
+
     bindSupportDraftInputs(t.id,'message',{body:'#ticketMessageBody',important:'#ticketMessageImportant',visibility:'#ticketMessageVisibility'});
     bindSupportDraftInputs(t.id,'handoff',{reason:'#handoffReason',next_action:'#handoffNextAction'});
     if(internal&&activeInternalHandoff?.state==='accepted'){
