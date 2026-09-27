@@ -4254,10 +4254,11 @@
     if(error) throw error;
     if(data?.error){
       const code=String(data.error||'');
-      if(code==='MICROSOFT_GRAPH_NOT_CONFIGURED') throw new Error('Microsoft 365連携設定がまだ完了していません。');
-      if(code==='MICROSOFT_GRAPH_TOKEN_FAILED') throw new Error('Microsoft 365への接続認証に失敗しました。');
-      if(code==='INVALID_FOLDER_URL') throw new Error('SharePointまたはOneDriveのフォルダリンクを貼り付けてください。');
-      if(code==='URL_IS_NOT_A_FOLDER') throw new Error('指定したリンクはフォルダではありません。フォルダリンクを指定してください。');
+      if(code==='MICROSOFT_GRAPH_NOT_CONFIGURED') throw new Error('Microsoft 365連携設定がまだ完了していません。管理者側でEntraアプリの接続設定が必要です。');
+      if(code==='MICROSOFT_GRAPH_TOKEN_FAILED') throw new Error('Microsoft 365への接続認証に失敗しました。テナントID・アプリID・クライアントシークレットを確認してください。');
+      if(code==='INVALID_FOLDER_URL'||code==='SHAREPOINT_URL_REQUIRED') throw new Error('SharePointの顧客フォルダURLを貼り付けてください。');
+      if(code==='SHAREPOINT_DRIVE_NOT_FOUND'||code==='SHAREPOINT_LIBRARY_NOT_FOUND') throw new Error('SharePointのドキュメントライブラリを特定できませんでした。対象フォルダを開いた状態のURLを貼り付けてください。');
+      if(code==='URL_IS_NOT_A_FOLDER') throw new Error('指定したリンクはフォルダではありません。SharePointの顧客フォルダを指定してください。');
       if(code==='ADMIN_REQUIRED') throw new Error('情報フォルダの紐付け変更は自社管理者のみ行えます。');
       throw new Error(data.message||code);
     }
@@ -4299,9 +4300,9 @@
         host.innerHTML=
           '<section class="card" style="box-shadow:none">'+
             '<h3>Microsoft 365 情報フォルダ</h3>'+
-            '<p class="sectionDesc">SharePointを推奨します。現在のOneDriveフォルダを使うこともできます。ファイル自体はQuoteFlow Cloudへ移動・複製しません。</p>'+
+            '<p class="sectionDesc">SharePointの顧客フォルダをそのまま保存先として使用します。ファイル自体はQuoteFlow Cloudへ移動・複製しません。</p>'+
             (isAdmin
-              ? '<div class="field"><label>SharePoint / OneDrive フォルダリンク</label><input id="customerM365FolderUrl" type="url" placeholder="対象フォルダを開き「リンクをコピー」したURLを貼り付け"></div>'+
+              ? '<div class="field"><label>SharePoint 顧客フォルダURL</label><input id="customerM365FolderUrl" type="url" placeholder="SharePointで対象の顧客フォルダを開いた状態のURLを貼り付け"></div>'+
                 '<button id="customerM365FolderLinkBtn" class="primary" type="button">この顧客に紐付け</button>'+
                 '<div id="customerM365FolderLinkMsg" class="notice hidden"></div>'
               : '<div class="notice">情報フォルダがまだ紐付けられていません。自社管理者へ設定を依頼してください。</div>')+
