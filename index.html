@@ -78,6 +78,18 @@
     .internalHandoffBox{border:1px solid var(--line);border-radius:13px;padding:12px;background:#fff}
     .internalHandoffBox strong{display:block;font-size:12px}.internalHandoffBox p{margin:6px 0 0;white-space:pre-wrap;line-height:1.55;color:#475569}
     @media(max-width:760px){.internalHandoffSteps{grid-template-columns:1fr 1fr}.internalHandoffWorkGrid{grid-template-columns:1fr}}
+    .customerSupportSnapshot{border:2px solid #dbeafe;background:linear-gradient(180deg,#f8fbff,#fff);border-radius:18px;padding:16px;margin:14px 0}
+    .customerSupportSnapshotHead{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+    .customerSupportSnapshotHead h3{margin:0}.customerSupportSnapshotHead p{margin:4px 0 0;color:var(--muted);font-size:13px}
+    .customerQuickActions{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-top:12px}
+    .customerQuickAction{min-height:66px;text-align:left;border:1px solid var(--line);border-radius:12px;background:#fff;padding:10px 11px}
+    .customerQuickAction strong{display:block;font-size:12px}.customerQuickAction small{display:block;margin-top:4px;color:var(--muted);font-weight:600;line-height:1.35}
+    .customerQuickAction.danger{border-color:#fecaca;background:#fffafa;color:#b91c1c}.customerQuickAction.primaryAction{border-color:#bfdbfe;background:#eff6ff;color:#1d4ed8}
+    .customerSupportRecent{display:grid;gap:8px;margin-top:12px}
+    .customerSupportRecentItem{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;border:1px solid var(--line);border-radius:12px;padding:11px 12px;background:#fff}
+    .customerSupportRecentItem strong{display:block}.customerSupportRecentItem small{display:block;color:var(--muted);margin-top:4px;line-height:1.4}
+    @media(max-width:900px){.customerQuickActions{grid-template-columns:repeat(3,minmax(0,1fr))}}
+    @media(max-width:620px){.customerQuickActions{grid-template-columns:1fr 1fr}.customerSupportRecentItem{grid-template-columns:1fr}.customerSupportRecentItem button{width:100%}}
     @media(max-width:760px){.supportLinearProgress{grid-template-columns:repeat(2,minmax(0,1fr))}.supportLinearBody{margin-left:0}.supportLinearCard{padding:13px}}
     .attachmentGallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-top:10px}
     .attachmentCard{border:1px solid var(--line);border-radius:12px;padding:10px;background:#fff;overflow:hidden}
@@ -3898,7 +3910,7 @@
   async function renderCustomerDetail(customerId,tab='overview'){
     const host=$('#customerDetailHost');
     const tabs=[
-      ['overview','概要'],['transactions','取引全体'],['contacts','担当者'],['assets','OA機器'],['tickets','障害履歴'],
+      ['overview','概要'],['transactions','取引全体'],['contacts','担当者'],['assets','OA機器'],['tickets','問い合わせ・障害'],
       ['properties','物件・残債'],['monthly','月額支払'],['management','管理情報'],['history','営業対応履歴']
     ];
 
@@ -4002,6 +4014,24 @@
         ...(extra.sales_history||[]).map(x=>({kind:'history',id:x.id,at:x.occurred_at||x.created_at,title:'営業対応 '+(x.subject||x.activity_type||'記録'),detail:x.next_action||x.body||''}))
       ].filter(x=>x.at).sort((a,b)=>timeValue(b.at)-timeValue(a.at)).slice(0,10);
 
+      const supportTickets=[...(extra.tickets||[])].sort((a,b)=>timeValue(b.updated_at||b.created_at)-timeValue(a.updated_at||a.created_at));
+      const openSupportTickets=supportTickets.filter(x=>x.status!=='closed');
+      const openIncidentCount=openSupportTickets.filter(x=>x.request_type==='incident').length;
+      const openSettingCount=openSupportTickets.filter(x=>x.request_type==='setting_request').length;
+      const openInquiryCount=openSupportTickets.filter(x=>!['incident','setting_request'].includes(x.request_type)).length;
+      const recentSupportTickets=supportTickets.slice(0,5);
+      const activeContracts=(extra.contracts||[]).filter(x=>x.status==='active');
+      const activeAssets=(extra.assets||[]).filter(x=>x.status==='active');
+      const recentSupportHtml=recentSupportTickets.length
+        ? recentSupportTickets.map(x=>
+            '<div class="customerSupportRecentItem">'+
+              '<div><strong>'+esc(x.ticket_number||'—')+' / '+esc(x.subject||'件名なし')+'</strong>'+
+                '<small>'+esc(supportRequestTypeLabel(x.request_type))+' ・ '+esc(statusText(x.status))+' ・ '+esc(x.priority||'normal')+' ・ '+esc(dateTimeText(x.updated_at||x.created_at))+'</small></div>'+
+              '<button class="ghost customerSupportTicketOpen" type="button" data-id="'+esc(x.id)+'">案件カルテ</button>'+
+            '</div>'
+          ).join('')
+        : '<div class="empty">問い合わせ・障害・設定依頼の履歴はありません。</div>';
+
       const attentionHtml=attention.length
         ? attention.map(x=>
             '<div class="item">'+
@@ -4044,15 +4074,38 @@
           '<div id="customerUnifiedTabBody">'+
             (c.manual_hold?'<div class="notice error"><strong>手動ホールド中</strong><br>新規取引を進める前にホールド理由・解除可否を確認してください。</div>':'')+
             kpis([
+              ['対応中',openSupportTickets.length],
+              ['障害',openIncidentCount],
+              ['設定依頼',openSettingCount],
+              ['問い合わせ',openInquiryCount],
+              ['有効契約',activeContracts.length],
+              ['稼働機器',activeAssets.length],
               ['要確認',attention.length],
-              ['見積',extra.summary?.quotes||0],
-              ['受注',extra.summary?.orders||0],
-              ['発注',extra.summary?.purchase_orders||0],
-              ['納品予定',extra.summary?.planned_deliveries||0],
-              ['有効契約',extra.summary?.active_contracts||0],
-              ['稼働機器',extra.summary?.active_assets||0],
-              ['対応中問合せ',extra.summary?.open_tickets||0]
+              ['直近案件',recentSupportTickets.length]
             ])+
+            '<section class="customerSupportSnapshot">'+
+              '<div class="customerSupportSnapshotHead"><div><h3>顧客サポート概要</h3><p>この顧客の契約・機器・問い合わせ状況を、ここだけで確認できます。</p></div><span class="pill">'+esc(openSupportTickets.length)+'件対応中</span></div>'+
+              '<div class="customerQuickActions">'+
+                '<button class="customerQuickAction danger customerSupportQuick" data-action="incident" type="button"><strong>＋ 障害を登録</strong><small>顧客選択済みで登録</small></button>'+
+                '<button class="customerQuickAction primaryAction customerSupportQuick" data-action="setting" type="button"><strong>＋ 設定依頼</strong><small>顧客選択済みで登録</small></button>'+
+                '<button class="customerQuickAction customerSupportQuick" data-action="tickets" type="button"><strong>問い合わせ・障害</strong><small>全履歴を確認</small></button>'+
+                '<button class="customerQuickAction customerSupportQuick" data-action="assets" type="button"><strong>OA機器 '+esc(activeAssets.length)+'台</strong><small>機器詳細を確認</small></button>'+
+                '<button class="customerQuickAction customerSupportQuick" data-action="contracts" type="button"><strong>有効契約 '+esc(activeContracts.length)+'件</strong><small>契約・取引情報を確認</small></button>'+
+              '</div>'+
+              '<div class="modalGrid2" style="margin-top:12px">'+
+                '<div class="internalHandoffBox"><strong>契約</strong><p>'+(
+                  activeContracts.length
+                    ? activeContracts.slice(0,3).map(x=>esc(x.contract_number||'未採番')+' / '+esc(dateText(x.end_date))).join('\n')
+                    : '有効契約はありません。'
+                )+'</p></div>'+
+                '<div class="internalHandoffBox"><strong>OA機器</strong><p>'+(
+                  activeAssets.length
+                    ? activeAssets.slice(0,4).map(x=>esc(x.asset_number||'未採番')+' / '+esc(x.model_name||'機種未設定')).join('\n')
+                    : '稼働中の登録機器はありません。'
+                )+'</p></div>'+
+              '</div>'+
+              '<div style="margin-top:14px"><div class="row between"><strong>直近の問い合わせ・障害・設定依頼</strong><button id="customerSupportAllTickets" class="ghost" type="button">すべて見る</button></div><div class="customerSupportRecent">'+recentSupportHtml+'</div></div>'+
+            '</section>'+
             '<div class="modalGrid2">'+
               '<section class="card section" style="box-shadow:none;margin:0">'+
                 '<h3>重要情報</h3>'+
@@ -4117,6 +4170,44 @@
       $('#customerOverviewNewQuote').onclick=()=>renderCustomerQuoteCreate(customerId);
       $('#customerOverviewTransactions').onclick=()=>renderCustomerDetail(customerId,'transactions');
       $('#customerOverviewHistory').onclick=()=>renderCustomerDetail(customerId,'history');
+
+      const openCustomerSupportCreate=async(type)=>{
+        await go('support');
+        const toggle=$('#supportCaseCreateToggle');
+        const box=$('#supportCaseCreateBox');
+        if(box?.classList.contains('hidden')) toggle?.click();
+        const customerSelect=$('#supportCaseCustomer');
+        if(customerSelect){
+          customerSelect.value=customerId;
+          customerSelect.dispatchEvent(new Event('change',{bubbles:true}));
+        }
+        const typeSelect=$('#supportCaseRequestType');
+        if(typeSelect){
+          typeSelect.value=type;
+          typeSelect.dispatchEvent(new Event('change',{bubbles:true}));
+        }
+        setTimeout(()=>{
+          $('#supportCaseCreateBox')?.scrollIntoView({behavior:'smooth',block:'start'});
+          $('#supportCaseSubject')?.focus();
+        },180);
+      };
+      document.querySelectorAll('.customerSupportQuick').forEach(btn=>btn.onclick=async()=>{
+        const action=btn.dataset.action||'';
+        if(action==='incident') return openCustomerSupportCreate('incident');
+        if(action==='setting') return openCustomerSupportCreate('setting_request');
+        if(action==='tickets') return renderCustomerDetail(customerId,'tickets');
+        if(action==='assets') return renderCustomerDetail(customerId,'assets');
+        if(action==='contracts') return renderCustomerDetail(customerId,'transactions');
+      });
+      $('#customerSupportAllTickets')?.addEventListener('click',()=>renderCustomerDetail(customerId,'tickets'));
+      document.querySelectorAll('.customerSupportTicketOpen').forEach(btn=>btn.onclick=async()=>{
+        btn.disabled=true;
+        try{
+          await go('support');
+          await openTicketWorkspace(btn.dataset.id);
+        }catch(err){toast(err.message||String(err));}
+        finally{btn.disabled=false;}
+      });
       $('#customerOverviewCallConnectSync').onclick=async()=>{
         const btn=$('#customerOverviewCallConnectSync');
         if(btn) btn.disabled=true;
@@ -4305,8 +4396,8 @@
       const rows=(extra.assets||[]).map(x=>'<tr><td>'+esc(x.asset_number||'—')+'</td><td>'+esc(x.model_name||'—')+'</td><td>'+esc(x.serial_number||'—')+'</td><td>'+esc(dateText(x.warranty_until))+'</td><td>'+esc(x.installation_location||'—')+'</td><td>'+esc(statusText(x.status))+'</td><td><button class="linkBtn customerAssetOpen" type="button" data-id="'+esc(x.id)+'">詳細</button></td></tr>');
       content=dataTable(['機器番号','機種','シリアル','保証期限','設置場所','状態','操作'],rows);
     }else if(tab==='tickets'){
-      const rows=(extra.tickets||[]).map(x=>'<tr><td>'+esc(x.ticket_number||'—')+'</td><td>'+esc(x.subject||'')+'</td><td>'+esc(statusText(x.status))+'</td><td>'+esc(x.priority||'normal')+'</td><td>'+esc(dateText(x.created_at))+'</td><td><button class="linkBtn customerTicketOpen" type="button" data-id="'+esc(x.id)+'">詳細</button></td></tr>');
-      content=dataTable(['番号','内容','状態','優先度','受付日','操作'],rows);
+      const rows=(extra.tickets||[]).map(x=>'<tr><td>'+esc(x.ticket_number||'—')+'</td><td>'+supportRequestTypeBadge(x.request_type)+'</td><td>'+esc(x.subject||'')+'</td><td>'+esc(statusText(x.status))+'</td><td>'+esc(x.priority||'normal')+'</td><td>'+esc(dateText(x.created_at))+'</td><td><button class="linkBtn customerTicketOpen" type="button" data-id="'+esc(x.id)+'">案件カルテ</button></td></tr>');
+      content='<div class="row between" style="margin-bottom:12px"><div><h3 style="margin:0">問い合わせ・障害・設定依頼</h3><p class="sectionDesc">この顧客のサポート履歴をまとめて確認します。</p></div><div class="row"><button id="customerTicketNewIncident" class="orange" type="button">＋障害</button><button id="customerTicketNewSetting" class="primary" type="button">＋設定依頼</button></div></div>'+dataTable(['番号','種別','内容','状態','優先度','受付日','操作'],rows);
     }else if(tab==='properties'){
       const rows=(extra.properties||[]).map(x=>'<tr><td><strong>'+esc(x.property_name||'')+'</strong></td><td>'+esc(x.model_name||'—')+'</td><td>'+esc(x.installation_location||'—')+'</td><td>'+esc(x.quantity||0)+'</td><td>'+esc(x.remaining_count??'—')+'</td><td class="amount">'+esc(money(x.residual_amount_tax_included||0))+'</td></tr>');
       content='<div class="unifiedToolbar"><div class="notice" style="flex:1">物件・残債は、見積の旧物件残債と分離した顧客マスタ情報です。</div><button id="addPropertyBtn" class="primary" type="button">＋物件・残債</button></div>'+dataTable(['物件名','型番','設置場所','数量','残回数','税込残債'],rows);
@@ -4358,6 +4449,26 @@
       await go('support');
       await renderTicketDetail(btn.dataset.id);
     });
+
+    const openCustomerSupportFromTab=async(type)=>{
+      await go('support');
+      const toggle=$('#supportCaseCreateToggle');
+      const box=$('#supportCaseCreateBox');
+      if(box?.classList.contains('hidden')) toggle?.click();
+      const customerSelect=$('#supportCaseCustomer');
+      if(customerSelect){
+        customerSelect.value=customerId;
+        customerSelect.dispatchEvent(new Event('change',{bubbles:true}));
+      }
+      const typeSelect=$('#supportCaseRequestType');
+      if(typeSelect){
+        typeSelect.value=type;
+        typeSelect.dispatchEvent(new Event('change',{bubbles:true}));
+      }
+      setTimeout(()=>$('#supportCaseSubject')?.focus(),180);
+    };
+    $('#customerTicketNewIncident')?.addEventListener('click',()=>openCustomerSupportFromTab('incident'));
+    $('#customerTicketNewSetting')?.addEventListener('click',()=>openCustomerSupportFromTab('setting_request'));
 
     const addPropertyBtn=$('#addPropertyBtn');
     if(addPropertyBtn) addPropertyBtn.onclick=()=>openModal({
