@@ -7107,14 +7107,17 @@
       }
       return {label:'② 対応方法を確認',button:'対応方法を確認する',hint:'AI・ナレッジ・過去案件から対応方法を確認します。',target:'assist',tone:'primary'};
     })();
+    const supportReadOnlyByOther=support &&
+      !!assignmentState?.support_assigned_user_id &&
+      !assignmentState?.is_mine;
     const supportStageControl=support && t.status!=='closed'
       ? '<div class="notice"><div class="row between"><div><strong>現在の対応工程</strong><div style="margin-top:6px">'+supportStageBadge(supportStage)+'</div><div style="margin-top:8px"><strong>次の行動：</strong> '+supportNextActionBadge(nextActionState?.support_next_action||'in_progress')+' '+supportQueueAlertBadge(nextActionState?.notification_active!==false?(nextActionState?.alert_level||'normal'):'normal')+' <span class="pill">滞留 '+esc(supportQueueAgeText(nextActionState?.waiting_seconds||0))+'</span><div class="muted" style="margin-top:4px">'+esc(supportQueueThresholdText(nextActionState?.support_next_action||''))+'</div></div><div style="margin-top:8px"><strong>対応管理：</strong> '+(supportAttentionBadge(nextActionState)||'<span class="pill">未設定</span>')+(nextActionState?.support_attention_note?'<div class="muted" style="margin-top:4px">'+esc(nextActionState.support_attention_note)+'</div>':'')+'</div><div style="margin-top:8px"><strong>サポート担当：</strong> '+supportAssigneeBadge(assignmentState)+'</div></div><div class="supportQuickActions">'+
           (!assignmentState?.support_assigned_user_id?'<button id="ticketClaimSupport" class="primary" type="button">自分が担当する</button>':'')+
           (assignmentState?.is_mine?'<button id="ticketReleaseSupport" class="ghost" type="button">担当を解除</button>':'')+
           '<button id="ticketAttentionPlan" class="ghost" type="button">確認・対応予定</button>'+
-          (supportStage==='unhandled'?'<button id="ticketStageStart" class="primary" type="button">対応開始</button>':'')+
-          (supportStage==='in_progress'?'<button id="ticketStageRemoteWait" class="orange" type="button">TeamViewer待ちにする</button>':'')+
-          (supportStage==='teamviewer_waiting'?'<button id="ticketStageResume" class="primary" type="button">対応中に戻す</button>':'')+
+          (!supportReadOnlyByOther&&supportStage==='unhandled'?'<button id="ticketStageStart" class="primary" type="button">対応開始</button>':'')+
+          (!supportReadOnlyByOther&&supportStage==='in_progress'?'<button id="ticketStageRemoteWait" class="orange" type="button">TeamViewer待ちにする</button>':'')+
+          (!supportReadOnlyByOther&&supportStage==='teamviewer_waiting'?'<button id="ticketStageResume" class="primary" type="button">対応中に戻す</button>':'')+
         '</div></div></div>'
       : '<div class="notice"><strong>現在の対応工程：</strong> '+supportStageBadge(supportStage||'completed')+'</div>';
     const firstLineAssist=!customer
@@ -7122,16 +7125,18 @@
           '<div class="notice ok" style="margin-bottom:12px">'+
             '<div class="row between" style="gap:12px;align-items:center;flex-wrap:wrap">'+
               '<div><strong>今やること：'+esc(supportPrimaryStep.label)+'</strong><div class="muted" style="margin-top:4px">'+esc(supportPrimaryStep.hint)+'</div></div>'+
-              (t.status!=='closed'?'<button id="supportPrimaryNext" class="'+esc(supportPrimaryStep.tone||'primary')+'" type="button">'+esc(supportPrimaryStep.button||'ここから進める')+'</button>':'')+
+              (t.status!=='closed'&&!supportReadOnlyByOther?'<button id="supportPrimaryNext" class="'+esc(supportPrimaryStep.tone||'primary')+'" type="button">'+esc(supportPrimaryStep.button||'ここから進める')+'</button>':supportReadOnlyByOther?'<span class="pill warn">閲覧専用</span>':'')+
             '</div>'+
           '</div>'+
           (support
-            ? '<details style="margin:8px 0 12px"><summary style="cursor:pointer;font-weight:700">その他の操作</summary><div class="supportQuickActions" style="margin-top:8px">'+
-                '<button id="ticketActionAi" class="ghost" type="button">対応方法を確認</button>'+
-                '<button id="ticketActionRemote" class="ghost" type="button">TeamViewer</button>'+
-                '<button id="ticketActionFinish" class="ghost" type="button">作業報告</button>'+
-                '<button id="ticketActionCustomer" class="ghost" type="button">顧客・機器</button>'+
-              '</div></details>'
+            ? (supportReadOnlyByOther
+                ? '<div class="notice warn" style="margin:8px 0 12px"><strong>'+esc(assignmentState?.support_assigned_user_name||'他の担当者')+' が対応中です</strong><br><span class="muted">この案件は閲覧のみできます。担当解除後に作業を開始できます。</span><div class="supportQuickActions" style="margin-top:8px"><button id="ticketActionCustomer" class="ghost" type="button">顧客・機器を確認</button></div></div>'
+                : '<details style="margin:8px 0 12px"><summary style="cursor:pointer;font-weight:700">その他の操作</summary><div class="supportQuickActions" style="margin-top:8px">'+
+                    '<button id="ticketActionAi" class="ghost" type="button">対応方法を確認</button>'+
+                    '<button id="ticketActionRemote" class="ghost" type="button">TeamViewer</button>'+
+                    '<button id="ticketActionFinish" class="ghost" type="button">作業報告</button>'+
+                    '<button id="ticketActionCustomer" class="ghost" type="button">顧客・機器</button>'+
+                  '</div></details>')
             : '<div class="supportMainActions">'+
                 '<button id="ticketActionAi" class="supportMainAction" type="button"><strong>対応方法</strong><small>AI・ナレッジ・過去案件</small></button>'+
                 '<button id="ticketActionRemote" class="supportMainAction orange" type="button"><strong>TeamViewer</strong><small>必要な場合だけ遠隔対応</small></button>'+
