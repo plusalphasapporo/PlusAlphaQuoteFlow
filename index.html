@@ -7766,7 +7766,7 @@
     const internal=role==='internal_admin'||role==='internal_staff';
     const support=role==='support_staff';
 
-    let detail,knowledgeArticles,caseWorkspace,supportStage,nextActionState,deadlineState,assignmentState,teamviewerApiState,teamviewerSessions,supportUnanswered,repeatStates;
+    let detail,knowledgeArticles,caseWorkspace,supportStage,nextActionState,deadlineState,assignmentState,teamviewerApiState,teamviewerSessions,supportUnanswered,repeatStates,callTranscripts;
     if(customer){
       detail=await rpc('customer_ticket_detail',{p_ticket_id:ticketId});
       knowledgeArticles=[];
@@ -7779,9 +7779,10 @@
       teamviewerSessions=[];
       supportUnanswered={items:[],count:0};
       repeatStates=[];
+      callTranscripts=[];
     }else{
       detail=await rpc('support_ticket_workspace',{p_ticket_id:ticketId});
-      [knowledgeArticles,caseWorkspace,supportStage,nextActionState,deadlineState,assignmentState,teamviewerApiState,teamviewerSessions,supportUnanswered,repeatStates]=await Promise.all([
+      [knowledgeArticles,caseWorkspace,supportStage,nextActionState,deadlineState,assignmentState,teamviewerApiState,teamviewerSessions,supportUnanswered,repeatStates,callTranscripts]=await Promise.all([
         rpcOptional('role_knowledge_articles',{},[]),
         rpcOptional('internal_support_cases_list',{}, {tickets:[]}),
         rpcOptional('support_ticket_workflow_state',{p_ticket_id:ticketId},null),
@@ -7791,7 +7792,8 @@
         rpcOptional('teamviewer_api_settings',{},null),
         rpcOptional('teamviewer_ticket_sessions',{p_ticket_id:ticketId},[]),
         support?rpcOptional('support_unanswered_messages',{}, {items:[],count:0}):Promise.resolve({items:[],count:0}),
-        support?rpcOptional('support_repeat_ticket_states',{},[]):Promise.resolve([])
+        support?rpcOptional('support_repeat_ticket_states',{},[]):Promise.resolve([]),
+        rpcOptional('support_ticket_callconnect_transcripts',{p_ticket_id:ticketId},[])
       ]);
     }
 
@@ -7840,6 +7842,25 @@
       intakeSource=(firstBreak>=0?rawDescription.slice(sourcePrefix.length,firstBreak):rawDescription.slice(sourcePrefix.length)).trim()||'未記録';
       displayDescription=(firstBreak>=0?rawDescription.slice(firstBreak).trim():'')||'内容なし';
     }
+    const callTranscriptItems=Array.isArray(callTranscripts)?callTranscripts:[];
+    const callTranscriptPanel=!customer&&callTranscriptItems.length
+      ? '<section id="ticketCallTranscriptSection" class="section">'+
+          '<div class="row between" style="gap:10px;align-items:flex-start;flex-wrap:wrap"><div><h3>CallConnect 通話記録</h3><p class="sectionDesc">CallConnectで文字起こしされた原文を保存しています。AI整理結果より原文を優先して確認できます。</p></div><span class="pill">'+esc(callTranscriptItems.length)+'件</span></div>'+
+          callTranscriptItems.map((x,i)=>
+            '<div class="card section" style="box-shadow:none;margin:10px 0;padding:14px">'+
+              '<div class="row between" style="gap:10px;align-items:flex-start;flex-wrap:wrap"><div><strong>'+esc(dateTimeText(x.call_ended_at||x.updated_at))+' / '+esc(x.contact_company||x.contact_name||x.contact_number||'通話')+'</strong><div class="muted" style="margin-top:4px">担当 '+esc(x.callconnect_user_name||'未取得')+' ・ '+esc(x.duration_seconds!=null?String(x.duration_seconds)+'秒':'時間未取得')+'</div></div>'+
+              (x.transcript_synced_at?'<span class="pill good">文字起こし保存済み</span>':'<span class="pill warn">文字起こし待ち</span>')+'</div>'+
+              (x.transcript_text
+                ? '<details '+(i===0?'open':'')+' style="margin-top:10px"><summary style="cursor:pointer;font-weight:800">通話全文を表示</summary><div style="white-space:pre-wrap;line-height:1.75;margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:12px;background:#fafafa">'+esc(x.transcript_text)+'</div></details>'
+                : '<div class="notice warn" style="margin-top:10px">文字起こしはまだ取得できていません。CallConnect側で変換完了後、再同期すると保存されます。</div>')+
+            '</div>'
+          ).join('')+
+          (callTranscriptItems.some(x=>x.transcript_text)
+            ? '<div class="supportQuickActions"><button id="ticketCallAiSummary" class="primary" type="button">AIで通話内容を整理</button></div><div id="ticketCallAiResult" class="notice hidden" style="white-space:pre-wrap;line-height:1.7"></div>'
+            : '')+
+        '</section>'
+      : '';
+
     const aiState=bootData?.integrations?.ai?.state||'disabled';
     const aiStateText={connected:'接続済み',degraded:'一部障害',manual:'手動運用',disabled:'未接続'}[aiState]||aiState;
     const teamviewerState=teamviewerApiState?.integration_state||bootData?.integrations?.teamviewer?.state||'disabled';
@@ -8526,7 +8547,7 @@
         '<div id="supportTicketCustomerContext" class="modalGrid2">'+
           '<section class="card section" style="box-shadow:none;margin:0"><h3>案件概要</h3><div class="item"><strong>種別</strong><p>'+supportRequestTypeBadge(t.request_type)+'</p></div><div class="item"><strong>件名</strong><p>'+esc(t.subject||'')+'</p></div>'+supportRequestDetailsHtml(t.request_type,t.request_details||{})+'<div class="item"><strong>補足内容</strong><p style="white-space:pre-wrap">'+esc(displayDescription)+'</p></div><div class="item"><strong>顧客</strong><p>'+esc(cust?.customer_code||'—')+' / '+esc(cust?.name||'—')+'</p></div></section>'+
           '<section class="card section" style="box-shadow:none;margin:0"><h3>連絡・対象情報</h3><div class="item"><strong>主担当者</strong><p>'+esc(primary?.name||'未登録')+'<br><span class="muted">'+esc(primary?.phone||primary?.email||'連絡先未登録')+'</span></p></div><div class="item"><strong>契約</strong><p>'+(contract?esc(contract.contract_number||'—'):'未指定')+'</p></div><div class="item"><strong>機器</strong><p>'+(asset?esc(asset.asset_number||'—')+' / '+esc(asset.model_name||''):'未指定')+'</p></div></section>'+
-        '</div>'+
+        '</div>'+callTranscriptPanel+
         internalEdit+
         (!customer?'<section class="formSection"><div class="formSectionHead"><span class="sectionNo">'+(internal?'02':'01')+'</span><h3>対応期限</h3></div><div class="notice '+(deadlineState?.resolution_overdue?'error':'ok')+'"><strong>'+esc(supportDeadlinePolicyText(t.request_type,!!deadlineState?.resolution_deadline_manual))+'</strong><br><span class="muted">障害は受付から1日以内、設定依頼は受付から3日以内です。</span></div><div class="modalGrid2"><div class="item"><strong>初動期限</strong><p>'+supportDeadlineBadge(deadlineState?.first_response_overdue?'overdue':(deadlineState?.first_response_due_at?'scheduled':'unset'))+'<br>'+esc(dateTimeText(deadlineState?.first_response_due_at))+'</p></div><div class="item"><strong>対応完了期限</strong><p>'+supportDeadlineBadge(deadlineState?.resolution_overdue?'overdue':(deadlineState?.resolution_due_at?'scheduled':'unset'))+'<br>'+esc(dateTimeText(deadlineState?.resolution_due_at))+'<br><span class="muted">'+esc(deadlineState?.resolution_deadline_manual?'手動設定':'自動計算')+'</span></p></div></div><div class="item"><strong>初動実施</strong><p>'+esc(deadlineState?.first_response_at?dateTimeText(deadlineState.first_response_at):'未実施')+'</p></div>'+(internal&&t.status!=='closed'?'<div class="modalGrid2"><div class="field"><label>初動期限を変更</label><input id="ticketFirstResponseDue" type="datetime-local"></div><div class="field"><label>対応完了期限を手動変更</label><input id="ticketResolutionDue" type="datetime-local"><small class="muted">空欄で保存すると自動期限へ戻ります（障害1日 / 設定3日）。</small></div></div><button id="ticketDeadlineSave" class="primary" type="button">期限を保存</button><div id="ticketDeadlineMsg" class="notice hidden"></div>':'')+'</section>':'')+
         (!support?firstLineAssist:'')+
@@ -8578,6 +8599,22 @@
 
     $('#ticketDetailClose').onclick=()=>{activeTicketId=null;$('#ticketDetailHost').innerHTML='';};
     $('#ticketDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
+    const ticketCallAiSummary=$('#ticketCallAiSummary');
+    if(ticketCallAiSummary){
+      ticketCallAiSummary.onclick=async()=>{
+        ticketCallAiSummary.disabled=true;
+        const host=$('#ticketCallAiResult');
+        try{
+          if(host){host.classList.remove('hidden');host.classList.remove('error');host.textContent='通話内容を整理しています...';}
+          const {data,error}=await supabase.functions.invoke('ai-assistant',{body:{ticketId:t.id,action:'call_summary'}});
+          if(error) throw error;
+          if(data?.error) throw new Error(data.error);
+          if(host){host.classList.remove('hidden');host.textContent=data?.text||'整理結果を取得できませんでした。';}
+        }catch(err){
+          if(host){host.classList.remove('hidden');host.classList.add('error');host.textContent='AI整理に失敗しました。原文はそのまま確認できます。\n'+String(err.message||err);}
+        }finally{ticketCallAiSummary.disabled=false;}
+      };
+    }
     bindSupportDraftInputs(t.id,'message',{body:'#ticketMessageBody',important:'#ticketMessageImportant',visibility:'#ticketMessageVisibility'});
     bindSupportDraftInputs(t.id,'handoff',{reason:'#handoffReason',next_action:'#handoffNextAction'});
     if(internal&&activeInternalHandoff?.state==='accepted'){
