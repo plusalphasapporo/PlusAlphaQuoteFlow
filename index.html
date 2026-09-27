@@ -13503,20 +13503,35 @@
         const resetBtn=$('#accountMfaResetBtn');
         if(resetBtn){
           resetBtn.onclick=async()=>{
+            const ok=confirm(
+              'MFAをリセットすると、このユーザーの登録済みAuthenticatorはすべて解除され、現在のログインセッションも終了します。\n\n次回ログイン時にMFAを最初から再登録する必要があります。\n\n本当に実行しますか？'
+            );
+            if(!ok) return;
+
             resetBtn.disabled=true;
+            resetBtn.textContent='MFAをリセット中…';
             try{
               const {data,error}=await supabase.functions.invoke('admin-user',{
-                body:{action:'reset_mfa',userId:a.user_id}
+                body:{action:'reset_mfa',userId:a.user_id,confirm:true}
               });
               if(error) throw error;
               if(data?.error) throw new Error(data.message||data.error);
-              notice('#accountEditMsg','MFAをリセットしました。対象ユーザーは次回ログイン時にAuthenticatorの再登録が必要です。',true);
+              notice('#accountEditMsg','MFAをリセットしました。対象ユーザーの登録済みAuthenticatorは解除され、次回ログイン時にMFAの再登録が必要です。',true);
               toast('MFAをリセットしました');
-              setTimeout(()=>go('accounts'),700);
+              setTimeout(()=>go('accounts'),900);
             }catch(err){
-              notice('#accountEditMsg',err.message||String(err));
+              const msg=String(err.message||err);
+              const ja=msg.includes('MFA_RESET_CONFIRMATION_REQUIRED')
+                ? 'MFAリセットの確認が必要です。もう一度操作してください。'
+                : msg.includes('SELF_MFA_RESET_BLOCKED')
+                  ? '自分自身のMFAはこの画面からリセットできません。'
+                  : msg.includes('MFA_LIST_FAILED')||msg.includes('MFA_RESET_FAILED')
+                    ? 'MFAリセットに失敗しました。対象ユーザーのMFA状態を確認してください。'
+                    : msg;
+              notice('#accountEditMsg',ja);
             }finally{
               resetBtn.disabled=false;
+              resetBtn.textContent='MFAをリセット';
             }
           };
         }
