@@ -7834,15 +7834,16 @@
               : '')+
           '</div></div>'+
           (activeInternalHandoff.state==='pending'
-            ? '<div class="notice warn" style="margin-top:12px"><strong>まず引継ぎを受理してください。</strong><br><span class="muted">受理後、この画面で自社対応結果を入力できます。</span></div>'+
-              '<div class="supportQuickActions"><button id="internalHandoffAcceptPrimary" class="primary" type="button" data-id="'+esc(activeInternalHandoff.id)+'">引継ぎを受理して自社対応を開始</button></div>'
-            : '<div class="field"><label>自社で実施した内容・確認結果 <span class="muted">必須</span></label><textarea id="internalHandoffResult" rows="5" placeholder="例：管理者権限で設定を確認し、○○を修正。正常動作を確認。"></textarea></div>'+
-              '<div class="field"><label>サポート会社へ伝えること</label><textarea id="internalHandoffSupportNote" rows="3" placeholder="再確認してほしい内容、顧客への案内事項など"></textarea></div>'+
+            ? '<div class="notice warn" style="margin-top:12px"><strong>STEP 1：引継ぎを受理</strong><br><span class="muted">受理すると、この場所がそのまま自社対応入力画面に切り替わります。別画面へ移動する必要はありません。</span></div>'+
+              '<div class="supportQuickActions"><button id="internalHandoffAcceptPrimary" class="primary" type="button" data-id="'+esc(activeInternalHandoff.id)+'">受理して STEP 2 へ進む</button></div>'
+            : '<div class="notice ok" style="margin-top:12px"><strong>STEP 2：自社対応を実施して結果を記録</strong><br><span class="muted">上の「自社が今やること」を実施し、結果を入力してください。入力内容は途中保存されます。</span></div>'+
+              '<div class="field"><label>自社で実施した内容・確認結果 <span class="muted">必須</span></label><textarea id="internalHandoffResult" rows="6" placeholder="例：管理者権限で設定を確認し、○○を修正。再起動後、正常動作を確認。"></textarea></div>'+
+              '<div class="field"><label>サポート会社へ伝えること</label><textarea id="internalHandoffSupportNote" rows="3" placeholder="再確認してほしい内容、顧客への案内事項、残っている課題など"></textarea></div>'+
+              '<div class="notice" style="margin-top:10px"><strong>STEP 3：対応先を選択</strong><br><span class="muted">サポート会社で続きの対応が必要なら「サポートへ戻す」。自社対応だけで解決した場合は「自社で案件を完了」を選択します。</span></div>'+
               '<div class="supportQuickActions">'+
-                '<button id="internalHandoffReturnSupport" class="primary" type="button" data-id="'+esc(activeInternalHandoff.id)+'">自社対応完了 → サポートへ戻す</button>'+
-                '<button id="internalHandoffCloseTicket" class="green" type="button" data-id="'+esc(activeInternalHandoff.id)+'">自社で案件を完了</button>'+
-              '</div>'+
-              '<div class="muted" style="margin-top:6px">サポートへ戻す場合は、サポート担当が内容を確認して対応を継続します。自社で完了する場合は、この結果を作業報告として案件を完了します。</div>')+
+                '<button id="internalHandoffReturnSupport" class="primary" type="button" data-id="'+esc(activeInternalHandoff.id)+'">結果を保存してサポートへ戻す</button>'+
+                '<button id="internalHandoffCloseTicket" class="green" type="button" data-id="'+esc(activeInternalHandoff.id)+'">結果を保存して自社で案件完了</button>'+
+              '</div>')+
           '<div id="internalHandoffMsg" class="notice hidden"></div>'+
         '</section>'
       : '';
@@ -10172,7 +10173,10 @@
             await rpc('accept_ticket_handoff',{p_handoff_id:handoffId});
             toast('引継ぎを受理しました。自社対応を開始します。');
             await renderTicketDetail(t.id);
-            setTimeout(()=>$('#internalHandoffResult')?.focus(),220);
+            setTimeout(()=>{
+              $('#internalHandoffWorkspace')?.scrollIntoView({behavior:'smooth',block:'start'});
+              setTimeout(()=>$('#internalHandoffResult')?.focus(),220);
+            },120);
           }catch(err){notice('#internalHandoffMsg',err.message||String(err));}
           finally{btn.disabled=false;}
         };
@@ -12000,7 +12004,7 @@
         '<div class="supportCaseCardActions">'+
           (h.ticket_id?'<button class="ghost internalHandoffOpen" type="button" data-ticket-id="'+esc(h.ticket_id)+'">案件カルテ確認</button>':'')+
           (h.state==='pending'?'<button class="primary internalHandoffAccept" type="button" data-id="'+esc(h.id)+'" data-ticket-id="'+esc(h.ticket_id||'')+'">受理して対応開始</button>':'')+
-          (h.state==='accepted'?'<button class="green internalHandoffComplete" type="button" data-id="'+esc(h.id)+'" data-ticket-id="'+esc(h.ticket_id||'')+'">自社対応完了</button>':'')+
+          (h.state==='accepted'?'<button class="primary internalHandoffOpen" type="button" data-ticket-id="'+esc(h.ticket_id||'')+'">案件カルテで対応を続ける</button>':'')+
         '</div>'+
       '</article>'
     ).join('');
@@ -12036,15 +12040,7 @@
       finally{btn.disabled=false;}
     });
 
-    document.querySelectorAll('.internalHandoffComplete').forEach(btn=>btn.onclick=async()=>{
-      btn.disabled=true;
-      try{
-        await rpc('complete_ticket_handoff',{p_handoff_id:btn.dataset.id});
-        toast('自社対応を完了し、サポート会社へ戻しました');
-        await renderHandoffsWorkspace();
-      }catch(err){toast(err.message||String(err));}
-      finally{btn.disabled=false;}
-    });
+    document.querySelectorAll('.internalHandoffComplete').forEach(btn=>btn.remove());
   }
 
   async function renderAnalysis(){
