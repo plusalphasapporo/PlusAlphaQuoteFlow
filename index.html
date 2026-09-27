@@ -4234,10 +4234,181 @@
     });
   }
 
+  const customerM365FolderNav=new Map();
+
+  function m365PersonName(identity){
+    return identity?.user?.displayName||identity?.application?.displayName||'—';
+  }
+
+  function m365FileSize(bytes){
+    const n=Number(bytes||0);
+    if(!n) return '—';
+    if(n<1024) return n+' B';
+    if(n<1024*1024) return (n/1024).toFixed(1)+' KB';
+    if(n<1024*1024*1024) return (n/(1024*1024)).toFixed(1)+' MB';
+    return (n/(1024*1024*1024)).toFixed(1)+' GB';
+  }
+
+  async function customerM365Invoke(body){
+    const {data,error}=await supabase.functions.invoke('customer-onedrive',{body});
+    if(error) throw error;
+    if(data?.error){
+      const code=String(data.error||'');
+      if(code==='MICROSOFT_GRAPH_NOT_CONFIGURED') throw new Error('Microsoft 365連携設定がまだ完了していません。');
+      if(code==='MICROSOFT_GRAPH_TOKEN_FAILED') throw new Error('Microsoft 365への接続認証に失敗しました。');
+      if(code==='INVALID_FOLDER_URL') throw new Error('SharePointまたはOneDriveのフォルダリンクを貼り付けてください。');
+      if(code==='URL_IS_NOT_A_FOLDER') throw new Error('指定したリンクはフォルダではありません。フォルダリンクを指定してください。');
+      if(code==='ADMIN_REQUIRED') throw new Error('情報フォルダの紐付け変更は自社管理者のみ行えます。');
+      throw new Error(data.message||code);
+    }
+    return data;
+  }
+
+  async function renderCustomerM365Versions(customerId,itemId,itemName){
+    try{
+      const data=await customerM365Invoke({action:'versions',customerId,itemId});
+      const versions=data.versions||[];
+      mountAppModal(
+        '<div class="appModalHead"><div><h2>ファイル履歴</h2><p>'+esc(itemName||data.item?.name||'')+'</p></div><button id="m365VersionsClose" class="ghost" type="button">×</button></div>'+
+        '<div class="appModalBody">'+
+          (versions.length
+            ? dataTable(['バージョン','更新日時','更新者','サイズ'],versions.map(v=>
+                '<tr><td><strong>'+esc(v.id||'—')+'</strong></td><td>'+esc(dateTimeText(v.lastModifiedDateTime))+'</td><td>'+esc(m365PersonName(v.lastModifiedBy))+'</td><td>'+esc(m365FileSize(v.size))+'</td></tr>'
+              ))
+            : '<div class="empty">表示できるバージョン履歴はありません。</div>')+
+        '</div>'+
+        '<div class="appModalFoot"><button id="m365VersionsOpen" class="primary" type="button">Microsoft 365で開く</button></div>'
+      ,true);
+      $('#m365VersionsClose').onclick=closeAppModal;
+      $('#m365VersionsOpen').onclick=()=>window.open(data.item?.webUrl||'#','_blank','noopener,noreferrer');
+    }catch(err){
+      toast(err.message||String(err));
+    }
+  }
+
+  async function renderCustomerM365Folder(customerId,itemId=null){
+    const host=$('#customerM365FolderBody');
+    if(!host) return;
+    host.innerHTML='<div class="notice">Microsoft 365の情報フォルダを読み込んでいます...</div>';
+
+    try{
+      const data=await customerM365Invoke({action:'get_folder',customerId,itemId:itemId||undefined});
+      const isAdmin=bootData.context?.role==='internal_admin';
+
+      if(!data.linked){
+        host.innerHTML=
+          '<section class="card" style="box-shadow:none">'+
+            '<h3>Microsoft 365 情報フォルダ</h3>'+
+            '<p class="sectionDesc">SharePointを推奨します。現在のOneDriveフォルダを使うこともできます。ファイル自体はQuoteFlow Cloudへ移動・複製しません。</p>'+
+            (isAdmin
+              ? '<div class="field"><label>SharePoint / OneDrive フォルダリンク</label><input id="customerM365FolderUrl" type="url" placeholder="対象フォルダを開き「リンクをコピー」したURLを貼り付け"></div>'+
+                '<button id="customerM365FolderLinkBtn" class="primary" type="button">この顧客に紐付け</button>'+
+                '<div id="customerM365FolderLinkMsg" class="notice hidden"></div>'
+              : '<div class="notice">情報フォルダがまだ紐付けられていません。自社管理者へ設定を依頼してください。</div>')+
+          '</section>';
+
+        const linkBtn=$('#customerM365FolderLinkBtn');
+        if(linkBtn) linkBtn.onclick=async()=>{
+          const url=$('#customerM365FolderUrl').value.trim();
+          if(!url) return notice('#customerM365FolderLinkMsg','SharePointまたはOneDriveのフォルダリンクを入力してください。');
+          linkBtn.disabled=true;
+          try{
+            await customerM365Invoke({action:'link_folder',customerId,folderUrl:url});
+            customerM365FolderNav.set(customerId,[]);
+            toast('情報フォルダを紐付けました');
+            await renderCustomerM365Folder(customerId);
+          }catch(err){
+            notice('#customerM365FolderLinkMsg',err.message||String(err));
+          }finally{
+            linkBtn.disabled=false;
+          }
+        };
+        return;
+      }
+
+      let stack=customerM365FolderNav.get(customerId)||[];
+      if(!itemId || itemId===data.rootItemId){
+        stack=[{id:data.rootItemId,name:data.mapping?.folder_name||data.current?.name||'情報フォルダ'}];
+      }else{
+        const existingIndex=stack.findIndex(x=>x.id===itemId);
+        if(existingIndex>=0) stack=stack.slice(0,existingIndex+1);
+        else stack.push({id:itemId,name:data.current?.name||'フォルダ'});
+      }
+      customerM365FolderNav.set(customerId,stack);
+
+      const items=data.items||[];
+      const rows=items.map(item=>{
+        const folder=!!item.folder;
+        return '<tr>'+
+          '<td><strong>'+(folder?'📁 ':'📄 ')+esc(item.name||'')+'</strong></td>'+
+          '<td>'+esc(folder?'フォルダ':(item.file?.mimeType||'ファイル'))+'</td>'+
+          '<td>'+esc(dateTimeText(item.lastModifiedDateTime))+'</td>'+
+          '<td>'+esc(m365PersonName(item.lastModifiedBy))+'</td>'+
+          '<td>'+esc(folder?'—':m365FileSize(item.size))+'</td>'+
+          '<td><div class="row">'+
+            (folder
+              ? '<button class="linkBtn customerM365FolderOpen" type="button" data-id="'+esc(item.id)+'" data-name="'+esc(item.name||'')+'">開く</button>'
+              : '<button class="linkBtn customerM365FileOpen" type="button" data-url="'+esc(item.webUrl||'')+'">開く</button><button class="linkBtn customerM365Versions" type="button" data-id="'+esc(item.id)+'" data-name="'+esc(item.name||'')+'">履歴</button>')+
+          '</div></td>'+
+        '</tr>';
+      });
+
+      const crumbs=stack.map((x,i)=>
+        '<button class="linkBtn customerM365Crumb" type="button" data-index="'+i+'">'+esc(x.name||'フォルダ')+'</button>'
+      ).join('<span class="muted">›</span>');
+
+      host.innerHTML=
+        '<section class="card" style="box-shadow:none">'+
+          '<div class="row between" style="align-items:flex-start;gap:12px">'+
+            '<div><h3 style="margin:0">Microsoft 365 情報フォルダ</h3><p class="sectionDesc">SharePoint / OneDriveを保存先としてそのまま使用します。</p></div>'+
+            '<div class="row">'+
+              '<button id="customerM365OpenCurrent" class="primary" type="button">Microsoft 365で開く</button>'+
+              (isAdmin?'<button id="customerM365Unlink" class="ghost" type="button">紐付け解除</button>':'')+
+            '</div>'+
+          '</div>'+
+          '<div class="row" style="margin:12px 0;gap:6px;flex-wrap:wrap">'+crumbs+'</div>'+
+          dataTable(['名前','種類','更新日時','更新者','サイズ','操作'],rows)+
+        '</section>';
+
+      $('#customerM365OpenCurrent').onclick=()=>window.open(data.current?.webUrl||data.mapping?.web_url||'#','_blank','noopener,noreferrer');
+
+      $('#customerM365Unlink')?.addEventListener('click',async()=>{
+        if(!confirm('この顧客とMicrosoft 365フォルダの紐付けを解除しますか？\nファイル自体は削除されません。')) return;
+        try{
+          await customerM365Invoke({action:'unlink_folder',customerId});
+          customerM365FolderNav.delete(customerId);
+          toast('情報フォルダの紐付けを解除しました');
+          await renderCustomerM365Folder(customerId);
+        }catch(err){toast(err.message||String(err));}
+      });
+
+      document.querySelectorAll('.customerM365FolderOpen').forEach(btn=>btn.onclick=async()=>{
+        const nextStack=customerM365FolderNav.get(customerId)||[];
+        if(!nextStack.some(x=>x.id===btn.dataset.id)) nextStack.push({id:btn.dataset.id,name:btn.dataset.name||'フォルダ'});
+        customerM365FolderNav.set(customerId,nextStack);
+        await renderCustomerM365Folder(customerId,btn.dataset.id);
+      });
+
+      document.querySelectorAll('.customerM365Crumb').forEach(btn=>btn.onclick=async()=>{
+        const currentStack=customerM365FolderNav.get(customerId)||[];
+        const index=Number(btn.dataset.index||0);
+        const target=currentStack[index];
+        if(!target) return;
+        customerM365FolderNav.set(customerId,currentStack.slice(0,index+1));
+        await renderCustomerM365Folder(customerId,target.id);
+      });
+
+      document.querySelectorAll('.customerM365FileOpen').forEach(btn=>btn.onclick=()=>window.open(btn.dataset.url||'#','_blank','noopener,noreferrer'));
+      document.querySelectorAll('.customerM365Versions').forEach(btn=>btn.onclick=()=>renderCustomerM365Versions(customerId,btn.dataset.id,btn.dataset.name));
+    }catch(err){
+      host.innerHTML='<div class="notice error">'+esc(err.message||String(err))+'</div>';
+    }
+  }
+
   async function renderCustomerDetail(customerId,tab='overview'){
     const host=$('#customerDetailHost');
     const tabs=[
-      ['overview','概要'],['transactions','取引全体'],['contacts','担当者'],['assets','OA機器'],['tickets','問い合わせ・障害'],
+      ['overview','概要'],['transactions','取引全体'],['contacts','担当者'],['assets','OA機器'],['tickets','問い合わせ・障害'],['files','情報フォルダ'],
       ['properties','物件・残債'],['monthly','月額支払'],['management','管理情報'],['history','営業対応履歴']
     ];
 
@@ -4725,6 +4896,10 @@
     }else if(tab==='tickets'){
       const rows=(extra.tickets||[]).map(x=>'<tr><td>'+esc(x.ticket_number||'—')+'</td><td>'+supportRequestTypeBadge(x.request_type)+'</td><td>'+esc(x.subject||'')+'</td><td>'+esc(statusText(x.status))+'</td><td>'+esc(x.priority||'normal')+'</td><td>'+esc(dateText(x.created_at))+'</td><td><button class="linkBtn customerTicketOpen" type="button" data-id="'+esc(x.id)+'">案件カルテ</button></td></tr>');
       content='<div class="row between" style="margin-bottom:12px"><div><h3 style="margin:0">問い合わせ・障害・設定依頼</h3><p class="sectionDesc">この顧客のサポート履歴をまとめて確認します。</p></div><div class="row"><button id="customerTicketNewIncident" class="orange" type="button">＋障害</button><button id="customerTicketNewSetting" class="primary" type="button">＋設定依頼</button></div></div>'+dataTable(['番号','種別','内容','状態','優先度','受付日','操作'],rows);
+    }else if(tab==='files'){
+      content=
+        '<div class="notice"><strong>保存先はMicrosoft 365です。</strong><br>SharePointを推奨します。既存OneDriveフォルダもそのまま紐付け可能です。ファイルはQuoteFlow Cloudへコピーしません。</div>'+
+        '<div id="customerM365FolderBody"></div>';
     }else if(tab==='properties'){
       const rows=(extra.properties||[]).map(x=>'<tr><td><strong>'+esc(x.property_name||'')+'</strong></td><td>'+esc(x.model_name||'—')+'</td><td>'+esc(x.installation_location||'—')+'</td><td>'+esc(x.quantity||0)+'</td><td>'+esc(x.remaining_count??'—')+'</td><td class="amount">'+esc(money(x.residual_amount_tax_included||0))+'</td></tr>');
       content='<div class="unifiedToolbar"><div class="notice" style="flex:1">物件・残債は、見積の旧物件残債と分離した顧客マスタ情報です。</div><button id="addPropertyBtn" class="primary" type="button">＋物件・残債</button></div>'+dataTable(['物件名','型番','設置場所','数量','残回数','税込残債'],rows);
@@ -4747,6 +4922,10 @@
       '</section>';
     $('#customerDetailClose').onclick=()=>{host.innerHTML='';};
     bindUnifiedTabs(t=>renderCustomerDetail(customerId,t));
+
+    if(tab==='files'){
+      await renderCustomerM365Folder(customerId);
+    }
 
     const newQuoteBtn=$('#customerTxnNewQuote');
     if(newQuoteBtn) newQuoteBtn.onclick=()=>renderCustomerQuoteCreate(customerId);
