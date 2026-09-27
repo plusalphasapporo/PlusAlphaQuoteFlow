@@ -1443,8 +1443,7 @@
             }).catch(()=>{});
           }
 
-          await rpc('claim_support_ticket',{p_ticket_id:result.id}).catch(()=>{});
-          await rpc('set_support_workflow_stage',{p_ticket_id:result.id,p_stage:'in_progress'}).catch(()=>{});
+          await rpc('claim_support_ticket',{p_ticket_id:result.id});
           await close();
           toast('CallConnect着信から対応を開始しました'+(result.ticket_number?' '+result.ticket_number:''));
           await openTicketWorkspace(result.id);
@@ -1617,8 +1616,7 @@
           $('#supportNewNoticeStart').onclick=async()=>{
             closeAppModal();
             try{
-              await rpc('claim_support_ticket',{p_ticket_id:item.id}).catch(()=>{});
-              await rpc('set_support_workflow_stage',{p_ticket_id:item.id,p_stage:'in_progress'}).catch(()=>{});
+              await rpc('claim_support_ticket',{p_ticket_id:item.id});
               await openTicketWorkspace(item.id);
             }catch(err){toast(err.message||String(err));}
           };
@@ -1672,7 +1670,7 @@
               const tvWindow=supporterLink?window.open('about:blank','_blank'):null;
               closeAppModal();
               try{
-                await rpc('claim_support_ticket',{p_ticket_id:item.id}).catch(()=>{});
+                await rpc('claim_support_ticket',{p_ticket_id:item.id});
                 await openTicketWorkspace(item.id);
                 setTimeout(()=>{
                   $('#supportRemoteWorkspace')?.scrollIntoView({behavior:'smooth',block:'start'});
@@ -2620,8 +2618,7 @@
       document.querySelectorAll('.supportUnreadOpen').forEach(btn=>btn.onclick=async()=>{
         btn.disabled=true;
         try{
-          await rpc('claim_support_ticket',{p_ticket_id:btn.dataset.id}).catch(()=>{});
-          await rpc('set_support_workflow_stage',{p_ticket_id:btn.dataset.id,p_stage:'in_progress'}).catch(()=>{});
+          await rpc('claim_support_ticket',{p_ticket_id:btn.dataset.id});
           await go('support_cases');
           await renderTicketDetail(btn.dataset.id);
         }catch(err){toast(err.message||String(err));}
@@ -6920,13 +6917,13 @@
         if(!isFinished && !assignment?.support_assigned_user_id){
           await rpc('claim_support_ticket',{p_ticket_id:ticketId});
           autoClaimed=true;
-        }
-        if(!isFinished && stageValue==='unhandled'){
+          autoStarted=stageValue==='unhandled';
+        }else if(!isFinished && assignment?.is_mine && stageValue==='unhandled'){
           await rpc('set_support_workflow_stage',{p_ticket_id:ticketId,p_stage:'in_progress'});
           autoStarted=true;
         }
       }catch(err){
-        console.warn('ticket auto-start skipped',err);
+        toast(err.message||String(err));
       }
       if(autoClaimed||autoStarted){
         toast(autoClaimed&&autoStarted?'担当取得して対応を開始しました':autoClaimed?'この案件を担当しました':'対応を開始しました');
@@ -7802,10 +7799,12 @@
       const startSupportWork=async(button=null)=>{
         if(button) button.disabled=true;
         try{
-          if(!assignmentState?.support_assigned_user_id){
-            await rpc('claim_support_ticket',{p_ticket_id:t.id}).catch(()=>{});
+          if(assignmentState?.support_assigned_user_id && !assignmentState?.is_mine){
+            throw new Error((assignmentState.support_assigned_user_name||'他の担当者')+' が対応中です。');
           }
-          if(supportStage==='unhandled'){
+          if(!assignmentState?.support_assigned_user_id){
+            await rpc('claim_support_ticket',{p_ticket_id:t.id});
+          }else if(supportStage==='unhandled'){
             await rpc('set_support_workflow_stage',{p_ticket_id:t.id,p_stage:'in_progress'});
           }
           if(supportStage==='unhandled'){
@@ -8587,10 +8586,14 @@
         if(assistStartWork) assistStartWork.onclick=async()=>{
           assistStartWork.disabled=true;
           try{
-            if(!assignmentState?.support_assigned_user_id){
-              await rpc('claim_support_ticket',{p_ticket_id:t.id}).catch(()=>{});
+            if(assignmentState?.support_assigned_user_id && !assignmentState?.is_mine){
+              throw new Error((assignmentState.support_assigned_user_name||'他の担当者')+' が対応中です。');
             }
-            await rpc('set_support_workflow_stage',{p_ticket_id:t.id,p_stage:'in_progress'});
+            if(!assignmentState?.support_assigned_user_id){
+              await rpc('claim_support_ticket',{p_ticket_id:t.id});
+            }else if(supportStage==='unhandled'){
+              await rpc('set_support_workflow_stage',{p_ticket_id:t.id,p_stage:'in_progress'});
+            }
             toast('対応候補を確認して作業を開始しました');
             await renderTicketDetail(t.id);
           }catch(err){
@@ -9329,9 +9332,8 @@
           }
           const ticket=data.find(x=>String(x.id)===String(btn.dataset.id));
           if(support && ticket && ticket.status!=='closed' && ticket.support_stage==='unhandled'){
-            await rpc('claim_support_ticket',{p_ticket_id:ticket.id}).catch(()=>{});
-            await rpc('set_support_workflow_stage',{p_ticket_id:ticket.id,p_stage:'in_progress'}).catch(()=>{});
-            toast('対応を開始しました');
+            await rpc('claim_support_ticket',{p_ticket_id:ticket.id});
+            toast('担当を取得して対応を開始しました');
           }
           await openTicketWorkspace(btn.dataset.id);
         }catch(err){
@@ -9659,9 +9661,8 @@
             return;
           }
           if(support && btn.dataset.start==='1'){
-            await rpc('claim_support_ticket',{p_ticket_id:btn.dataset.id}).catch(()=>{});
-            await rpc('set_support_workflow_stage',{p_ticket_id:btn.dataset.id,p_stage:'in_progress'});
-            toast('担当を開始しました');
+            await rpc('claim_support_ticket',{p_ticket_id:btn.dataset.id});
+            toast('担当を取得して対応を開始しました');
           }
           await openTicketWorkspace(btn.dataset.id);
           if(support){
@@ -11313,8 +11314,7 @@
         }
 
         if(startNow){
-          await rpc('claim_support_ticket',{p_ticket_id:result.id}).catch(()=>{});
-          await rpc('set_support_workflow_stage',{p_ticket_id:result.id,p_stage:'in_progress'}).catch(()=>{});
+          await rpc('claim_support_ticket',{p_ticket_id:result.id});
           toast('受付を登録しました。作業画面を開きます'+(result?.ticket_number?' '+result.ticket_number:''));
           await openTicketWorkspace(result.id);
           setTimeout(()=>{
