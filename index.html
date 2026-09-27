@@ -482,7 +482,7 @@
     <form id="passwordRecoveryForm">
       <div class="field"><label>新しいパスワード</label><input id="recoveryPassword" type="password" autocomplete="new-password" minlength="12" required></div>
       <div class="field"><label>新しいパスワード（確認）</label><input id="recoveryPasswordConfirm" type="password" autocomplete="new-password" minlength="12" required></div>
-      <p class="muted">12文字以上で、英大文字・英小文字・数字・記号をそれぞれ1文字以上使用してください。</p>
+      <p class="muted">12文字以上で、英大文字・英小文字・数字・記号をそれぞれ1文字以上使用してください。他サービスで使用していないパスワードを推奨します。</p>
       <button class="primary" style="width:100%" type="submit">新しいパスワードを設定</button>
     </form>
   </section>
@@ -494,7 +494,7 @@
     <form id="initialPasswordForm">
       <div class="field"><label>新しいパスワード</label><input id="initialPassword" type="password" autocomplete="new-password" minlength="12" required></div>
       <div class="field"><label>新しいパスワード（確認）</label><input id="initialPasswordConfirm" type="password" autocomplete="new-password" minlength="12" required></div>
-      <p class="muted">12文字以上で、英大文字・英小文字・数字・記号をそれぞれ1文字以上使用してください。</p>
+      <p class="muted">12文字以上で、英大文字・英小文字・数字・記号をそれぞれ1文字以上使用してください。他サービスで使用していないパスワードを推奨します。</p>
       <button class="primary" style="width:100%" type="submit">パスワードを設定して次へ</button>
     </form>
   </section>
@@ -594,6 +594,31 @@
   const show = (id) => ['loginView','mfaView','passwordRecoveryView','passwordSetupView','appView'].forEach(x => $('#'+x).classList.toggle('hidden',x!==id));
   const notice = (id,msg,ok=false) => { const e=$(id); e.textContent=msg; e.className='notice '+(ok?'ok':'error'); e.classList.remove('hidden'); };
   const sleep = (ms) => new Promise(resolve=>setTimeout(resolve,ms));
+  const passwordPolicyMessage = (password) => {
+    if(String(password||'').length<12) return 'パスワードは12文字以上にしてください。';
+    if(!/[A-Z]/.test(password)) return '英大文字を1文字以上含めてください。';
+    if(!/[a-z]/.test(password)) return '英小文字を1文字以上含めてください。';
+    if(!/[0-9]/.test(password)) return '数字を1文字以上含めてください。';
+    if(!/[^A-Za-z0-9]/.test(password)) return '記号を1文字以上含めてください。';
+    return '';
+  };
+  const authErrorMessage = (err) => {
+    const code=String(err?.code||'').toLowerCase();
+    const name=String(err?.name||'');
+    const raw=String(err?.message||'');
+    const reasons=Array.isArray(err?.reasons)?err.reasons.map(x=>String(x).toLowerCase()):[];
+    const weak=code==='weak_password'||name==='WeakPasswordError'||/weak password/i.test(raw);
+    if(weak){
+      const leaked=reasons.some(x=>/pwned|leak/.test(x))||/pwned|leak|haveibeenpwned/i.test(raw);
+      if(leaked){
+        return 'このパスワードは過去の情報漏えいで確認されているため使用できません。下の「パスワードを忘れた方」から、他サービスで使用していない新しいパスワードへ変更してください。';
+      }
+      return 'このパスワードは安全性の基準を満たしていません。12文字以上で英大文字・英小文字・数字・記号を含む、他サービスで使用していないパスワードへ変更してください。';
+    }
+    if(code==='invalid_credentials') return 'メールアドレスまたはパスワードを確認してください。';
+    if(code==='over_request_rate_limit') return '操作回数が上限に達しました。少し時間を空けてからもう一度お試しください。';
+    return raw||'認証処理に失敗しました。';
+  };
 
   const READ_ONLY_RPCS = new Set([
     'app_health','current_auth_onboarding_state','current_app_bootstrap',
@@ -14046,11 +14071,8 @@
       const password=$('#recoveryPassword').value;
       const confirm=$('#recoveryPasswordConfirm').value;
       if(password!==confirm) throw new Error('パスワードが一致しません。');
-      if(password.length<12) throw new Error('パスワードは12文字以上にしてください。');
-      if(!/[A-Z]/.test(password)) throw new Error('英大文字を1文字以上含めてください。');
-      if(!/[a-z]/.test(password)) throw new Error('英小文字を1文字以上含めてください。');
-      if(!/[0-9]/.test(password)) throw new Error('数字を1文字以上含めてください。');
-      if(!/[^A-Za-z0-9]/.test(password)) throw new Error('記号を1文字以上含めてください。');
+      const policyError=passwordPolicyMessage(password);
+      if(policyError) throw new Error(policyError);
 
       const {error}=await supabase.auth.updateUser({password});
       if(error) throw error;
@@ -14058,7 +14080,7 @@
       notice('#passwordRecoveryMsg','パスワードを変更しました。続けてMFA認証へ進みます。',true);
       setTimeout(()=>prepareMfa(),500);
     }catch(err){
-      notice('#passwordRecoveryMsg',err.message||String(err));
+      notice('#passwordRecoveryMsg',authErrorMessage(err));
     }finally{
       if(btn) btn.disabled=false;
     }
@@ -14072,11 +14094,8 @@
       const password=$('#initialPassword').value;
       const confirm=$('#initialPasswordConfirm').value;
       if(password!==confirm) throw new Error('パスワードが一致しません。');
-      if(password.length<12) throw new Error('パスワードは12文字以上にしてください。');
-      if(!/[A-Z]/.test(password)) throw new Error('英大文字を1文字以上含めてください。');
-      if(!/[a-z]/.test(password)) throw new Error('英小文字を1文字以上含めてください。');
-      if(!/[0-9]/.test(password)) throw new Error('数字を1文字以上含めてください。');
-      if(!/[^A-Za-z0-9]/.test(password)) throw new Error('記号を1文字以上含めてください。');
+      const policyError=passwordPolicyMessage(password);
+      if(policyError) throw new Error(policyError);
 
       const {error}=await supabase.auth.updateUser({password});
       if(error) throw error;
@@ -14085,7 +14104,7 @@
       notice('#passwordSetupMsg','パスワードを設定しました。続けてMFAを登録してください。',true);
       setTimeout(()=>prepareMfa(),450);
     }catch(err){
-      notice('#passwordSetupMsg',err.message||String(err));
+      notice('#passwordSetupMsg',authErrorMessage(err));
     }finally{
       if(btn) btn.disabled=false;
     }
@@ -14115,7 +14134,7 @@
     }catch(err){
       console.error('QuoteFlow login failed',err);
       show('loginView');
-      notice('#loginMsg',err?.message||'ログイン処理に失敗しました。最新版を再読み込みしてもう一度お試しください。');
+      notice('#loginMsg',authErrorMessage(err));
     }finally{
       if(btn) btn.disabled=false;
     }
