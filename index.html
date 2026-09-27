@@ -1858,6 +1858,17 @@
     if(!(role==='internal_admin'||role==='internal_staff')) return;
     internalHandoffRealtimeChannel=supabase
       .channel('internal-handoff-live')
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'support_tickets'},async payload=>{
+        const progress=payload.new?.request_details?.support_procedure_progress||null;
+        const oldProgress=payload.old?.request_details?.support_procedure_progress||null;
+        if(
+          String(activeTicketId||'')===String(payload.new?.id||'') &&
+          JSON.stringify(progress)!==JSON.stringify(oldProgress)
+        ){
+          toast('サポート会社の対応手順が更新されました');
+          try{await renderTicketDetail(payload.new.id);}catch(err){console.error('Internal progress refresh failed',err);}
+        }
+      })
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'support_handoffs'},async payload=>{
         const unread=await refreshInternalUnreadHandoffBadge();
         const item=(unread.items||[]).find(x=>x.handoff_id===payload.new?.id);
