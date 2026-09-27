@@ -318,7 +318,16 @@
     .wrap{max-width:1380px;margin:auto;padding:22px}
     .login{max-width:460px;margin:8vh auto}
     #mfaView{max-width:720px}
+    .mfaProgress{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:16px 0 6px}
+    .mfaProgressItem{border:1px solid var(--line);border-radius:12px;padding:10px 11px;background:#f8fafc;min-height:64px}
+    .mfaProgressItem strong{display:block;font-size:12px}.mfaProgressItem small{display:block;margin-top:3px;color:var(--muted);font-size:11px;line-height:1.35}
+    .mfaProgressItem.active{border-color:#93c5fd;background:#eff6ff;box-shadow:0 0 0 2px rgba(37,99,235,.07)}
+    .mfaProgressItem.done{border-color:#86efac;background:#f0fdf4}
+    .mfaProgressBadge{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:999px;background:#e2e8f0;color:#475569;font-size:11px;font-weight:900;margin-bottom:6px}
+    .mfaProgressItem.active .mfaProgressBadge{background:#2563eb;color:#fff}
+    .mfaProgressItem.done .mfaProgressBadge{background:#16a34a;color:#fff}
     .mfaStep{border:1px solid var(--line);border-radius:16px;padding:16px;margin-top:14px;background:#fff}
+    .mfaStep.active{border-color:#93c5fd;box-shadow:0 8px 24px rgba(37,99,235,.08)}
     .mfaStepHead{display:flex;gap:10px;align-items:flex-start;margin-bottom:10px}
     .mfaStepNo{display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:30px;border-radius:999px;background:#2563eb;color:#fff;font-weight:900}
     .mfaStoreGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:12px 0}
@@ -327,7 +336,7 @@
     .mfaStoreQr{width:150px;height:150px;max-width:100%;background:#fff;border:1px solid var(--line);border-radius:10px;padding:6px}
     .mfaSetupQr{display:block;max-width:220px;width:100%;margin:12px auto;border-radius:10px}
     .mfaActionFull{width:100%;margin-top:8px}
-    @media(max-width:620px){.mfaStoreGrid{grid-template-columns:1fr}.mfaStoreQr{width:180px;height:180px}}
+    @media(max-width:620px){.mfaProgress{grid-template-columns:1fr}.mfaStoreGrid{grid-template-columns:1fr}.mfaStoreQr{width:180px;height:180px}}
     .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:20px;box-shadow:var(--shadow)}
     .field{display:grid;gap:6px;margin:14px 0}.field label{font-size:12px;font-weight:800;color:#475569}
     .field input,.field textarea,.field select{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font:inherit;background:#fff}
@@ -471,8 +480,13 @@
   </section>
 
   <section id="mfaView" class="card login hidden">
-    <h1>Google Authenticator 設定</h1>
-    <p class="muted">QuoteFlow Cloud は全アカウントでMFA認証が必須です。初回だけGoogle Authenticatorを設定します。</p>
+    <h1>本人確認</h1>
+    <p class="muted">QuoteFlow Cloudでは、ログインごとにGoogle Authenticatorの6桁コードで本人確認を行います。初回のみアプリ登録が必要です。</p>
+    <div class="mfaProgress" aria-label="MFA設定の進行状況">
+      <div id="mfaProgress1" class="mfaProgressItem"><span class="mfaProgressBadge">1</span><strong>アプリを準備</strong><small>Google Authenticatorを入手</small></div>
+      <div id="mfaProgress2" class="mfaProgressItem"><span class="mfaProgressBadge">2</span><strong>QuoteFlowを登録</strong><small>登録QRを読み取る</small></div>
+      <div id="mfaProgress3" class="mfaProgressItem"><span class="mfaProgressBadge">3</span><strong>6桁コードで確認</strong><small>本人確認して利用開始</small></div>
+    </div>
     <div id="mfaMsg" class="notice hidden"></div>
 
     <div id="mfaAppInstallStep" class="mfaStep hidden">
@@ -13920,6 +13934,17 @@
     }
   }
 
+  function setMfaProgress(step,existing=false){
+    [1,2,3].forEach(n=>{
+      const el=$('#mfaProgress'+n);
+      if(!el) return;
+      el.classList.remove('active','done');
+      if(existing && n<3) el.classList.add('done');
+      else if(n<step) el.classList.add('done');
+      else if(n===step) el.classList.add('active');
+    });
+  }
+
   async function prepareMfa(){
     show('mfaView');
     $('#mfaAppInstallStep').classList.add('hidden');
@@ -13929,6 +13954,7 @@
     $('#mfaMsg').classList.add('hidden');
     $('#mfaCode').value='';
     mfaState={};
+    setMfaProgress(1);
 
     const aal=await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
     if(aal.error) return notice('#mfaMsg',aal.error.message);
@@ -13941,6 +13967,8 @@
 
     const verified=(f.data?.totp||[]).find(x=>x.status==='verified');
     if(verified){
+      setMfaProgress(3,true);
+      $('#mfaVerifyBox').classList.add('active');
       $('#mfaVerifyBox').classList.remove('hidden');
       const ch=await supabase.auth.mfa.challenge({factorId:verified.id});
       if(ch.error) return notice('#mfaMsg',ch.error.message);
@@ -13950,6 +13978,8 @@
       return;
     }
 
+    setMfaProgress(1);
+    $('#mfaAppInstallStep').classList.add('active');
     $('#mfaAppInstallStep').classList.remove('hidden');
     await renderGoogleAuthenticatorStoreQrs();
     notice('#mfaMsg','初回設定です。まずGoogle Authenticatorをスマートフォンへ入手してください。',true);
@@ -14163,9 +14193,12 @@
   };
 
   $('#mfaAppReadyBtn').onclick=()=>{
+    setMfaProgress(2);
+    $('#mfaAppInstallStep').classList.remove('active');
     $('#mfaAppInstallStep').classList.add('hidden');
+    $('#mfaEnrollBox').classList.add('active');
     $('#mfaEnrollBox').classList.remove('hidden');
-    notice('#mfaMsg','次に、QuoteFlow CloudのMFA登録QRをGoogle Authenticatorで読み取ります。',true);
+    notice('#mfaMsg','次に、QuoteFlow Cloudの登録QRをGoogle Authenticatorで読み取ります。',true);
   };
 
   $('#enrollBtn').onclick=async()=>{
@@ -14179,6 +14212,9 @@
       mfaState={factorId:r.data.id,challengeId:ch.data.id,existing:false};
       $('#qr').src=r.data.totp.qr_code;
       $('#qrWrap').classList.remove('hidden');
+      setMfaProgress(3);
+      $('#mfaEnrollBox').classList.remove('active');
+      $('#mfaVerifyBox').classList.add('active');
       $('#mfaVerifyBox').classList.remove('hidden');
       $('#secret').textContent='セットアップキー: '+r.data.totp.secret;
       btn.textContent='MFA登録QRを再表示';
