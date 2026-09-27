@@ -8199,24 +8199,51 @@
             '</section>'
           : escalationHtml+'<div class="notice" style="margin-top:12px"><strong>対応候補を作成できませんでした。</strong><br><span class="muted">根拠となるナレッジ・過去案件が見つかっていません。推測で回答は作成しません。</span></div>';
 
-        const knowledgeHtml=scoredKnowledge.length
-          ? '<div class="row between" style="margin:10px 0"><strong>候補ナレッジ</strong><span class="muted">'+scoredKnowledge.length+'件 / 根拠を表示</span></div>'+
-            scoredKnowledge.map(v=>{
+        const recommendedKnowledge=scoredKnowledge.find(v=>v.level==='high')||null;
+        const referenceKnowledge=recommendedKnowledge
+          ? scoredKnowledge.filter(v=>String(v.x.id)!==String(recommendedKnowledge.x.id))
+          : scoredKnowledge;
+
+        const recommendedKnowledgeHtml=recommendedKnowledge
+          ? (()=>{
+              const v=recommendedKnowledge;
               const x=v.x;
               const body=String(x.body||'');
-              const preview=body.length>240?body.slice(0,240)+'…':body;
-              const meta=matchLevelMeta(v.level);
-              return '<article class="item">'+
-                '<div class="row between" style="gap:10px;align-items:flex-start">'+
-                  '<div><div class="row" style="gap:6px;flex-wrap:wrap"><strong>'+esc(x.title||'')+'</strong><span class="pill '+esc(meta.cls)+'">'+esc(meta.label)+'</span></div>'+
-                    '<span class="muted">ナレッジ / '+esc(x.category||'未分類')+'</span>'+
-                    (v.reasons.length?'<div class="muted" style="margin-top:4px">一致理由: '+esc(v.reasons.join(' / '))+'</div>':'')+
+              const preview=body.length>420?body.slice(0,420)+'…':body;
+              return '<section class="notice ok" style="margin:14px 0">'+
+                '<div class="row between" style="gap:10px;align-items:flex-start;flex-wrap:wrap">'+
+                  '<div><div class="row" style="gap:6px;flex-wrap:wrap"><span class="pill good">推奨対応</span><span class="pill good">一致度 高</span></div>'+
+                    '<strong style="display:block;font-size:1.05rem;margin-top:8px">'+esc(x.title||'')+'</strong>'+
+                    '<div class="muted" style="margin-top:4px">'+esc(x.category||'未分類')+(v.reasons.length?' / '+esc(v.reasons.join(' / ')):'')+'</div>'+
                   '</div>'+
-                  '<button class="linkBtn ticketKnowledgeUse" type="button" data-id="'+esc(x.id)+'">返信欄に下書き</button>'+
+                  '<button class="primary ticketKnowledgeUse" type="button" data-id="'+esc(x.id)+'">この内容を返信に使う</button>'+
                 '</div>'+
-                '<p style="white-space:pre-wrap">'+esc(preview)+'</p>'+
-              '</article>';
-            }).join('')
+                '<div style="white-space:pre-wrap;margin-top:10px;line-height:1.7">'+esc(preview)+'</div>'+
+              '</section>';
+            })()
+          : '';
+
+        const knowledgeHtml=scoredKnowledge.length
+          ? recommendedKnowledgeHtml+
+            '<div class="row between" style="margin:10px 0"><strong>'+(recommendedKnowledge?'参考候補':'候補ナレッジ')+'</strong><span class="muted">'+esc(referenceKnowledge.length)+'件'+(recommendedKnowledge?' / 推奨以外':' / 根拠を表示')+'</span></div>'+
+            (referenceKnowledge.length
+              ? referenceKnowledge.map(v=>{
+                  const x=v.x;
+                  const body=String(x.body||'');
+                  const preview=body.length>240?body.slice(0,240)+'…':body;
+                  const meta=matchLevelMeta(v.level);
+                  return '<article class="item">'+
+                    '<div class="row between" style="gap:10px;align-items:flex-start">'+
+                      '<div><div class="row" style="gap:6px;flex-wrap:wrap"><strong>'+esc(x.title||'')+'</strong><span class="pill '+esc(meta.cls)+'">'+esc(meta.label)+'</span></div>'+
+                        '<span class="muted">ナレッジ / '+esc(x.category||'未分類')+'</span>'+
+                        (v.reasons.length?'<div class="muted" style="margin-top:4px">一致理由: '+esc(v.reasons.join(' / '))+'</div>':'')+
+                      '</div>'+
+                      '<button class="linkBtn ticketKnowledgeUse" type="button" data-id="'+esc(x.id)+'">返信欄に下書き</button>'+
+                    '</div>'+
+                    '<p style="white-space:pre-wrap">'+esc(preview)+'</p>'+
+                  '</article>';
+                }).join('')
+              : '<div class="empty">推奨対応以外の参考候補はありません。</div>')
           : '<div class="empty">一致するナレッジはありません。</div>';
 
         const ticketHtml=scoredTickets.length
