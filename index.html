@@ -523,9 +523,21 @@
 
     <div id="mfaVerifyBox" class="mfaStep hidden">
       <div class="mfaStepHead"><span class="mfaStepNo">3</span><div><strong>6桁コードで認証</strong><div class="muted">Google Authenticatorに表示された6桁コードを入力してください。</div></div></div>
+      <div id="mfaFactorPicker" class="field hidden">
+        <label for="mfaFactorSelect">使用するAuthenticator</label>
+        <select id="mfaFactorSelect"></select>
+        <p class="muted" style="margin:0">複数登録している場合は、現在使えるAuthenticatorを選択してください。</p>
+      </div>
       <div class="field"><label for="mfaCode">6桁コード</label><input id="mfaCode" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code" placeholder="123456" aria-describedby="mfaCodeHint"></div>
       <div id="mfaCodeHint" class="mfaCodeHint">Google Authenticatorの現在の6桁コードを入力してください。コードは約30秒ごとに切り替わります。</div>
       <button id="verifyBtn" class="primary mfaActionFull" type="button" disabled>6桁コードを入力してください</button>
+      <details id="mfaRecoveryHelp" style="margin-top:14px">
+        <summary>Authenticatorを使えない・紛失した場合</summary>
+        <div class="notice" style="margin-bottom:0">
+          バックアップ用Authenticatorを登録している場合は「使用するAuthenticator」から切り替えてください。<br>
+          すべてのAuthenticatorを利用できない場合は、自社管理者へMFA再登録を依頼してください。パスワードだけでMFAを省略することはできません。
+        </div>
+      </details>
     </div>
   </section>
 
@@ -13687,6 +13699,9 @@
             : 'MFA認証が必要です。')+
         '</div>'+
         '<p class="sectionDesc">MFAは必須です。バックアップ用Authenticatorを追加しておくと、端末変更時の復旧がしやすくなります。</p>'+
+        (verified.length<2
+          ? '<div class="notice">紛失対策として、現在とは別の端末または別のAuthenticatorアプリにバックアップ用Authenticatorを1件追加することを推奨します。</div>'
+          : '<div class="notice ok">バックアップ用を含め、Authenticatorが複数登録されています。</div>')+
         dataTable(['名前','方式','状態','登録日','操作'],factorRows)+
         '<div class="row" style="margin-top:14px"><button id="securityAddFactorBtn" class="primary" type="button">＋ Authenticatorを追加</button></div>'+
         '<div id="securityMfaMsg" class="notice hidden"></div>'+
@@ -13949,6 +13964,40 @@
     });
   }
 
+  function renderMfaFactorPicker(factors=[]){
+    const wrap=$('#mfaFactorPicker');
+    const select=$('#mfaFactorSelect');
+    if(!wrap||!select) return;
+
+    const verified=(factors||[]).filter(x=>x?.status==='verified');
+    select.innerHTML='';
+    verified.forEach((factor,index)=>{
+      const label=(factor.friendly_name||('Authenticator '+(index+1)))+' / 登録済み';
+      select.add(new Option(label,factor.id));
+    });
+
+    if(verified.length<=1){
+      wrap.classList.add('hidden');
+    }else{
+      wrap.classList.remove('hidden');
+    }
+
+    if(mfaState.factorId && verified.some(x=>x.id===mfaState.factorId)){
+      select.value=mfaState.factorId;
+    }else if(verified[0]){
+      mfaState.factorId=verified[0].id;
+      select.value=verified[0].id;
+    }
+
+    select.onchange=()=>{
+      mfaState.factorId=select.value;
+      $('#mfaCode').value='';
+      syncMfaVerifyButton();
+      notice('#mfaMsg','使用するAuthenticatorを切り替えました。選択したAuthenticatorの6桁コードを入力してください。',true);
+      setTimeout(()=>$('#mfaCode')?.focus(),80);
+    };
+  }
+
   async function prepareMfa(){
     show('mfaView');
     $('#mfaAppInstallStep').classList.add('hidden');
@@ -13958,6 +14007,7 @@
     $('#mfaMsg').classList.add('hidden');
     $('#mfaCode').value='';
     mfaState={};
+    renderMfaFactorPicker([]);
     setMfaProgress(1);
 
     const aal=await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
@@ -13969,14 +14019,18 @@
     const f=await supabase.auth.mfa.listFactors();
     if(f.error) return notice('#mfaMsg',f.error.message);
 
-    const verified=(f.data?.totp||[]).find(x=>x.status==='verified');
+    const verifiedFactors=(f.data?.totp||[]).filter(x=>x.status==='verified');
+    const verified=verifiedFactors[0];
     if(verified){
       setMfaProgress(3,true);
       $('#mfaVerifyBox').classList.add('active');
       $('#mfaVerifyBox').classList.remove('hidden');
-      mfaState={factorId:verified.id,existing:true};
+      mfaState={factorId:verified.id,existing:true,verifiedFactors};
+      renderMfaFactorPicker(verifiedFactors);
       syncMfaVerifyButton();
-      notice('#mfaMsg','Google Authenticatorに表示されている6桁コードを入力してください。',true);
+      notice('#mfaMsg',verifiedFactors.length>1
+        ? '登録済みAuthenticatorが複数あります。使用するAuthenticatorを選び、6桁コードを入力してください。'
+        : 'Google Authenticatorに表示されている6桁コードを入力してください。',true);
       setTimeout(()=>$('#mfaCode')?.focus(),120);
       return;
     }
