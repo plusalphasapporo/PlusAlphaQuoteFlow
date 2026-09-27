@@ -6943,7 +6943,28 @@
 
     const closeBtn=$('#ticketDetailClose');
     if(closeBtn) closeBtn.onclick=()=>go(backPage);
-    window.scrollTo({top:0,behavior:'smooth'});
+
+    if(role==='support_staff'){
+      setTimeout(()=>{
+        const topbar=document.querySelector('.supportTicketTopbar');
+        const primary=$('#supportTopPrimaryAction');
+        if(topbar) topbar.scrollIntoView({behavior:'smooth',block:'center'});
+        if(primary){
+          primary.focus({preventScroll:true});
+          const action=primary.dataset.action||'assist';
+          primary.setAttribute('aria-label',
+            action==='remote'?'次の操作：TeamViewer対応または結果記録':
+            action==='report'?'次の操作：作業報告':
+            action==='history'?'次の操作：対応履歴を確認':
+            action==='content'?'次の操作：受付確認して対応開始':
+            action==='procedure'?'次の操作：対応手順を実施':
+            '次の操作：対応方法を確認'
+          );
+        }
+      },120);
+    }else{
+      window.scrollTo({top:0,behavior:'smooth'});
+    }
   }
 
   async function renderTicketDetail(ticketId){
@@ -7404,7 +7425,7 @@
               '</div>'+
               '<div class="supportQuickActions">'+
                 (t.status!=='closed'&&!supportReadOnlyByOther
-                  ? '<button id="supportTopPrimaryAction" class="'+esc(supportPrimaryStep.tone||'primary')+'" type="button">'+esc(supportPrimaryStep.button||'ここから進める')+'</button>'
+                  ? '<button id="supportTopPrimaryAction" class="'+esc(supportPrimaryStep.tone||'primary')+'" type="button" data-action="'+esc(supportPrimaryStep.target||'assist')+'">'+esc(supportPrimaryStep.button||'ここから進める')+'</button>'
                   : supportReadOnlyByOther?'<span class="pill warn">閲覧専用</span>':'')+
               '</div>'+
             '</div>'+
