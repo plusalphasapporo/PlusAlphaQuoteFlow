@@ -354,6 +354,14 @@
     .callIncomingMeta{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0 14px}
     .callIncomingMeta .item{padding:10px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px}
     .callIncomingActions{display:flex;gap:8px;flex-wrap:wrap;padding:0 18px 18px}
+    .callIncomingWrap.intakeOpen{max-width:min(700px,calc(100vw - 24px))}
+    .callIncomingWrap.intakeOpen .callIncomingBody{max-height:min(72vh,720px);overflow:auto}
+    .callInternalIntake{margin-top:12px;border:2px solid #bfdbfe;border-radius:14px;padding:13px;background:#f8fbff}
+    .callInternalIntakeHead{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap}
+    .callInternalIntakeHead strong{display:block}.callInternalIntakeHead small{display:block;color:var(--muted);margin-top:3px}
+    .callInternalIntakeGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .callInternalIntake .field{margin:8px 0}.callInternalIntake textarea{min-height:92px}
+    @media(max-width:640px){.callInternalIntakeGrid{grid-template-columns:1fr}.callIncomingWrap.intakeOpen{max-width:calc(100vw - 16px)}}
     @media(max-width:640px){.callIncomingWrap{right:8px;bottom:8px;max-width:calc(100vw - 16px)}.callIncomingMeta{grid-template-columns:1fr}}
     @media(max-width:900px){.formInlineGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
     @media(max-width:640px){.formInlineGrid{grid-template-columns:1fr}}
@@ -1445,9 +1453,13 @@
     const role=bootData?.context?.role;
     let customerContext=null;
 
-    if(role==='support_staff'&&item?.matched_customer_id){
+    if(item?.matched_customer_id){
       try{
-        customerContext=await rpc('support_customer_context',{p_customer_id:item.matched_customer_id});
+        if(role==='support_staff'){
+          customerContext=await rpc('support_customer_context',{p_customer_id:item.matched_customer_id});
+        }else if(role==='internal_admin'||role==='internal_staff'){
+          customerContext=await rpc('internal_customer_unified_workspace',{p_customer_id:item.matched_customer_id});
+        }
       }catch(_){}
     }
 
@@ -1468,10 +1480,29 @@
               (customerContext?'<div class="item"><strong>契約</strong><br><span>'+esc((customerContext.contracts||[]).length)+'件</span></div>':'')+
             '</div>'+
             (recentTickets.length?'<div class="notice"><strong>最近の問い合わせ</strong><br>'+recentTickets.map(t=>esc(t.ticket_number||'—')+' / '+esc(t.subject||'')+' / '+esc(statusText(t.status))).join('<br>')+'</div>':'')+
+            (((role==='internal_admin'||role==='internal_staff')&&item?.matched_customer_id&&!item?.support_ticket_id)
+              ? '<div id="callIncomingInternalIntake" class="callInternalIntake hidden">'+
+                  '<div class="callInternalIntakeHead"><div><strong id="callInternalIntakeTitle">電話受付</strong><small>顧客は照合済みです。必要事項だけ入力して登録します。</small></div><button id="callInternalIntakeClose" class="ghost" type="button">閉じる</button></div>'+
+                  '<input id="callInternalRequestType" type="hidden" value="incident">'+
+                  '<div class="callInternalIntakeGrid">'+
+                    '<div class="field"><label>対象機器</label><select id="callInternalAsset"><option value="">未指定</option>'+(customerContext?.assets||[]).map(a=>'<option value="'+esc(a.id)+'">'+esc(a.asset_number||'未採番')+' / '+esc(a.model_name||'機種未設定')+'</option>').join('')+'</select></div>'+
+                    '<div class="field"><label>契約</label><select id="callInternalContract"><option value="">未指定</option>'+(customerContext?.contracts||[]).map(ct=>'<option value="'+esc(ct.id)+'">'+esc(ct.contract_number||'未採番')+' / '+esc(statusText(ct.status))+'</option>').join('')+'</select></div>'+
+                    '<div class="field"><label>優先度</label><select id="callInternalPriority"><option value="normal">通常</option><option value="high">高</option><option value="urgent">緊急</option><option value="low">低</option></select></div>'+
+                    '<div class="field"><label>件名</label><input id="callInternalSubject" placeholder="電話で確認した内容を簡潔に入力"></div>'+
+                  '</div>'+
+                  '<div class="field"><label id="callInternalDetailLabel">障害内容・症状</label><textarea id="callInternalDetail" placeholder="電話を聞きながら内容を入力"></textarea></div>'+
+                  '<div id="callInternalIncidentOptions" class="row" style="gap:12px;flex-wrap:wrap"><label class="row"><input id="callInternalBusinessStopped" type="checkbox"> 業務停止あり</label></div>'+
+                  '<div id="callInternalSettingOptions" class="row hidden" style="gap:12px;flex-wrap:wrap"><label class="row"><input id="callInternalRemoteAllowed" type="checkbox"> TeamViewer遠隔対応可</label></div>'+
+                  '<div class="supportQuickActions" style="margin-top:10px"><button id="callInternalSave" class="green" type="button">この内容で受付登録</button></div>'+
+                  '<div id="callInternalMsg" class="notice hidden"></div>'+
+                '</div>'
+              : '')+
           '</div>'+
           '<div class="callIncomingActions">'+
             '<button id="callIncomingOpenCallConnect" class="primary" type="button">CallConnectを開く</button>'+
             ((item?.matched_customer_id&&(role==='internal_admin'||role==='internal_staff'))?'<button id="callIncomingOpenCustomer" class="ghost" type="button">顧客カルテ</button>':'')+
+            (((role==='internal_admin'||role==='internal_staff')&&!item?.support_ticket_id&&item?.matched_customer_id)?'<button id="callIncomingInternalIncident" class="orange" type="button">障害受付</button><button id="callIncomingInternalSetting" class="green" type="button">設定依頼</button>':'')+
+            (((role==='internal_admin'||role==='internal_staff')&&!item?.support_ticket_id&&!item?.matched_customer_id)?'<button id="callIncomingInternalCustomerSearch" class="ghost" type="button">電話番号で顧客検索</button>':'')+
             ((role==='support_staff'&&!item?.support_ticket_id&&item?.matched_customer_id)?'<button id="callIncomingQuickStart" class="green" type="button">すぐ対応開始</button>':'')+
             ((role==='support_staff'&&!item?.support_ticket_id)?'<button id="callIncomingStartIntake" class="ghost" type="button">'+(item?.matched_customer_id?'詳細を入力して受付':'電話番号で顧客検索')+'</button>':'')+
             (item?.support_ticket_id?'<button id="callIncomingOpenTicket" class="ghost" type="button">案件を開く</button>':'')+
@@ -1497,6 +1528,116 @@
         await close();
         await go('customers');
         await renderCustomerDetail(item.matched_customer_id);
+      };
+    }
+
+    const internalIntake=$('#callIncomingInternalIntake');
+    const internalType=$('#callInternalRequestType');
+    const internalSubject=$('#callInternalSubject');
+    const internalDetail=$('#callInternalDetail');
+    const showInternalIntake=(type)=>{
+      if(!internalIntake||!internalType) return;
+      internalType.value=type;
+      internalIntake.classList.remove('hidden');
+      $('#callIncomingWrap')?.classList.add('intakeOpen');
+      const isIncident=type==='incident';
+      $('#callInternalIntakeTitle').textContent=isIncident?'障害受付':'設定依頼受付';
+      $('#callInternalDetailLabel').textContent=isIncident?'障害内容・症状':'希望する設定・作業内容';
+      $('#callInternalIncidentOptions')?.classList.toggle('hidden',!isIncident);
+      $('#callInternalSettingOptions')?.classList.toggle('hidden',isIncident);
+      if(internalSubject && !internalSubject.value.trim()){
+        internalSubject.value=(isIncident?'障害：':'設定依頼：')+(item.matched_customer_name||item.contact_company||item.contact_name||'電話受付');
+      }
+      setTimeout(()=>internalDetail?.focus(),80);
+    };
+    $('#callIncomingInternalIncident')?.addEventListener('click',()=>showInternalIntake('incident'));
+    $('#callIncomingInternalSetting')?.addEventListener('click',()=>showInternalIntake('setting_request'));
+    $('#callInternalIntakeClose')?.addEventListener('click',()=>{
+      internalIntake?.classList.add('hidden');
+      $('#callIncomingWrap')?.classList.remove('intakeOpen');
+    });
+
+    const internalCustomerSearch=$('#callIncomingInternalCustomerSearch');
+    if(internalCustomerSearch){
+      internalCustomerSearch.onclick=async()=>{
+        const phone=item.contact_number||'';
+        await close();
+        await go('customers');
+        setTimeout(()=>{
+          const input=$('#customerListSearch');
+          if(input){
+            input.value=phone;
+            input.dispatchEvent(new Event('input',{bubbles:true}));
+            input.focus();
+          }
+        },180);
+      };
+    }
+
+    const internalSave=$('#callInternalSave');
+    if(internalSave){
+      internalSave.onclick=async()=>{
+        const type=internalType?.value||'incident';
+        const subject=String(internalSubject?.value||'').trim();
+        const detailText=String(internalDetail?.value||'').trim();
+        if(!subject) return notice('#callInternalMsg','件名を入力してください。');
+        if(!detailText) return notice('#callInternalMsg',type==='incident'?'障害内容・症状を入力してください。':'希望する設定・作業内容を入力してください。');
+        internalSave.disabled=true;
+        try{
+          const assetId=$('#callInternalAsset')?.value||null;
+          const contractId=$('#callInternalContract')?.value||null;
+          const selectedAsset=$('#callInternalAsset')?.selectedOptions?.[0]?.textContent||'';
+          const requestDetails=type==='incident'
+            ? {
+                occurred_at:new Date().toISOString(),
+                error_message:detailText,
+                impact_scope:'unknown',
+                business_stopped:!!$('#callInternalBusinessStopped')?.checked,
+                attempted_actions:null
+              }
+            : {
+                requested_setting:detailText,
+                target_device:assetId?selectedAsset:null,
+                current_state:null,
+                preferred_at:null,
+                remote_allowed:!!$('#callInternalRemoteAllowed')?.checked
+              };
+          const description=[
+            '【受付経路】CallConnect 入電',
+            '',
+            '電話番号：'+(item.contact_number||'未取得'),
+            'CallConnect Call ID：'+(item.call_id||'—'),
+            '',
+            '【受付内容】',
+            detailText
+          ].join('\n');
+          const result=await rpc('internal_create_support_request_v2',{
+            p_customer_id:item.matched_customer_id,
+            p_asset_id:assetId,
+            p_contract_id:contractId,
+            p_request_type:type,
+            p_subject:subject,
+            p_description:description,
+            p_priority:$('#callInternalPriority')?.value||'normal',
+            p_request_details:requestDetails
+          });
+          const ticketId=result?.id||result?.ticket_id;
+          if(!ticketId) throw new Error('受付案件を作成できませんでした。');
+          if(item.call_id){
+            await rpc('attach_callconnect_ticket',{
+              p_call_id:item.call_id,
+              p_customer_id:item.matched_customer_id,
+              p_ticket_id:ticketId
+            }).catch(()=>{});
+          }
+          await close();
+          toast((type==='incident'?'障害':'設定依頼')+'を登録しました'+(result?.ticket_number?' '+result.ticket_number:''));
+          await go('support');
+          await openTicketWorkspace(ticketId);
+        }catch(err){
+          notice('#callInternalMsg',err.message||String(err));
+          internalSave.disabled=false;
+        }
       };
     }
 
