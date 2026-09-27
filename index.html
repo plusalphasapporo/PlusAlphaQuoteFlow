@@ -7444,6 +7444,9 @@
             action==='remote'?'次の操作：TeamViewer対応または結果記録':
             action==='report'?'次の操作：作業報告':
             action==='history'?'次の操作：対応履歴を確認':
+            action==='customer_reply'?'次の操作：顧客からの返答を確認':
+            action==='customer_wait'?'次の操作：顧客確認待ちの状態を確認':
+            action==='return_review'?'次の操作：自社から戻った結果を確認':
             action==='content'?'次の操作：受付確認して対応開始':
             action==='procedure'?'次の操作：対応手順を実施':
             '次の操作：対応方法を確認'
@@ -7466,7 +7469,7 @@
     const internal=role==='internal_admin'||role==='internal_staff';
     const support=role==='support_staff';
 
-    let detail,knowledgeArticles,caseWorkspace,supportStage,nextActionState,deadlineState,assignmentState,teamviewerApiState,teamviewerSessions;
+    let detail,knowledgeArticles,caseWorkspace,supportStage,nextActionState,deadlineState,assignmentState,teamviewerApiState,teamviewerSessions,supportUnanswered;
     if(customer){
       detail=await rpc('customer_ticket_detail',{p_ticket_id:ticketId});
       knowledgeArticles=[];
@@ -7477,9 +7480,10 @@
       assignmentState=null;
       teamviewerApiState=null;
       teamviewerSessions=[];
+      supportUnanswered={items:[],count:0};
     }else{
       detail=await rpc('support_ticket_workspace',{p_ticket_id:ticketId});
-      [knowledgeArticles,caseWorkspace,supportStage,nextActionState,deadlineState,assignmentState,teamviewerApiState,teamviewerSessions]=await Promise.all([
+      [knowledgeArticles,caseWorkspace,supportStage,nextActionState,deadlineState,assignmentState,teamviewerApiState,teamviewerSessions,supportUnanswered]=await Promise.all([
         rpcOptional('role_knowledge_articles',{},[]),
         rpcOptional('internal_support_cases_list',{}, {tickets:[]}),
         rpcOptional('support_ticket_workflow_state',{p_ticket_id:ticketId},null),
@@ -7487,7 +7491,8 @@
         rpcOptional('support_ticket_deadline_state',{p_ticket_id:ticketId},null),
         rpcOptional('support_ticket_assignment_state',{p_ticket_id:ticketId},null),
         rpcOptional('teamviewer_api_settings',{},null),
-        rpcOptional('teamviewer_ticket_sessions',{p_ticket_id:ticketId},[])
+        rpcOptional('teamviewer_ticket_sessions',{p_ticket_id:ticketId},[]),
+        support?rpcOptional('support_unanswered_messages',{}, {items:[],count:0}):Promise.resolve({items:[],count:0})
       ]);
     }
 
@@ -7611,6 +7616,11 @@
       : [];
     const sharedProcedurePendingIndex=sharedProcedureSteps.findIndex(x=>!x?.done);
     const sharedProcedureDoneCount=sharedProcedureSteps.filter(x=>x?.done).length;
+    const pendingCustomerReply=support
+      ? (supportUnanswered?.items||[]).find(x=>String(x.ticket_id)===String(t.id))||null
+      : null;
+    const customerReplyWaiting=support&&nextActionState?.support_next_action==='customer_reply_waiting';
+
     const latestCompletedInternalHandoff=[...handoffs]
       .filter(h=>h.state==='completed')
       .sort((a,b)=>timeValue(b.completed_at||b.created_at)-timeValue(a.completed_at||a.created_at))[0]||null;
@@ -7647,6 +7657,8 @@
       if(supportStage==='teamviewer_waiting'||(latestTeamViewerSession&&!teamviewerSessionClosed)) return {label:'③ TeamViewer対応',button:'TeamViewer対応へ進む',hint:'接続・遠隔確認を進めます。',target:'remote',tone:'orange'};
       if(supportStage==='support_review_waiting') return {label:'自社から戻り・結果確認',button:'戻り内容を確認',hint:'自社で実施した内容を確認し、再対応・顧客回答・作業報告のどれに進むか決めます。',target:'return_review',tone:'orange'};
       if(['internal_handoff_waiting','internal_in_progress'].includes(supportStage)) return {label:'引継ぎ状況を確認',button:'引継ぎ状況を確認',hint:'同じ案件カルテのまま対応状況を確認します。',target:'history',tone:'primary'};
+      if(customerReplyWaiting&&pendingCustomerReply) return {label:'顧客から返答あり',button:'返答を確認',hint:'顧客から新しい返答があります。内容を確認し、再対応または完了へ進みます。',target:'customer_reply',tone:'orange'};
+      if(customerReplyWaiting) return {label:'顧客確認待ち',button:'送信内容を確認',hint:'顧客へ回答済みです。顧客から返答が来るまで待機します。',target:'customer_wait',tone:'ghost'};
       if(sharedProcedureSteps.length && sharedProcedurePendingIndex>=0){
         const nextStep=String(sharedProcedureSteps[sharedProcedurePendingIndex]?.step||'次の対応手順');
         return {
@@ -7696,6 +7708,28 @@
               '</div>'
             : '<div class="notice warn" style="margin-top:12px">他のサポート担当者が対応中のため、現在は閲覧のみです。</div>')+
           '<div id="ticketReturnReviewMsg" class="notice hidden"></div>'+
+        '</section>'
+      : '';
+
+    const customerReplyStatePanel=support&&customerReplyWaiting
+      ? '<section id="supportCustomerReplyWorkspace" class="supportReturnReview">'+
+          '<div class="supportReturnReviewHead">'+
+            '<div><h3>'+(pendingCustomerReply?'顧客から返答がありました':'顧客確認待ち')+'</h3><p>'+(pendingCustomerReply?'返答内容を確認し、次の対応を選択します。':'顧客へ回答済みです。返答が来るまでこの案件は待機中です。')+'</p></div>'+
+            '<span class="pill '+(pendingCustomerReply?'warn':'good')+'">'+(pendingCustomerReply?'要対応':'返信済み・待機中')+'</span>'+
+          '</div>'+
+          (pendingCustomerReply
+            ? '<div class="supportReturnReviewGrid">'+
+                '<div class="supportReturnReviewBox"><span>顧客からの最新返答</span><strong>'+esc(pendingCustomerReply.message_body||pendingCustomerReply.message_excerpt||'内容なし')+'</strong></div>'+
+                '<div class="supportReturnReviewBox"><span>受信日時</span><strong>'+esc(dateTimeText(pendingCustomerReply.last_customer_message_at))+'</strong></div>'+
+              '</div>'+
+              (!supportReadOnlyByOther
+                ? '<div class="supportQuickActions" style="margin-top:12px">'+
+                    '<button id="ticketCustomerReplyResume" class="primary" type="button">再対応を開始</button>'+
+                    '<button id="ticketCustomerReplyComplete" class="green" type="button">解決として作業報告へ</button>'+
+                  '</div>'
+                : '<div class="notice warn" style="margin-top:12px">他のサポート担当者が対応中のため、現在は閲覧のみです。</div>')
+            : '<div class="notice ok" style="margin-top:12px"><strong>顧客へ返信済みです。</strong><br><span class="muted">返答が届くと、この画面が自動的に「顧客から返答あり」に切り替わります。</span></div>')+
+          '<div id="ticketCustomerReplyMsg" class="notice hidden"></div>'+
         '</section>'
       : '';
 
@@ -8155,7 +8189,7 @@
                 ['作成日',dateText(t.created_at)],
                 ['更新日',dateText(t.updated_at)]
               ]))+
-        (support?supportReturnPanel+firstLineAssist:'')+
+        (support?supportReturnPanel+customerReplyStatePanel+firstLineAssist:'')+
         internalHandoffPanel+
         '<div id="supportTicketCustomerContext" class="modalGrid2">'+
           '<section class="card section" style="box-shadow:none;margin:0"><h3>案件概要</h3><div class="item"><strong>種別</strong><p>'+supportRequestTypeBadge(t.request_type)+'</p></div><div class="item"><strong>件名</strong><p>'+esc(t.subject||'')+'</p></div>'+supportRequestDetailsHtml(t.request_type,t.request_details||{})+'<div class="item"><strong>補足内容</strong><p style="white-space:pre-wrap">'+esc(displayDescription)+'</p></div><div class="item"><strong>顧客</strong><p>'+esc(cust?.customer_code||'—')+' / '+esc(cust?.name||'—')+'</p></div></section>'+
@@ -8644,6 +8678,30 @@
       const returnReport=$('#ticketReturnReport');
       if(returnReport) returnReport.onclick=()=>$('#ticketCloseBtn')?.click();
 
+      const customerReplyResume=$('#ticketCustomerReplyResume');
+      if(customerReplyResume) customerReplyResume.onclick=async()=>{
+        customerReplyResume.disabled=true;
+        $('#ticketCustomerReplyComplete')?.setAttribute('disabled','disabled');
+        try{
+          await rpc('set_support_next_action',{p_ticket_id:t.id,p_next_action:'in_progress'});
+          toast('顧客の返答を確認し、再対応を開始しました');
+          await renderTicketDetail(t.id);
+          setTimeout(()=>{
+            jump('#supportKnowledgeWorkspace');
+            setTimeout(()=>$('#ticketKnowledgeSearch')?.focus(),220);
+          },120);
+        }catch(err){notice('#ticketCustomerReplyMsg',err.message||String(err));}
+        finally{
+          customerReplyResume.disabled=false;
+          $('#ticketCustomerReplyComplete')?.removeAttribute('disabled');
+        }
+      };
+
+      const customerReplyComplete=$('#ticketCustomerReplyComplete');
+      if(customerReplyComplete) customerReplyComplete.onclick=()=>{
+        $('#ticketCloseBtn')?.click();
+      };
+
       const returnContinue=$('#ticketReturnContinue');
       if(returnContinue) returnContinue.onclick=async()=>{
         returnContinue.disabled=true;
@@ -8783,6 +8841,10 @@
         }
         if(target==='return_review'){
           jump('#supportReturnReviewWorkspace');
+          return;
+        }
+        if(target==='customer_reply'||target==='customer_wait'){
+          jump('#supportCustomerReplyWorkspace');
           return;
         }
         if(target==='history'){
