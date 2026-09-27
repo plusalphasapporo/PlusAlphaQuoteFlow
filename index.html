@@ -10363,11 +10363,19 @@
       closed:{title:'完了',desc:'対応が完了した案件です。'}
     };
 
+    const internalAttentionCopy={
+      all:{title:'要確認',desc:'緊急・期限超過・本日期限・高優先度・自社担当未設定の案件だけを確認します。'},
+      urgent:{title:'緊急案件',desc:'優先度が「緊急」の未完了案件だけを表示しています。'},
+      overdue:{title:'期限超過',desc:'対応期限を超過している未完了案件だけを表示しています。'},
+      due_today:{title:'本日期限',desc:'本日が対応期限の未完了案件だけを表示しています。'},
+      high:{title:'高優先度',desc:'優先度が「高」の未完了案件だけを表示しています。'},
+      unassigned:{title:'自社担当未設定',desc:'自社担当者が未設定の未完了案件だけを表示しています。'}
+    };
     const internalViewCopy={
       intake:{title:'自社受付',desc:'登録後、まだサポート会社の本対応が始まっていない案件です。'},
       supporting:{title:'サポート会社対応中',desc:'サポート担当が対応中、TeamViewer対応中、または確認後の再対応中の案件です。'},
       handoff:{title:'自社引継ぎ',desc:'サポート会社から自社へ判断・調査・現地対応などで引き継がれた案件です。'},
-      attention:{title:'要確認',desc:'緊急・期限超過・本日期限・高優先度・自社担当未設定の案件だけを確認します。'},
+      attention:internalAttentionCopy.all,
       closed:{title:'完了',desc:'作業報告まで完了した案件です。'}
     };
     const internalCaseViewOf=t=>{
@@ -10458,7 +10466,7 @@
             '</div>'+
           '</section>'+
           '<section class="card section supportCaseFocusSection">'+
-            '<div class="supportCaseFocusHead"><div><h2 id="internalCaseFocusTitle">'+esc((internalViewCopy[internalSupportView]||internalViewCopy.intake).title)+'</h2><p id="internalCaseFocusDesc">'+esc((internalViewCopy[internalSupportView]||internalViewCopy.intake).desc)+'</p></div><span id="internalCaseFocusCount" class="pill">0件</span></div>'+
+            '<div class="supportCaseFocusHead"><div><h2 id="internalCaseFocusTitle">'+esc((internalSupportView==='attention'?(internalAttentionCopy[internalSupportAttentionKind]||internalAttentionCopy.all):(internalViewCopy[internalSupportView]||internalViewCopy.intake)).title)+'</h2><p id="internalCaseFocusDesc">'+esc((internalSupportView==='attention'?(internalAttentionCopy[internalSupportAttentionKind]||internalAttentionCopy.all):(internalViewCopy[internalSupportView]||internalViewCopy.intake)).desc)+'</p></div><span id="internalCaseFocusCount" class="pill">0件</span></div>'+
             listToolbar('supportCaseList',data,'status','番号・顧客・件名・機器・契約・担当者',[
               ['deadline_asc','期限が近い順'],['priority_desc','優先度が高い順'],['updated_desc','更新が新しい順'],['created_desc','作成が新しい順']
             ])+
@@ -10832,11 +10840,12 @@
         const bar=$('#internalSupportViewTabs');
         if(!bar) return;
         internalSupportView=view||'intake';
-        if(internalSupportView!=='attention') internalSupportAttentionKind='all';
-        else internalSupportAttentionKind='all';
+        internalSupportAttentionKind='all';
         bar.dataset.active=internalSupportView;
         bar.querySelectorAll('.internalSupportViewTab').forEach(x=>x.classList.toggle('active',x.dataset.view===internalSupportView));
-        const copy=internalViewCopy[internalSupportView]||internalViewCopy.intake;
+        const copy=internalSupportView==='attention'
+          ? (internalAttentionCopy[internalSupportAttentionKind]||internalAttentionCopy.all)
+          : (internalViewCopy[internalSupportView]||internalViewCopy.intake);
         const title=$('#internalCaseFocusTitle');
         const desc=$('#internalCaseFocusDesc');
         if(title) title.textContent=copy.title;
