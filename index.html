@@ -9553,6 +9553,15 @@
         $('#supportCaseListHost').innerHTML=filtered.length
           ? '<div class="supportCaseCards">'+filtered.map(t=>{
               const cardClass=t.support_next_action_notification_active&&t.support_next_action_alert_level==='critical'?'queue-critical':t.support_next_action_notification_active&&t.support_next_action_alert_level==='warning'?'queue-warning':t.teamviewer_result_pending?'pending-result':t.priority==='urgent'?'urgent':t.priority==='high'?'high':t.support_stage==='teamviewer_waiting'?'remote':'';
+              const otherAssigned=!!t.support_assignment?.support_assigned_user_id&&!t.support_assignment?.is_mine;
+              const canStartNow=t.status!=='closed'&&t.support_stage==='unhandled'&&!otherAssigned;
+              const caseActionLabel=
+                t.status==='closed'?'対応履歴を見る':
+                t.teamviewer_result_pending||t.support_stage==='teamviewer_waiting'?'TeamViewerへ':
+                canStartNow?(t.support_assignment?.is_mine?'対応開始':'担当して対応開始'):
+                t.support_next_action==='in_progress'?'対応を続ける':
+                otherAssigned?'案件を確認':
+                '案件を開く';
               return '<article class="supportCaseCard '+cardClass+'">'+
                 '<div class="supportCaseCardHead">'+
                   '<div>'+
@@ -9582,7 +9591,7 @@
                   '<div class="supportCaseFact"><span>滞留</span><strong>'+esc(supportQueueAgeText(t.support_next_action_waiting_seconds))+'</strong></div>'+
                   '<div class="supportCaseFact"><span>担当</span><strong>'+esc(t.support_assignment?.support_assigned_user_name||'未担当')+'</strong></div>'+
                 '</div>'+
-                '<div class="supportCaseCardActions"><button class="ghost supportAttentionPlanOpen" type="button" data-id="'+esc(t.id)+'">確認・予定</button><button class="primary ticketDetail" type="button" data-id="'+esc(t.id)+'">'+(t.status!=='closed'&&t.support_stage==='unhandled'?'対応を開始':'この案件を開く')+'</button></div>'+
+                '<div class="supportCaseCardActions"><button class="ghost supportAttentionPlanOpen" type="button" data-id="'+esc(t.id)+'">確認・予定</button><button class="primary ticketDetail" type="button" data-id="'+esc(t.id)+'" data-start="'+(canStartNow?'1':'0')+'">'+esc(caseActionLabel)+'</button></div>'+
               '</article>';
             }).join('')+'</div>'
           : '<div class="empty">該当する案件はありません。</div>';
@@ -9610,7 +9619,32 @@
           )
         );
       }
-      document.querySelectorAll('.ticketDetail').forEach(btn=>btn.onclick=async()=>{btn.disabled=true;try{if(bootData?.context?.role==='customer_user') await renderTicketDetail(btn.dataset.id); else await openTicketWorkspace(btn.dataset.id);}catch(err){toast(err.message||String(err));}finally{btn.disabled=false;}});
+      document.querySelectorAll('.ticketDetail').forEach(btn=>btn.onclick=async()=>{
+        btn.disabled=true;
+        try{
+          if(bootData?.context?.role==='customer_user'){
+            await renderTicketDetail(btn.dataset.id);
+            return;
+          }
+          if(support && btn.dataset.start==='1'){
+            await rpc('claim_support_ticket',{p_ticket_id:btn.dataset.id}).catch(()=>{});
+            await rpc('set_support_workflow_stage',{p_ticket_id:btn.dataset.id,p_stage:'in_progress'});
+            toast('担当を開始しました');
+          }
+          await openTicketWorkspace(btn.dataset.id);
+          if(support && btn.dataset.start==='1'){
+            setTimeout(()=>{
+              const target=$('#ticketKnowledgeSearch')||$('#supportAssistWorkspace');
+              target?.scrollIntoView({behavior:'smooth',block:'start'});
+              $('#ticketKnowledgeSearch')?.focus();
+            },180);
+          }
+        }catch(err){
+          toast(err.message||String(err));
+        }finally{
+          btn.disabled=false;
+        }
+      });
       document.querySelectorAll('.supportAttentionPlanOpen').forEach(btn=>btn.onclick=async()=>{
         btn.disabled=true;
         try{
