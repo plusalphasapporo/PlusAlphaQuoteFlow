@@ -2509,18 +2509,32 @@
 
       const openInternalSupportCreate=async(type)=>{
         await go('support');
-        const toggle=$('#supportCaseCreateToggle');
         const box=$('#supportCaseCreateBox');
-        if(box?.classList.contains('hidden')) toggle?.click();
+        if(!box) return;
+        box.classList.remove('hidden');
+
         const select=$('#supportCaseRequestType');
+        const normalizedType=type==='setting_request'?'setting_request':'incident';
         if(select){
-          select.value=type;
+          select.value=normalizedType;
           select.dispatchEvent(new Event('change',{bubbles:true}));
         }
+
+        document.querySelectorAll('.internalRequestTypeBtn').forEach(btn=>{
+          btn.classList.toggle('selected',btn.dataset.type===normalizedType);
+        });
+        const mode=$('#supportCaseCreateMode');
+        if(mode){
+          mode.textContent=normalizedType==='incident'?'障害受付':'設定依頼受付';
+          mode.className='pill '+(normalizedType==='incident'?'warn':'');
+        }
+
+        box.scrollIntoView({behavior:'smooth',block:'start'});
         setTimeout(()=>{
-          $('#supportCaseCreateBox')?.scrollIntoView({behavior:'smooth',block:'start'});
-          $('#supportCaseCustomer')?.focus();
-        },120);
+          const customer=$('#supportCaseCustomer');
+          customer?.focus();
+          if(customer) customer.scrollIntoView({behavior:'smooth',block:'center'});
+        },180);
       };
 
       document.querySelectorAll('.internalQuickAction').forEach(btn=>btn.onclick=async()=>{
@@ -10435,7 +10449,7 @@
         : '')+
       (internal
         ? '<section class="card section">'+
-            '<div class="row between"><div><h2>障害・設定依頼の登録</h2><p class="sectionDesc">顧客 → 種別 → 内容 → 登録の4ステップだけで受付できます。</p></div><button id="supportCaseCreateToggle" class="primary" type="button">＋ 新規受付</button></div>'+
+            '<div class="row between"><div><h2>障害・設定依頼の登録</h2><p class="sectionDesc">顧客 → 種別 → 内容 → 登録の4ステップだけで受付できます。</p></div><div class="row"><span id="supportCaseCreateMode" class="pill">新規受付</span><button id="supportCaseCreateToggle" class="primary" type="button">＋ 新規受付</button></div></div>'+
             '<div id="supportCaseCreateBox" class="hidden" style="margin-top:14px">'+
               '<form id="supportCaseCreateForm">'+
                 '<div class="internalIntakeSteps">'+
@@ -10939,16 +10953,28 @@
       };
 
       $('#supportCaseCreateToggle').onclick=()=>{
+        const willOpen=createBox.classList.contains('hidden');
         createBox.classList.toggle('hidden');
-        if(!createBox.classList.contains('hidden')){
+        if(willOpen){
+          const typeSelect=$('#supportCaseRequestType');
+          if(typeSelect){
+            typeSelect.value='incident';
+            typeSelect.dispatchEvent(new Event('change',{bubbles:true}));
+          }
           updateSupportCaseReview();
-          setTimeout(()=>$('#supportCaseCustomer')?.focus(),100);
+          createBox.scrollIntoView({behavior:'smooth',block:'start'});
+          setTimeout(()=>$('#supportCaseCustomer')?.focus(),120);
         }
       };
 
       const renderSupportCaseTypeFields=()=>{
         const type=$('#supportCaseRequestType')?.value||'incident';
         document.querySelectorAll('.internalRequestTypeBtn').forEach(btn=>btn.classList.toggle('selected',btn.dataset.type===type));
+        const mode=$('#supportCaseCreateMode');
+        if(mode){
+          mode.textContent=type==='incident'?'障害受付':'設定依頼受付';
+          mode.className='pill '+(type==='incident'?'warn':'');
+        }
         const host=$('#supportCaseTypeFields');
         if(type==='incident'){
           $('#supportCaseMainDetailLabel').textContent='障害内容・症状';
