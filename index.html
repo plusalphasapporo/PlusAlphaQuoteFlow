@@ -53,6 +53,15 @@
     .supportLinearBody{margin:12px 0 0 43px}.supportLinearSummary{padding:12px;border:1px solid #dbeafe;border-radius:12px;background:#fff}
     .supportLinearSummary span{display:block;font-size:10px;font-weight:900;color:#64748b;margin-bottom:4px}.supportLinearSummary p{margin:0;white-space:pre-wrap;line-height:1.55;color:#334155}
     .supportLinearProgress{grid-template-columns:repeat(4,minmax(0,1fr))}
+    .assistGuideHead{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:14px}
+    .assistProgressTrack{height:8px;border-radius:999px;background:#e2e8f0;overflow:hidden;margin:9px 0 12px}
+    .assistProgressBar{height:100%;width:0;background:currentColor;border-radius:999px;transition:width .2s ease;color:#2563eb}
+    .ticketAssistStepItem{position:relative;transition:border-color .15s,background .15s,box-shadow .15s}
+    .ticketAssistStepItem.current{border:2px solid #2563eb;background:#f8fbff;box-shadow:0 7px 18px rgba(37,99,235,.08)}
+    .ticketAssistStepItem.done{border-color:#86efac;background:#f7fff9}
+    .ticketAssistStepItem.pending{opacity:.78}
+    .assistStepBadge{display:inline-flex;align-items:center;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:900;background:#e2e8f0;color:#475569;margin-left:6px}
+    .ticketAssistStepItem.current .assistStepBadge{background:#dbeafe;color:#1d4ed8}.ticketAssistStepItem.done .assistStepBadge{background:#dcfce7;color:#166534}
     @media(max-width:760px){.supportLinearProgress{grid-template-columns:repeat(2,minmax(0,1fr))}.supportLinearBody{margin-left:0}.supportLinearCard{padding:13px}}
     .attachmentGallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-top:10px}
     .attachmentCard{border:1px solid var(--line);border-radius:12px;padding:10px;background:#fff;overflow:hidden}
@@ -8319,22 +8328,25 @@
                   '<button id="ticketAssistUseRemote" class="ghost" type="button">TeamViewerで確認</button>'+
                 '</div>'+
               '</div>'+
-              '<div style="margin-top:14px"><div class="row between" style="gap:8px;flex-wrap:wrap"><strong>実施手順</strong><span id="ticketAssistSyncState" class="muted">案件DBに自動保存</span></div><div class="muted" style="margin-top:4px">上から順に確認し、終わった項目をチェックしてください。進捗は担当交代後も共有されます。</div>'+
-                '<div id="ticketAssistChecklist" style="margin-top:8px">'+assistSteps.map((step,i)=>
-                  '<div class="item" style="margin-bottom:8px">'+
+              '<div style="margin-top:14px">'+
+                '<div class="assistGuideHead"><div><strong>この案件の対応手順</strong><div class="muted" style="margin-top:4px">上から1つずつ実施してください。現在の手順を青、完了した手順を緑で表示します。</div></div><div><span id="ticketAssistProgressCount" class="pill">0 / '+esc(assistSteps.length)+'</span> <span id="ticketAssistSyncState" class="muted">案件DBに自動保存</span></div></div>'+
+                '<div class="assistProgressTrack"><div id="ticketAssistProgressBar" class="assistProgressBar"></div></div>'+
+                '<div id="ticketAssistChecklist">'+assistSteps.map((step,i)=>
+                  '<div class="item ticketAssistStepItem pending" data-step-item="'+esc(i)+'" style="margin-bottom:8px">'+
                     '<label class="row" style="gap:10px;align-items:flex-start">'+
                       '<input class="ticketAssistStepCheck" type="checkbox" data-step="'+esc(i)+'" style="margin-top:4px">'+
-                      '<span><strong>'+(i+1)+'.</strong> '+esc(step)+'</span>'+
+                      '<span style="flex:1"><strong>'+(i+1)+'.</strong> '+esc(step)+'<span class="assistStepBadge" data-step-badge="'+esc(i)+'">待機</span></span>'+
                     '</label>'+
-                    '<textarea class="ticketAssistStepNote" data-step="'+esc(i)+'" rows="2" placeholder="確認結果・実施結果を入力" style="width:100%;margin-top:8px"></textarea>'+
+                    '<textarea class="ticketAssistStepNote" data-step="'+esc(i)+'" rows="2" placeholder="確認結果・実施結果を入力（必要に応じて）" style="width:100%;margin-top:8px"></textarea>'+
                     '<div class="supportQuickActions" style="margin-top:8px">'+
                       '<button class="ghost ticketAssistStepFailed" type="button" data-step="'+esc(i)+'">この手順では解決しなかった</button>'+
                     '</div>'+
                   '</div>'
                 ).join('')+'</div>'+
                 '<div class="supportQuickActions" style="margin-top:10px">'+
+                  '<button id="ticketAssistNextStep" class="primary" type="button">次の未完了手順へ</button>'+
                   '<button id="ticketAssistSaveProgress" class="ghost" type="button">進捗を記録</button>'+
-                  '<button id="ticketAssistCompleteSteps" class="green" type="button">手順完了</button>'+
+                  '<button id="ticketAssistGoReport" class="green" type="button" disabled>作業報告へ進む</button>'+
                   '<button id="ticketAssistReplyCustomer" class="ghost" type="button">顧客へ返信</button>'+
                 '</div>'+
               '</div>'+
@@ -8539,18 +8551,45 @@
           },delay);
         };
         const refreshChecklistPrimaryAction=()=>{
-          if(!['assist','procedure','report'].includes(supportPrimaryStep.target)) return;
           const boxes=[...document.querySelectorAll('.ticketAssistStepCheck')];
           if(!boxes.length) return;
           const done=boxes.filter(x=>x.checked).length;
           const pending=boxes.find(x=>!x.checked);
+          const pendingIndex=pending?Number(pending.dataset.step||0):-1;
           const primary=$('#supportPrimaryNext');
           const topPrimary=$('#supportTopPrimaryAction');
           const labelHost=primary?.closest('.notice')?.querySelector('strong');
           const hintHost=labelHost?.parentElement?.querySelector('.muted');
+          const progressCount=$('#ticketAssistProgressCount');
+          const progressBar=$('#ticketAssistProgressBar');
+          const nextStepBtn=$('#ticketAssistNextStep');
+          const goReportBtn=$('#ticketAssistGoReport');
+
+          if(progressCount) progressCount.textContent=done+' / '+boxes.length+' 完了';
+          if(progressBar) progressBar.style.width=(boxes.length?Math.round(done/boxes.length*100):0)+'%';
+
+          boxes.forEach((box,i)=>{
+            const item=document.querySelector('[data-step-item="'+i+'"]');
+            const badge=document.querySelector('[data-step-badge="'+i+'"]');
+            const isDone=box.checked;
+            const isCurrent=!isDone&&i===pendingIndex;
+            if(item){
+              item.classList.toggle('done',isDone);
+              item.classList.toggle('current',isCurrent);
+              item.classList.toggle('pending',!isDone&&!isCurrent);
+            }
+            if(badge) badge.textContent=isDone?'完了':isCurrent?'現在ここ':'待機';
+          });
+
+          if(nextStepBtn){
+            nextStepBtn.disabled=!pending;
+            nextStepBtn.textContent=pending?'手順 '+(pendingIndex+1)+' を確認':'すべての手順が完了';
+          }
+          if(goReportBtn) goReportBtn.disabled=!!pending;
+
+          if(!['assist','procedure','report'].includes(supportPrimaryStep.target)) return;
           if(pending){
-            const idx=Number(pending.dataset.step||0);
-            const stepText=assistSteps[idx]||'次の対応手順';
+            const stepText=assistSteps[pendingIndex]||'次の対応手順';
             if(primary){
               primary.textContent='次の手順を実施';
               primary.className='primary';
@@ -8570,7 +8609,7 @@
               topPrimary.textContent='作業報告へ進む';
               topPrimary.className='green';
             }
-            if(labelHost) labelHost.textContent='今やること：③ 作業報告';
+            if(labelHost) labelHost.textContent='今やること：④ 作業報告';
             if(hintHost) hintHost.textContent='対応手順はすべて完了しています。結果を記録して案件を完了します。';
           }
         };
@@ -8578,6 +8617,17 @@
           el.addEventListener('change',()=>{
             scheduleAssistProgressSave(0);
             refreshChecklistPrimaryAction();
+            if(el.checked){
+              const next=[...document.querySelectorAll('.ticketAssistStepCheck')].find(x=>!x.checked);
+              if(next){
+                setTimeout(()=>{
+                  const idx=Number(next.dataset.step||0);
+                  const item=document.querySelector('[data-step-item="'+idx+'"]');
+                  (item||next).scrollIntoView({behavior:'smooth',block:'center'});
+                  document.querySelector('.ticketAssistStepNote[data-step="'+idx+'"]')?.focus({preventScroll:true});
+                },180);
+              }
+            }
           });
         });
         refreshChecklistPrimaryAction();
@@ -8647,28 +8697,34 @@
           }
         };
 
-        const assistCompleteSteps=$('#ticketAssistCompleteSteps');
-        if(assistCompleteSteps) assistCompleteSteps.onclick=async()=>{
-          assistCompleteSteps.disabled=true;
+        const assistNextStep=$('#ticketAssistNextStep');
+        if(assistNextStep) assistNextStep.onclick=()=>{
+          const pending=[...document.querySelectorAll('.ticketAssistStepCheck')].find(x=>!x.checked);
+          if(!pending) return;
+          const idx=Number(pending.dataset.step||0);
+          const item=document.querySelector('[data-step-item="'+idx+'"]');
+          (item||pending).scrollIntoView({behavior:'smooth',block:'center'});
+          setTimeout(()=>document.querySelector('.ticketAssistStepNote[data-step="'+idx+'"]')?.focus(),220);
+        };
+
+        const assistGoReport=$('#ticketAssistGoReport');
+        if(assistGoReport) assistGoReport.onclick=async()=>{
+          const pending=[...document.querySelectorAll('.ticketAssistStepCheck')].find(x=>!x.checked);
+          if(pending){
+            const idx=Number(pending.dataset.step||0);
+            document.querySelector('[data-step-item="'+idx+'"]')?.scrollIntoView({behavior:'smooth',block:'center'});
+            toast('未完了の手順があります');
+            return;
+          }
+          assistGoReport.disabled=true;
           try{
-            const boxes=[...document.querySelectorAll('.ticketAssistStepCheck')];
-            const before=readAssistStepState();
-            boxes.forEach(el=>el.checked=true);
-            const completedState=assistSteps.map((step,i)=>({step,done:true,note:String(before[i]?.note||'').trim()}));
-            const lines=assistSteps.map((step,i)=>
-              '☑ '+(i+1)+'. '+step+(completedState[i]?.note?'\n   結果: '+completedState[i].note:'')
-            ).join('\n');
             await persistAssistStepState();
-            await rpc('post_ticket_message',{
-              p_ticket_id:t.id,
-              p_visibility:'support',
-              p_body:'【対応手順 完了】\n'+lines
-            });
-            toast('すべての手順を完了として記録しました');
+            $('#supportReportWorkspace')?.scrollIntoView({behavior:'smooth',block:'center'});
+            setTimeout(()=>$('#ticketAssistSolved')?.click(),220);
           }catch(err){
             toast(err.message||String(err));
           }finally{
-            assistCompleteSteps.disabled=false;
+            assistGoReport.disabled=false;
           }
         };
 
