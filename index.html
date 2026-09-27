@@ -13822,13 +13822,34 @@
               ' / セッション: '+esc(a.session_count||0)+
               ' / 最終ログイン: '+esc(dateText(a.last_sign_in_at))+
             '</div>'+
-            (a.is_current_user?'<p class="muted">自分自身の権限変更・利用停止・MFAリセットはできません。</p>':'')+
+            (a.is_current_user?'<p class="muted">自分自身の権限変更・利用停止・アカウント削除はできません。</p>':'')+
             '<div class="row">'+
               '<button class="primary" type="submit">変更を保存</button>'+
               (!a.is_current_user && Number(a.mfa_count||0)>0?'<button id="accountMfaResetBtn" class="orange" type="button">MFAをリセット</button>':'')+
             '</div>'+
           '</form>'+
           '<div id="accountEditMsg" class="notice hidden"></div>'+
+          '<hr style="margin:22px 0;border:0;border-top:1px solid var(--line)">'+
+          '<h3>ログイン情報</h3>'+
+          '<form id="accountEmailForm">'+
+            '<div class="field"><label>メールアドレス</label><input id="accountEmail" type="email" value="'+esc(a.email||'')+'" '+(a.is_current_user?'disabled':'')+' required></div>'+
+            (!a.is_current_user?'<button class="ghost" type="submit">メールアドレスを変更</button>':'')+
+          '</form>'+
+          (!a.is_current_user?(
+            '<form id="accountPasswordReissueForm" style="margin-top:18px">'+
+              '<div class="row">'+
+                '<div class="field" style="flex:1;min-width:220px"><label>新しい初期パスワード</label><input id="accountNewPassword" type="password" autocomplete="new-password" minlength="12" required></div>'+
+                '<div class="field" style="flex:1;min-width:220px"><label>確認</label><input id="accountNewPasswordConfirm" type="password" autocomplete="new-password" minlength="12" required></div>'+
+              '</div>'+
+              '<p class="muted">再発行後、本人は次回ログイン時に自分のパスワードへ変更する必要があります。</p>'+
+              '<button class="orange" type="submit">初期パスワードを再発行</button>'+
+            '</form>'+
+            '<div style="margin-top:22px;padding-top:18px;border-top:1px solid var(--line)">'+
+              '<h3>アカウント削除</h3>'+
+              '<p class="muted">ログインできなくなります。案件・見積・監査履歴などの業務データは残ります。</p>'+
+              '<button id="accountDeleteBtn" class="danger" type="button">アカウントを削除</button>'+
+            '</div>'
+          ):'')+
         '</section>';
 
       $('#accountEditClose').onclick=()=>{$('#accountEditHost').innerHTML='';};
@@ -13865,10 +13886,11 @@
       const resetBtn=$('#accountMfaResetBtn');
       if(resetBtn){
         resetBtn.onclick=async()=>{
+          if(!confirm('MFAをリセットしますか？対象ユーザーは次回ログイン時にAuthenticatorの再登録が必要です。')) return;
           resetBtn.disabled=true;
           try{
             const {data,error}=await supabase.functions.invoke('admin-user',{
-              body:{action:'reset_mfa',userId:a.user_id}
+              body:{action:'reset_mfa',userId:a.user_id,confirm:true}
             });
             if(error) throw error;
             if(data?.error) throw new Error(data.message||data.error);
@@ -13879,6 +13901,83 @@
             notice('#accountEditMsg',err.message||String(err));
           }finally{
             resetBtn.disabled=false;
+          }
+        };
+      }
+
+      const emailForm=$('#accountEmailForm');
+      if(emailForm && !a.is_current_user){
+        emailForm.onsubmit=async e=>{
+          e.preventDefault();
+          const btn=e.submitter;if(btn)btn.disabled=true;
+          try{
+            const email=$('#accountEmail').value.trim();
+            const {data,error}=await supabase.functions.invoke('admin-user',{
+              body:{action:'change_email',userId:a.user_id,email}
+            });
+            if(error) throw error;
+            if(data?.error) throw new Error(data.message||data.error);
+            notice('#accountEditMsg','メールアドレスを変更しました。',true);
+            toast('メールアドレスを変更しました');
+            setTimeout(()=>go('accounts'),600);
+          }catch(err){
+            const msg=String(err.message||err);
+            notice('#accountEditMsg',msg.includes('EMAIL_CHANGE_FAILED')?'メールアドレスを変更できませんでした。重複や形式を確認してください。':msg);
+          }finally{if(btn)btn.disabled=false;}
+        };
+      }
+
+      const passwordForm=$('#accountPasswordReissueForm');
+      if(passwordForm){
+        passwordForm.onsubmit=async e=>{
+          e.preventDefault();
+          const btn=e.submitter;if(btn)btn.disabled=true;
+          try{
+            const password=$('#accountNewPassword').value;
+            const confirmPassword=$('#accountNewPasswordConfirm').value;
+            if(password!==confirmPassword) throw new Error('パスワードが一致しません。');
+            const policyError=passwordPolicyMessage(password);
+            if(policyError) throw new Error(policyError);
+            const {data,error}=await supabase.functions.invoke('admin-user',{
+              body:{action:'reset_password',userId:a.user_id,password}
+            });
+            if(error) throw error;
+            if(data?.error) throw new Error(data.message||data.error);
+            $('#accountNewPassword').value='';
+            $('#accountNewPasswordConfirm').value='';
+            notice('#accountEditMsg','初期パスワードを再発行しました。本人は次回ログイン時にパスワード変更が必要です。',true);
+            toast('初期パスワードを再発行しました');
+          }catch(err){
+            notice('#accountEditMsg',err.message||String(err));
+          }finally{if(btn)btn.disabled=false;}
+        };
+      }
+
+      const deleteBtn=$('#accountDeleteBtn');
+      if(deleteBtn){
+        deleteBtn.onclick=async()=>{
+          const typed=prompt('アカウントを削除します。確認のため DELETE と入力してください。');
+          if(typed!=='DELETE') return;
+          deleteBtn.disabled=true;
+          try{
+            const {data,error}=await supabase.functions.invoke('admin-user',{
+              body:{action:'delete',userId:a.user_id,confirm:true}
+            });
+            if(error) throw error;
+            if(data?.error) throw new Error(data.message||data.error);
+            toast('アカウントを削除しました');
+            $('#accountEditHost').innerHTML='';
+            setTimeout(()=>go('accounts'),500);
+          }catch(err){
+            const msg=String(err.message||err);
+            const ja=msg.includes('LAST_ADMIN_DELETE_BLOCKED')
+              ? '最後の有効な自社管理者は削除できません。'
+              : msg.includes('SELF_DELETE_BLOCKED')
+                ? '自分自身のアカウントは削除できません。'
+                : msg;
+            notice('#accountEditMsg',ja);
+          }finally{
+            deleteBtn.disabled=false;
           }
         };
       }
@@ -14152,7 +14251,10 @@
       'user.disabled':'ユーザー停止',
       'user.enabled':'ユーザー再開',
       'user.role_changed':'権限変更',
-      'user.mfa_reset':'MFAリセット'
+      'user.mfa_reset':'MFAリセット',
+      'user.password_reissued':'初期パスワード再発行',
+      'user.email_changed':'メール変更',
+      'user.deleted':'ユーザー削除'
     }[a]||a||'—');
 
     const roleText=r=>({
