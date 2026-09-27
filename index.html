@@ -791,6 +791,7 @@
   let pendingCallConnectIntake=null;
   let supportQueueView='immediate';
   let internalSupportView='intake';
+  let internalSupportAttentionKind='all';
 
   function supportDraftKey(ticketId,kind){
     return 'qfc_support_draft:'+String(ticketId||'')+':'+String(kind||'general');
@@ -2419,9 +2420,9 @@
           '<div class="supportTodayGrid">'+
             '<button class="supportTodayTile danger internalJumpHandoffs" type="button"><span>新着引継ぎ</span><strong>'+esc(unreadHandoffs?.count||0)+'</strong><em>未確認の引継ぎ</em></button>'+
             '<button class="supportTodayTile warn internalJumpHandoffs" type="button"><span>未処理引継ぎ</span><strong>'+esc((q||[]).length)+'</strong><em>受理・判断が必要</em></button>'+
-            '<button class="supportTodayTile danger internalJumpSupport" type="button"><span>緊急案件</span><strong>'+esc(internalUrgent.length)+'</strong><em>優先して確認</em></button>'+
-            '<button class="supportTodayTile danger internalJumpSupport" type="button"><span>期限超過</span><strong>'+esc(internalOverdue.length)+'</strong><em>すぐに確認</em></button>'+
-            '<button class="supportTodayTile warn internalJumpSupport" type="button"><span>本日期限</span><strong>'+esc(internalDueToday.length)+'</strong><em>本日中に判断</em></button>'+
+            '<button class="supportTodayTile danger internalJumpSupport" data-focus="urgent" type="button"><span>緊急案件</span><strong>'+esc(internalUrgent.length)+'</strong><em>優先して確認</em></button>'+
+            '<button class="supportTodayTile danger internalJumpSupport" data-focus="overdue" type="button"><span>期限超過</span><strong>'+esc(internalOverdue.length)+'</strong><em>すぐに確認</em></button>'+
+            '<button class="supportTodayTile warn internalJumpSupport" data-focus="due_today" type="button"><span>本日期限</span><strong>'+esc(internalDueToday.length)+'</strong><em>本日中に判断</em></button>'+
           '</div>'+
           '<div class="internalActionStrip">'+
             '<button class="internalActionBtn dangerAction internalQuickAction" data-action="incident" type="button"><strong>＋ 障害を登録</strong><small>自社で受けた障害をすぐ登録</small></button>'+
@@ -2547,7 +2548,11 @@
         if(action==='customers') return go('customers');
       });
       document.querySelectorAll('.internalJumpHandoffs').forEach(btn=>btn.onclick=()=>go('handoffs'));
-      document.querySelectorAll('.internalJumpSupport').forEach(btn=>btn.onclick=()=>go('support'));
+      document.querySelectorAll('.internalJumpSupport').forEach(btn=>btn.onclick=()=>{
+        internalSupportView='attention';
+        internalSupportAttentionKind=btn.dataset.focus||'all';
+        go('support');
+      });
       document.querySelectorAll('.internalFocusOpen').forEach(btn=>btn.onclick=async()=>{
         btn.disabled=true;
         try{
@@ -10362,6 +10367,7 @@
       intake:{title:'自社受付',desc:'登録後、まだサポート会社の本対応が始まっていない案件です。'},
       supporting:{title:'サポート会社対応中',desc:'サポート担当が対応中、TeamViewer対応中、または確認後の再対応中の案件です。'},
       handoff:{title:'自社引継ぎ',desc:'サポート会社から自社へ判断・調査・現地対応などで引き継がれた案件です。'},
+      attention:{title:'要確認',desc:'緊急・期限超過・本日期限・高優先度・自社担当未設定の案件だけを確認します。'},
       closed:{title:'完了',desc:'作業報告まで完了した案件です。'}
     };
     const internalCaseViewOf=t=>{
@@ -10376,10 +10382,20 @@
       ) return 'supporting';
       return 'intake';
     };
+    const internalAttentionMatch=(t,kind='all')=>{
+      if(t.status==='closed'||t.support_stage==='completed') return false;
+      if(kind==='urgent') return t.priority==='urgent';
+      if(kind==='overdue') return t.deadline_state==='overdue';
+      if(kind==='due_today') return t.deadline_state==='due_today';
+      if(kind==='high') return t.priority==='high';
+      if(kind==='unassigned') return !t.assigned_internal_user_id;
+      return t.deadline_state==='overdue'||t.deadline_state==='due_today'||t.priority==='urgent'||t.priority==='high'||!t.assigned_internal_user_id;
+    };
     const internalViewCounts={
       intake:data.filter(t=>internalCaseViewOf(t)==='intake').length,
       supporting:data.filter(t=>internalCaseViewOf(t)==='supporting').length,
       handoff:data.filter(t=>internalCaseViewOf(t)==='handoff').length,
+      attention:data.filter(t=>internalAttentionMatch(t,'all')).length,
       closed:data.filter(t=>internalCaseViewOf(t)==='closed').length
     };
 
@@ -10426,16 +10442,18 @@
       (internal
         ? '<section class="card section">'+
             '<div class="row between"><div><h2>案件状況</h2><p class="sectionDesc">案件を4つの状態に分けています。自社で見るべき案件だけを切り替えて確認できます。</p></div><span class="pill">自動分類</span></div>'+
-            '<div class="supportTodayGrid" style="margin-top:12px;grid-template-columns:repeat(4,minmax(0,1fr))">'+
+            '<div class="supportTodayGrid" style="margin-top:12px;grid-template-columns:repeat(5,minmax(0,1fr))">'+
               '<button class="supportTodayTile internalCaseJump" type="button" data-view="intake"><span>自社受付</span><strong>'+esc(internalViewCounts.intake)+'</strong><em>受付・対応開始待ち</em></button>'+
               '<button class="supportTodayTile internalCaseJump" type="button" data-view="supporting"><span>サポート会社対応中</span><strong>'+esc(internalViewCounts.supporting)+'</strong><em>対応状況を確認</em></button>'+
               '<button class="supportTodayTile danger internalCaseJump" type="button" data-view="handoff"><span>自社引継ぎ</span><strong>'+esc(internalViewCounts.handoff)+'</strong><em>自社で判断・対応</em></button>'+
+              '<button class="supportTodayTile warn internalCaseJump" type="button" data-view="attention"><span>要確認</span><strong>'+esc(internalViewCounts.attention)+'</strong><em>緊急・期限・担当</em></button>'+
               '<button class="supportTodayTile internalCaseJump" type="button" data-view="closed"><span>完了</span><strong>'+esc(internalViewCounts.closed)+'</strong><em>作業報告・履歴</em></button>'+
             '</div>'+
             '<div id="internalSupportViewTabs" class="supportCaseFilterBar" data-active="'+esc(internalSupportView||"intake")+'">'+
               '<button class="supportCaseFilterBtn '+(internalSupportView==="intake"?"active ":"")+'internalSupportViewTab" type="button" data-view="intake">自社受付 '+esc(internalViewCounts.intake)+'</button>'+
               '<button class="supportCaseFilterBtn '+(internalSupportView==="supporting"?"active ":"")+'internalSupportViewTab" type="button" data-view="supporting">サポート会社対応中 '+esc(internalViewCounts.supporting)+'</button>'+
               '<button class="supportCaseFilterBtn '+(internalSupportView==="handoff"?"active ":"")+'internalSupportViewTab" type="button" data-view="handoff">自社引継ぎ '+esc(internalViewCounts.handoff)+'</button>'+
+              '<button class="supportCaseFilterBtn '+(internalSupportView==="attention"?"active ":"")+'internalSupportViewTab" type="button" data-view="attention">要確認 '+esc(internalViewCounts.attention)+'</button>'+
               '<button class="supportCaseFilterBtn '+(internalSupportView==="closed"?"active ":"")+'internalSupportViewTab" type="button" data-view="closed">完了 '+esc(internalViewCounts.closed)+'</button>'+
             '</div>'+
           '</section>'+
@@ -10520,7 +10538,11 @@
           : '';
       let filtered=data.filter(t=>{
         if(state.status!=='all'&&t.status!==state.status) return false;
-        if(internal && internalCaseViewOf(t)!==view) return false;
+        if(internal){
+          if(view==='attention'){
+            if(!internalAttentionMatch(t,internalSupportAttentionKind||'all')) return false;
+          }else if(internalCaseViewOf(t)!==view) return false;
+        }
         if(support){
           if(view==='immediate' && !(t.status!=='closed'&&t.support_next_action==='in_progress')) return false;
           if(view==='customer_wait' && !(t.status!=='closed'&&t.support_next_action==='customer_reply_waiting')) return false;
@@ -10810,6 +10832,8 @@
         const bar=$('#internalSupportViewTabs');
         if(!bar) return;
         internalSupportView=view||'intake';
+        if(internalSupportView!=='attention') internalSupportAttentionKind='all';
+        else internalSupportAttentionKind='all';
         bar.dataset.active=internalSupportView;
         bar.querySelectorAll('.internalSupportViewTab').forEach(x=>x.classList.toggle('active',x.dataset.view===internalSupportView));
         const copy=internalViewCopy[internalSupportView]||internalViewCopy.intake;
