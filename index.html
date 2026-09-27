@@ -62,6 +62,11 @@
     .ticketAssistStepItem.pending{opacity:.78}
     .assistStepBadge{display:inline-flex;align-items:center;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:900;background:#e2e8f0;color:#475569;margin-left:6px}
     .ticketAssistStepItem.current .assistStepBadge{background:#dbeafe;color:#1d4ed8}.ticketAssistStepItem.done .assistStepBadge{background:#dcfce7;color:#166534}
+    .workReportPreview{border:2px solid #bbf7d0;background:#f7fff9;border-radius:14px;padding:14px;margin-top:12px}
+    .workReportPreview h4{margin:0 0 8px}.workReportPreviewList{display:flex;flex-direction:column;gap:7px}
+    .workReportPreviewItem{padding:9px 10px;border:1px solid #dcfce7;border-radius:10px;background:#fff;font-size:13px;line-height:1.55}
+    .workReportEditDetails{margin-top:12px;border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:#fafafa}
+    .workReportEditDetails summary{cursor:pointer;font-weight:800}
     @media(max-width:760px){.supportLinearProgress{grid-template-columns:repeat(2,minmax(0,1fr))}.supportLinearBody{margin-left:0}.supportLinearCard{padding:13px}}
     .attachmentGallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-top:10px}
     .attachmentCard{border:1px solid var(--line);border-radius:12px;padding:10px;background:#fff;overflow:hidden}
@@ -8120,6 +8125,22 @@
 
       const knowledgeSource=(knowledgeArticles||[]).filter(x=>x.is_active!==false);
       const similarTicketSource=(allSupportTickets||[]).filter(x=>String(x.id)!==String(t.id));
+      let activeAssistSteps=sharedProcedureSteps.map(x=>String(x?.step||'').trim()).filter(Boolean);
+      const readAssistStepState=()=>{
+        const boxes=[...document.querySelectorAll('.ticketAssistStepCheck')];
+        if(boxes.length && activeAssistSteps.length){
+          return activeAssistSteps.map((step,i)=>({
+            step,
+            done:!!document.querySelector('.ticketAssistStepCheck[data-step="'+i+'"]')?.checked,
+            note:String(document.querySelector('.ticketAssistStepNote[data-step="'+i+'"]')?.value||'').trim()
+          }));
+        }
+        return sharedProcedureSteps.map(x=>({
+          step:String(x?.step||'').trim(),
+          done:!!x?.done,
+          note:String(x?.note||'').trim()
+        })).filter(x=>x.step);
+      };
       const renderKnowledgeCandidates=()=>{
         const normalizeSupportSearchText=value=>String(value||'')
           .normalize('NFKC')
@@ -8298,6 +8319,7 @@
         ];
         if(!assistSteps.length) assistSteps=fallbackCheckSteps;
         assistSteps=assistSteps.slice(0,6);
+        activeAssistSteps=[...assistSteps];
 
         const weakEvidence=evidenceCount===0||bestEvidenceScore<8||!explicitProcedure;
         const escalationHtml=weakEvidence
@@ -8494,11 +8516,6 @@
           }
         };
 
-        const readAssistStepState=()=>assistSteps.map((step,i)=>({
-          step,
-          done:!!document.querySelector('.ticketAssistStepCheck[data-step="'+i+'"]')?.checked,
-          note:String(document.querySelector('.ticketAssistStepNote[data-step="'+i+'"]')?.value||'').trim()
-        }));
         const sharedProgress=t.request_details?.support_procedure_progress||{};
         const sharedSteps=Array.isArray(sharedProgress?.steps)?sharedProgress.steps:[];
         const sharedByStep=new Map(
@@ -9146,35 +9163,51 @@
     if(!customer){
       const closeBtn=$('#ticketCloseBtn');
       if(closeBtn) closeBtn.onclick=()=>{
+        const procedureState=readAssistStepState();
+        const pendingProcedure=procedureState.filter(x=>!x.done);
+        if(support && procedureState.length && pendingProcedure.length){
+          const firstPendingIndex=procedureState.findIndex(x=>!x.done);
+          const target=document.querySelector('[data-step-item="'+firstPendingIndex+'"]')||
+            document.querySelector('.ticketAssistStepCheck[data-step="'+firstPendingIndex+'"]');
+          target?.scrollIntoView({behavior:'smooth',block:'center'});
+          setTimeout(()=>document.querySelector('.ticketAssistStepNote[data-step="'+firstPendingIndex+'"]')?.focus(),220);
+          toast('未完了の対応手順があります。手順を完了してから作業報告へ進んでください。');
+          return;
+        }
         mountAppModal(
           '<div class="appModalHead">'+
-            '<div><h2>作業報告</h2><p>対応内容を記録してから案件を完了します。</p></div>'+
+            '<div><h2>作業報告・最終確認</h2><p>実施した対応を自動でまとめています。結果を確認して完了してください。</p></div>'+
             '<button id="workReportClose" class="ghost" type="button">×</button>'+
           '</div>'+
           '<div class="appModalBody">'+
             '<div class="notice"><strong>'+esc(t.ticket_number||'—')+' / '+esc(cust?.name||'顧客未登録')+'</strong><br>'+esc(t.subject||'')+'</div>'+
             '<div id="workReportAutoSummary" class="notice ok" style="margin-top:10px"></div>'+
-            '<div class="supportQuickActions" style="margin:8px 0 4px">'+
-              '<button id="workReportRegenerate" class="ghost" type="button">対応手順から再作成</button>'+
-            '</div>'+
-            '<div class="field"><label>結果</label><select id="workReportResult">'+
+            '<div id="workReportFinalPreview" class="workReportPreview"></div>'+
+            '<div class="field" style="margin-top:12px"><label>最終結果 <span class="muted">必須</span></label><select id="workReportResult">'+
+              '<option value="">結果を選択してください</option>'+
               '<option value="解決">解決</option>'+
               '<option value="暫定対応">暫定対応</option>'+
               '<option value="経過観察">経過観察</option>'+
             '</select></div>'+
-            '<div class="field"><label>対応内容・実施した作業 <span class="muted">必須</span></label><textarea id="workReportAction" rows="5" placeholder="完了した対応手順から自動作成します。必要な内容だけ追記してください。"></textarea></div>'+
-            '<div class="field"><label>原因・確認できたこと</label><textarea id="workReportCause" rows="3" placeholder="対応中に確認できた原因・状態を記録"></textarea></div>'+
             '<div id="workReportRemaining" class="notice hidden" style="margin-top:8px"></div>'+
-            '<div class="field"><label>顧客への案内・注意事項</label><textarea id="workReportCustomer" rows="3" placeholder="必要な場合のみ入力"></textarea></div>'+
-            '<label class="row" style="margin-top:8px"><input id="workReportKnowledge" type="checkbox"> この内容をナレッジとして残す</label>'+
-            '<div class="muted" style="margin-top:4px">'+
-              (internal?'チェックするとサポート会社向けナレッジとして保存します。':'チェックすると自社側へ「ナレッジ候補」として共有します。')+
-            '</div>'+
+            '<details id="workReportEditDetails" class="workReportEditDetails">'+
+              '<summary>必要な場合だけ内容を修正・追記</summary>'+
+              '<div class="supportQuickActions" style="margin:10px 0 4px">'+
+                '<button id="workReportRegenerate" class="ghost" type="button">対応記録から再作成</button>'+
+              '</div>'+
+              '<div class="field"><label>対応内容・実施した作業 <span class="muted">必須</span></label><textarea id="workReportAction" rows="6" placeholder="対応手順・確認結果・TeamViewer結果から自動作成します。"></textarea></div>'+
+              '<div class="field"><label>原因・確認できたこと</label><textarea id="workReportCause" rows="4" placeholder="対応中に確認できた原因・状態"></textarea></div>'+
+              '<div class="field"><label>顧客への案内・注意事項</label><textarea id="workReportCustomer" rows="3" placeholder="必要な場合のみ入力"></textarea></div>'+
+              '<label class="row" style="margin-top:8px"><input id="workReportKnowledge" type="checkbox"> この内容をナレッジとして残す</label>'+
+              '<div class="muted" style="margin-top:4px">'+
+                (internal?'チェックするとサポート会社向けナレッジとして保存します。':'チェックすると自社側へ「ナレッジ候補」として共有します。')+
+              '</div>'+
+            '</details>'+
             '<div id="workReportMsg" class="notice hidden"></div>'+
           '</div>'+
           '<div class="appModalFoot">'+
             '<button id="workReportCancel" class="ghost" type="button">キャンセル</button>'+
-            '<button id="workReportSubmit" class="green" type="button">作業報告を保存して完了</button>'+
+            '<button id="workReportSubmit" class="green" type="button">内容を確認して完了</button>'+
           '</div>'
         );
         $('#workReportClose').onclick=closeAppModal;
@@ -9182,7 +9215,6 @@
         const buildWorkReportFromSteps=(force=false)=>{
           try{
             const normalized=readAssistStepState();
-            const hasSavedState=normalized.some(x=>x.done||x.note);
             const completed=normalized.filter(x=>x.done);
             const pending=normalized.filter(x=>!x.done);
             const withNotes=normalized.filter(x=>x.note);
@@ -9199,35 +9231,54 @@
             const causeText=withNotes.map(x=>x.step+'：'+x.note).join('\n');
 
             if(force || !$('#workReportAction').value.trim()){
-              if(actionText) $('#workReportAction').value=actionText;
+              $('#workReportAction').value=actionText;
             }
             if(force || !$('#workReportCause').value.trim()){
-              if(causeText) $('#workReportCause').value=causeText;
+              $('#workReportCause').value=causeText;
             }
-            if(tvOutcome==='resolved'){
-              $('#workReportResult').value='解決';
-            }else if(tvOutcome==='continue'){
-              $('#workReportResult').value='経過観察';
-            }else if(hasSavedState){
-              $('#workReportResult').value=
-                completed.length===normalized.length?'解決':
-                completed.length>0?'暫定対応':'経過観察';
+
+            const resultEl=$('#workReportResult');
+            if(resultEl && !resultEl.value){
+              if(tvOutcome==='resolved') resultEl.value='解決';
+              else if(tvOutcome==='continue') resultEl.value='経過観察';
+              else if(tvOutcome==='escalate') resultEl.value='暫定対応';
             }
 
             const summary=$('#workReportAutoSummary');
             if(summary){
               const summaryParts=[
-                '手順 完了 '+completed.length+' / '+normalized.length,
-                '確認メモ '+withNotes.length+'件',
-                tvNote?'TeamViewer結果 反映済み':''
-              ].filter(Boolean);
-              summary.innerHTML='<strong>案件の対応内容から自動反映</strong><br>'+
+                '対応手順 '+completed.length+' / '+normalized.length+' 完了',
+                withNotes.length?'確認結果 '+withNotes.length+'件':'確認結果メモなし',
+                latestTeamViewerSession?(tvNote?'TeamViewer結果反映済み':'TeamViewer実施記録あり'):'TeamViewer未使用'
+              ];
+              summary.innerHTML='<strong>対応記録を自動集約しました</strong><br>'+
                 '<span class="muted">'+summaryParts.join(' ・ ')+
                 (tvOutcomeLabel?' ・ 遠隔結果 '+esc(tvOutcomeLabel):'')+'</span>';
             }
+
+            const preview=$('#workReportFinalPreview');
+            if(preview){
+              const stepPreview=completed.length
+                ? completed.map((x,i)=>
+                    '<div class="workReportPreviewItem"><strong>'+(i+1)+'. '+esc(x.step)+'</strong>'+
+                      (x.note?'<br><span class="muted">確認結果: '+esc(x.note)+'</span>':'')+
+                    '</div>'
+                  ).join('')
+                : '<div class="workReportPreviewItem">完了した対応手順の記録はありません。</div>';
+              const remotePreview=latestTeamViewerSession
+                ? '<div class="workReportPreviewItem"><strong>TeamViewer</strong><br>'+
+                    '<span class="muted">'+
+                      (tvOutcomeLabel?'結果: '+esc(tvOutcomeLabel):'結果未記録')+
+                      (tvNote?' / '+esc(tvNote):'')+
+                      (teamviewerDurationText&&teamviewerDurationText!=='—'?' / 約'+esc(teamviewerDurationText):'')+
+                    '</span></div>'
+                : '';
+              preview.innerHTML='<h4>完了報告に入る内容</h4><div class="workReportPreviewList">'+stepPreview+remotePreview+'</div>';
+            }
+
             const remaining=$('#workReportRemaining');
             if(remaining){
-              if(pending.length && hasSavedState){
+              if(pending.length){
                 remaining.classList.remove('hidden');
                 remaining.innerHTML='<strong>未完了・残課題 '+pending.length+'件</strong><br>'+
                   pending.map((x,i)=>(i+1)+'. '+esc(x.step)).join('<br>');
@@ -9236,7 +9287,9 @@
                 remaining.innerHTML='';
               }
             }
-          }catch(_){}
+          }catch(err){
+            console.warn('[work report auto summary failed]',err);
+          }
         };
         buildWorkReportFromSteps(false);
         bindSupportDraftInputs(t.id,'work_report',{
@@ -9262,7 +9315,8 @@
           const result=$('#workReportResult').value;
           const customerNote=$('#workReportCustomer').value.trim();
           const makeKnowledge=$('#workReportKnowledge').checked;
-          if(!action) return notice('#workReportMsg','対応内容・実施した作業を入力してください。');
+          if(!result) return notice('#workReportMsg','最終結果を選択してください。');
+          if(!action) return notice('#workReportMsg','対応内容・実施した作業を確認してください。必要な場合は「内容を修正・追記」を開いて入力してください。');
           const activeHandoff=(handoffs||[]).find(h=>['pending','accepted'].includes(h.state));
           if(activeHandoff){
             return notice('#workReportMsg','自社引継ぎが進行中のため、先に引継ぎを完了してください。作業報告は下書きのまま保持されます。');
