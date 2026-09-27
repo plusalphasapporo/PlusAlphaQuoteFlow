@@ -7822,34 +7822,38 @@
       };
 
       if(primaryNext) primaryNext.onclick=async()=>{
+        const target=supportPrimaryStep.target;
         const checklist=[...document.querySelectorAll('.ticketAssistStepCheck')];
         const firstPending=checklist.find(el=>!el.checked);
-        if(checklist.length && !firstPending){
+
+        if(target==='content'){
+          await startSupportWork(primaryNext);
+          return;
+        }
+        if(target==='remote'){
+          jump('#supportRemoteWorkspace');
+          setTimeout(()=>($('#ticketRemoteResultNote')||$('#ticketRemoteAction')||$('#ticketTeamViewerCreate'))?.focus(),250);
+          return;
+        }
+        if(target==='history'){
+          jump('#ticketMessageList');
+          return;
+        }
+        if(target==='report' || (['assist','procedure'].includes(target) && checklist.length && !firstPending)){
           $('#ticketCloseBtn')?.click();
           return;
         }
-        const target=supportPrimaryStep.target;
-        if(target==='content'){
-          await startSupportWork(primaryNext);
-        }else if(target==='remote'){
-          jump('#supportRemoteWorkspace');
-          setTimeout(()=>($('#ticketRemoteResultNote')||$('#ticketRemoteAction')||$('#ticketTeamViewerCreate'))?.focus(),250);
-        }else if(target==='report'){
-          $('#ticketCloseBtn')?.click();
-        }else if(target==='procedure'){
+        if(firstPending && ['assist','procedure'].includes(target)){
           jump('#supportAssistWorkspace');
           setTimeout(()=>{
-            const step=document.querySelector('.ticketAssistStepCheck[data-step="'+supportPrimaryStep.stepIndex+'"]')||firstPending;
-            const note=step?document.querySelector('.ticketAssistStepNote[data-step="'+step.dataset.step+'"]'):null;
-            (note||step||$('#ticketKnowledgeSearch'))?.focus();
-            (step||note)?.scrollIntoView({behavior:'smooth',block:'center'});
+            const note=document.querySelector('.ticketAssistStepNote[data-step="'+firstPending.dataset.step+'"]');
+            (note||firstPending)?.focus();
+            firstPending.scrollIntoView({behavior:'smooth',block:'center'});
           },250);
-        }else if(target==='history'){
-          jump('#ticketMessageList');
-        }else{
-          jump('#supportAssistWorkspace');
-          setTimeout(()=>$('#ticketKnowledgeSearch')?.focus(),250);
+          return;
         }
+        jump('#supportAssistWorkspace');
+        setTimeout(()=>$('#ticketKnowledgeSearch')?.focus(),250);
       };
       if(actionAi) actionAi.onclick=()=>{
         jump('#supportAssistWorkspace');
@@ -8446,6 +8450,7 @@
           },delay);
         };
         const refreshChecklistPrimaryAction=()=>{
+          if(!['assist','procedure','report'].includes(supportPrimaryStep.target)) return;
           const boxes=[...document.querySelectorAll('.ticketAssistStepCheck')];
           if(!boxes.length) return;
           const done=boxes.filter(x=>x.checked).length;
