@@ -175,6 +175,10 @@
     .internalTicketTopbar{position:sticky;top:82px;z-index:13;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:center;background:#16355f;color:#fff;border:1px solid #315b8e;border-radius:16px;padding:15px 16px;margin:12px 0 12px;box-shadow:0 12px 30px rgba(22,53,95,.15)}
     .internalTicketTopbar .summary{min-width:0}.internalTicketTopbar .summary>strong{display:block;font-size:17px}.internalTicketTopbar .summary>small{display:block;color:#cfe0f5;margin-top:3px}
     .internalTicketTopbar .supportTopCommand{background:rgba(255,255,255,.09)}.internalTicketTopbar .supportQuickActions{margin:0}.internalTicketTopbar .supportQuickActions button{background:#fff}
+    .internalTicketTopbar.danger{border-color:#ef4444;box-shadow:inset 5px 0 0 #ef4444,0 12px 30px rgba(22,53,95,.15)}
+    .internalTicketTopbar.warn{border-color:#f59e0b;box-shadow:inset 5px 0 0 #f59e0b,0 12px 30px rgba(22,53,95,.15)}
+    .internalTicketTopbar .supportTopMeta .pill.dangerFlag{background:#fee2e2;color:#991b1b;border-color:#fecaca}
+    .internalTicketTopbar .supportTopMeta .pill.warnFlag{background:#ffedd5;color:#9a3412;border-color:#fdba74}
     .internalTicketOverviewGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:10px 0 14px}
     .internalTicketOverviewItem{padding:11px 12px;border:1px solid var(--line);border-radius:12px;background:#f8fafc;min-width:0}
     .internalTicketOverviewItem span{display:block;font-size:11px;color:var(--muted);font-weight:800}.internalTicketOverviewItem strong{display:block;margin-top:4px;font-size:13px;line-height:1.5;overflow-wrap:anywhere}
@@ -7957,6 +7961,17 @@
       : '';
 
     const internalStage=supportStage||((t.status==='closed')?'completed':'unhandled');
+    const internalPriorityLabel={low:'低',normal:'通常',high:'高',urgent:'緊急'}[t.priority]||String(t.priority||'通常');
+    const internalRiskFlags=[];
+    if(t.status!=='closed'){
+      if(deadlineState?.resolution_overdue) internalRiskFlags.push({key:'overdue',label:'期限超過',tone:'dangerFlag'});
+      else if(deadlineState?.deadline_state==='due_today') internalRiskFlags.push({key:'due_today',label:'本日期限',tone:'warnFlag'});
+      if(t.priority==='urgent') internalRiskFlags.push({key:'urgent',label:'緊急',tone:'dangerFlag'});
+      else if(t.priority==='high') internalRiskFlags.push({key:'high',label:'高優先度',tone:'warnFlag'});
+      if(!t.assigned_internal_user_id) internalRiskFlags.push({key:'unassigned',label:'自社担当未設定',tone:'warnFlag'});
+    }
+    const internalTopTone=internalRiskFlags.some(x=>x.tone==='dangerFlag')?'danger':(internalRiskFlags.length?'warn':'');
+    const internalRiskBadges=internalRiskFlags.map(x=>'<span class="pill '+esc(x.tone)+'">'+esc(x.label)+'</span>').join('');
     const internalPrimaryStep=(()=>{
       if(t.status==='closed'){
         return {label:'対応完了',hint:'作業報告・対応履歴を確認できます。',button:'作業報告・履歴を見る',target:'history',tone:'ghost'};
@@ -7969,6 +7984,21 @@
       }
       if(internalStage==='internal_handoff_waiting'){
         return {label:'自社引継ぎ内容を確認',hint:'サポート会社から自社へ判断・対応依頼が届いています。',button:'引継ぎ内容を見る',target:'handoff',tone:'orange'};
+      }
+      if(deadlineState?.resolution_overdue){
+        return {label:'期限超過を確認',hint:'対応完了期限を過ぎています。担当・現在状況・期限を確認し、対応方針を決めてください。',button:'期限と対応を確認',target:'deadline',tone:'orange'};
+      }
+      if(t.priority==='urgent'&&!t.assigned_internal_user_id){
+        return {label:'緊急案件の自社担当を設定',hint:'緊急案件ですが自社担当が未設定です。担当者を決めてから対応状況を確認します。',button:'自社担当を設定',target:'manage',tone:'orange'};
+      }
+      if(t.priority==='urgent'){
+        return {label:'緊急案件の状況確認',hint:'緊急案件です。サポート会社の現在状況と直近の連絡を確認してください。',button:'現在状況を確認',target:'status',tone:'orange'};
+      }
+      if(!t.assigned_internal_user_id){
+        return {label:'自社担当を設定',hint:'自社側の担当者が未設定です。担当を決めると案件の責任者が明確になります。',button:'自社担当を設定',target:'manage',tone:'primary'};
+      }
+      if(deadlineState?.deadline_state==='due_today'){
+        return {label:'本日期限の対応確認',hint:'本日が対応期限です。現在状況を確認し、必要なら期限・対応方針を更新してください。',button:'期限と対応を確認',target:'deadline',tone:'orange'};
       }
       if(internalStage==='teamviewer_waiting'){
         return {label:'TeamViewer対応状況を確認',hint:'サポート会社が遠隔対応中、または接続待ちです。必要な補足があれば共有します。',button:'現在状況を見る',target:'status',tone:'primary'};
@@ -7983,16 +8013,18 @@
     })();
 
     const internalTopPanel=internal
-      ? '<div class="internalTicketTopbar">'+
+      ? '<div class="internalTicketTopbar '+esc(internalTopTone)+'">'+
           '<div class="summary">'+
             '<strong>'+esc(cust?.name||'顧客未登録')+' / '+esc(t.subject||'')+'</strong>'+
             '<small>'+esc(t.ticket_number||'—')+' ・ '+esc(supportRequestTypeLabel(t.request_type))+' ・ '+esc(supportStageLabel(internalStage))+' ・ '+esc(supportDeadlineLabel(deadlineState?.deadline_state))+'</small>'+
             '<div class="supportTopCommand"><strong>自社が今すること：'+esc(internalPrimaryStep.label)+'</strong><span>'+esc(internalPrimaryStep.hint)+'</span></div>'+
             '<div class="supportTopMeta">'+
+              internalRiskBadges+
+              '<span class="pill">優先度 '+esc(internalPriorityLabel)+'</span>'+
               '<span class="pill">サポート担当 '+esc(supportAssigneeLabel(assignmentState))+'</span>'+
               '<span class="pill">自社担当 '+esc(t.assigned_internal_user_name||'未設定')+'</span>'+
               '<span class="pill">期限 '+esc(dateTimeText(deadlineState?.resolution_due_at||deadlineState?.first_response_due_at))+'</span>'+
-              (t.priority==='urgent'?'<span class="pill">緊急</span>':t.priority==='high'?'<span class="pill">高優先度</span>':'')+
+              '<span class="pill">次 '+esc(supportNextActionLabel(nextActionState?.support_next_action||((t.status==='closed')?'completed':'in_progress')))+'</span>'+
             '</div>'+
           '</div>'+
           '<div class="supportQuickActions"><button id="internalTicketPrimaryAction" class="'+esc(internalPrimaryStep.tone||'primary')+'" type="button" data-target="'+esc(internalPrimaryStep.target)+'">'+esc(internalPrimaryStep.button)+'</button></div>'+
@@ -8383,6 +8415,14 @@
       if(primary) primary.onclick=()=>{
         const target=primary.dataset.target||'content';
         if(target==='handoff') return internalJump('#internalHandoffWorkspace');
+        if(target==='manage'){
+          internalJump('#ticketProfileForm');
+          return setTimeout(()=>$('#ticketProfileAssigned')?.focus(),220);
+        }
+        if(target==='deadline'){
+          internalJump('#ticketResolutionDue');
+          return setTimeout(()=>$('#ticketResolutionDue')?.focus(),220);
+        }
         if(target==='history'||target==='status') return internalJump('#ticketMessageList');
         return internalJump('#supportTicketCustomerContext');
       };
