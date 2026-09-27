@@ -7954,26 +7954,74 @@
         const topTicketScore=scoredTickets[0]?.score||0;
         const bestEvidenceScore=Math.max(topKnowledgeScore,topTicketScore);
         const evidenceCount=scoredKnowledge.length+scoredTickets.length;
-        const weakEvidence=evidenceCount===0||bestEvidenceScore<8;
+
+        const normalizeAssistStep=text=>String(text||'')
+          .replace(/^[\s・●■□◆◇▶▷→\-–—]+/,'')
+          .replace(/^\(?\d+\)?[\.．、:)）\-\s]+/,'')
+          .replace(/^(手順|STEP|Step|step)\s*\d*[:：\.\-\s]*/,'')
+          .trim()
+          .replace(/[。．]+$/,'');
+
+        const nonStepHeading=/^(症状・依頼|問い合わせ内容|原因・確認事項|原因|結果|対象機器|顧客案内|案内・注意事項|対応時間|受付経路|過去案件|備考)\s*[:：]/;
+        const actionVerb=/(確認|開く|選択|入力|変更|設定|再設定|再起動|起動|停止|更新|接続|再接続|解除|削除|追加|保存|実行|テスト|印刷|送信|取得|登録|復旧|調査|切替|有効|無効|クリック|押す|抜く|挿す|取り外|取り付|交換|再試行|ログイン|ログアウト|同期|再読込|再読み込み|インストール|アンインストール)/;
+
+        const splitStepText=text=>{
+          const raw=String(text||'').replace(/\r/g,'\n').trim();
+          if(!raw) return [];
+          let parts=raw.split(/\n+/);
+          if(parts.length===1 && raw.length>90) parts=raw.split(/[。；;]/);
+          return parts
+            .map(normalizeAssistStep)
+            .filter(Boolean)
+            .filter(x=>!nonStepHeading.test(x))
+            .filter(x=>actionVerb.test(x))
+            .filter((x,i,a)=>a.indexOf(x)===i)
+            .slice(0,6);
+        };
+
+        const extractExplicitKnowledgeSteps=body=>{
+          const text=String(body||'').replace(/\r/g,'\n');
+          if(!text.trim()) return [];
+          const sectionMatch=text.match(/(?:^|\n)(?:対応手順|対応内容|実施手順|作業手順|TeamViewer対応内容)\s*[:：]\s*([\s\S]*?)(?=\n\s*(?:症状・依頼|問い合わせ内容|原因・確認事項|原因|結果|対象機器|顧客案内|案内・注意事項|対応時間|受付経路|備考)\s*[:：]|$)/);
+          if(sectionMatch?.[1]){
+            const sectionSteps=splitStepText(sectionMatch[1]);
+            if(sectionSteps.length) return sectionSteps;
+          }
+          const bulletLines=text.split(/\n+/)
+            .map(normalizeAssistStep)
+            .filter(x=>x && !nonStepHeading.test(x) && actionVerb.test(x));
+          return [...new Set(bulletLines)].slice(0,6);
+        };
+
         let assistAnswer='';
+        let assistSteps=[];
+        let explicitProcedure=false;
         if(topKnowledge){
           const body=String(topKnowledge.body||'').trim();
           assistAnswer=body
             ? (body.length>520?body.slice(0,520)+'…':body)
             : '「'+String(topKnowledge.title||'ナレッジ')+'」を確認してください。';
+          assistSteps=extractExplicitKnowledgeSteps(body);
+          explicitProcedure=assistSteps.length>0;
         }else if(topTicket){
           const body=String(topTicket.description||'').replace(/^【受付経路】[^\n]*\n?/,'').trim();
           assistAnswer='類似する過去案件「'+String(topTicket.ticket_number||'—')+' / '+String(topTicket.subject||'')+'」があります。'+
             (body?'\n\n過去案件の内容:\n'+(body.length>420?body.slice(0,420)+'…':body):'');
         }
 
-        const stepsSource=(assistAnswer||'').split(/\n+/).map(x=>x.replace(/^[・●\-\d\.\)\s]+/,'').trim()).filter(Boolean);
-        const assistSteps=(stepsSource.length?stepsSource:['内容を確認する','必要な設定・復旧作業を実施する','結果を確認して記録する']).slice(0,6);
+        const fallbackCheckSteps=[
+          '問い合わせ内容・現在の症状・表示されているエラーを確認する',
+          asset?'対象機器「'+String(asset.asset_number||asset.model_name||'')+'」で同じ症状が再現するか確認する':'対象となる端末・機器を確認する',
+          '確認結果を記録する'
+        ];
+        if(!assistSteps.length) assistSteps=fallbackCheckSteps;
+        assistSteps=assistSteps.slice(0,6);
 
+        const weakEvidence=evidenceCount===0||bestEvidenceScore<8||!explicitProcedure;
         const escalationHtml=weakEvidence
           ? '<section class="notice error" style="margin-top:12px">'+
-              '<strong>有力な解決候補が見つかっていません。</strong><br>'+
-              '<span class="muted">推測で作業を続けず、遠隔確認または管理者への引き継ぎを推奨します。</span>'+
+              '<strong>'+(evidenceCount===0?'有力な解決候補が見つかっていません。':!explicitProcedure?'参考情報はありますが、実施手順を確認できません。':'根拠が十分ではありません。')+'</strong><br>'+
+              '<span class="muted">'+(!explicitProcedure&&evidenceCount?'過去案件や説明文だけから設定変更・復旧手順は推測しません。確認手順のみ表示します。':'推測で作業を続けず、遠隔確認または管理者への引き継ぎを推奨します。')+'</span>'+
               '<div class="supportQuickActions" style="margin-top:10px">'+
                 '<button id="ticketWeakUseRemote" class="orange" type="button">TeamViewerで確認</button>'+
                 '<button id="ticketWeakHandoff" class="primary" type="button">管理者へ即引き継ぎ</button>'+
@@ -7981,7 +8029,7 @@
             '</section>'
           : '';
 
-        const firstAssistStep=assistSteps[0]||'内容を確認する';
+        const firstAssistStep=assistSteps[0]||'問い合わせ内容を確認する';
         const aiAssistHtml=evidenceCount
           ? escalationHtml+'<section class="notice ok" style="margin-top:12px">'+
               '<div class="row between" style="gap:10px;align-items:flex-start;flex-wrap:wrap">'+
@@ -7991,10 +8039,10 @@
                 '<span class="pill good">根拠 '+esc(evidenceCount)+'件</span>'+
               '</div>'+
               '<div class="item" style="margin-top:10px;border-width:2px">'+
-                '<span class="pill good">まずこれを実施</span>'+
+                '<span class="pill '+(explicitProcedure?'good':'warn')+'">'+(explicitProcedure?'まずこれを実施':'まず確認')+'</span>'+
                 '<div style="font-size:1.05rem;font-weight:700;margin-top:8px;line-height:1.6">'+esc(firstAssistStep)+'</div>'+
                 '<div class="supportQuickActions" style="margin-top:10px">'+
-                  '<button id="ticketAssistStartWork" class="primary" type="button">この手順から作業開始</button>'+
+                  '<button id="ticketAssistStartWork" class="primary" type="button">'+(explicitProcedure?'この手順から作業開始':'確認を開始')+'</button>'+
                   '<button id="ticketAssistUseRemote" class="ghost" type="button">TeamViewerで確認</button>'+
                 '</div>'+
               '</div>'+
