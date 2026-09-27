@@ -8473,13 +8473,15 @@
 
             if(outcome==='resolved'){
               const knowledgeBody=[
-                '症状・依頼: '+(t.subject||''),
-                displayDescription?'問い合わせ内容: '+displayDescription:'',
-                asset?.asset_number||asset?.model_name?'対象機器: '+[asset?.asset_number,asset?.model_name].filter(Boolean).join(' / '):'',
-                'TeamViewer対応内容: '+note,
-                '結果: 解決',
-                '対応時間（概算）: '+teamviewerDurationText
-              ].filter(Boolean).join('\n\n');
+                '症状・依頼: '+[
+                  t.subject||'',
+                  displayDescription||'',
+                  asset?.asset_number||asset?.model_name?'対象機器: '+[asset?.asset_number,asset?.model_name].filter(Boolean).join(' / '):''
+                ].filter(Boolean).join('\n'),
+                '原因・確認事項: 未確認',
+                '対応手順: '+note,
+                '確認結果: 解決'+(teamviewerDurationText&&teamviewerDurationText!=='—'?' / 対応時間（概算）: '+teamviewerDurationText:'')
+              ].join('\n\n');
 
               if(internal){
                 await rpc('save_knowledge_article',{
@@ -8786,11 +8788,11 @@
 
             if(makeKnowledge){
               const knowledgeBody=[
-                '症状・依頼: '+(t.subject||''),
-                cause?'原因・確認事項: '+cause:'',
+                '症状・依頼: '+[t.subject||'',displayDescription||''].filter(Boolean).join('\n'),
+                '原因・確認事項: '+(cause||'未確認'),
                 '対応手順: '+action,
-                customerNote?'案内・注意事項: '+customerNote:''
-              ].filter(Boolean).join('\n\n');
+                '確認結果: '+result+(customerNote?'\n顧客案内: '+customerNote:'')
+              ].join('\n\n');
 
               if(internal){
                 await rpc('save_knowledge_article',{
@@ -10362,6 +10364,49 @@
         .sort((a,b)=>b.score-a.score)[0]||null;
     };
 
+    const parseKnowledgeBody=body=>{
+      const text=String(body||'').replace(/\r/g,'\n').trim();
+      const out={symptom:'',cause:'',procedure:'',result:''};
+      if(!text) return out;
+      const headingMap=[
+        {key:'symptom',re:/^(症状・依頼|問い合わせ内容)\s*[:：]\s*/},
+        {key:'cause',re:/^(原因・確認事項|原因)\s*[:：]\s*/},
+        {key:'procedure',re:/^(対応手順|対応内容|実施手順|作業手順|TeamViewer対応内容)\s*[:：]\s*/},
+        {key:'result',re:/^(確認結果|結果)\s*[:：]\s*/}
+      ];
+      let current='';
+      const extra=[];
+      text.split(/\n+/).forEach(line=>{
+        const raw=String(line||'').trim();
+        if(!raw) return;
+        const match=headingMap.find(x=>x.re.test(raw));
+        if(match){
+          current=match.key;
+          const value=raw.replace(match.re,'').trim();
+          if(value) out[current]+=(out[current]?'\n':'')+value;
+          return;
+        }
+        if(/^(対象機器|受付経路|対応時間|顧客案内|案内・注意事項|備考)\s*[:：]/.test(raw)){
+          extra.push(raw);
+          return;
+        }
+        if(current) out[current]+=(out[current]?'\n':'')+raw;
+        else extra.push(raw);
+      });
+      if(!out.symptom && extra.length) out.symptom=extra.join('\n');
+      else if(extra.length) out.result+=(out.result?'\n':'')+extra.join('\n');
+      return out;
+    };
+
+    const formatKnowledgeBody=parts=>[
+      '症状・依頼: '+String(parts?.symptom||'').trim(),
+      '原因・確認事項: '+(String(parts?.cause||'').trim()||'未確認'),
+      '対応手順: '+String(parts?.procedure||'').trim(),
+      '確認結果: '+(String(parts?.result||'').trim()||'未確認')
+    ].join('\n\n');
+
+    const normalizeKnowledgeBody=body=>formatKnowledgeBody(parseKnowledgeBody(body));
+
     const candidateCards=candidates.length?candidates.map(k=>
       '<article class="item" style="margin-bottom:10px">'+
         '<div class="row between" style="gap:10px;align-items:flex-start;flex-wrap:wrap">'+
@@ -10403,28 +10448,45 @@
       '<section class="card section"><div class="unifiedToolbar"><h2>公開済みナレッジ</h2></div>'+dataTable(['タイトル','カテゴリ','公開先','状態','更新','操作'],rows)+'</section>'+
       (rejected.length?'<section class="card section"><div class="unifiedToolbar"><h2>却下済み</h2></div>'+dataTable(['タイトル','カテゴリ','更新','操作'],rejectedRows)+'</section>':'');
 
-    const openEditor=(k={})=>openModal({
-      title:k.id?'ナレッジを編集':'ナレッジを登録',
-      description:k.id&&!k.is_active?'候補内容を修正できます。公開チェックを入れると、そのまま公開されます。':'公開先を選ぶと、役割ごとのナレッジ/マニュアル画面へ反映されます。',
-      wide:true,
-      body:
-        '<div class="modalGrid3"><div class="field" style="grid-column:span 2"><label>タイトル</label><input id="kaTitle" value="'+esc(k.title||'')+'" required></div><div class="field"><label>カテゴリ</label><input id="kaCategory" value="'+esc(k.category||'')+'"></div><div class="field"><label>公開先</label><select id="kaAudience"><option value="internal" '+(k.audience==='internal'?'selected':'')+'>自社のみ</option><option value="support" '+(k.audience==='support'?'selected':'')+'>サポート会社</option><option value="customer" '+(k.audience==='customer'?'selected':'')+'>顧客会社</option><option value="all" '+(k.audience==='all'?'selected':'')+'>全社</option></select></div><div class="field" style="grid-column:span 2"><label>タグ</label><input id="kaTags" value="'+esc((k.tags||[]).filter(x=>x!=='却下').join(', '))+'"></div></div>'+
-        '<div class="field"><label>本文</label><textarea id="kaBody" rows="10" required>'+esc(k.body||'')+'</textarea></div><label class="row"><input id="kaActive" type="checkbox" '+(k.is_active!==false?'checked':'')+'> 公開</label>',
-      confirmLabel:'保存',
-      onSubmit:async()=>{
-        const tags=$('#kaTags').value.split(',').map(x=>x.trim()).filter(Boolean).filter(x=>x!=='却下');
-        await rpc('save_knowledge_article',{
-          p_id:k.id||null,
-          p_title:$('#kaTitle').value.trim(),
-          p_category:$('#kaCategory').value.trim()||null,
-          p_body:$('#kaBody').value.trim(),
-          p_audience:$('#kaAudience').value,
-          p_tags:tags,
-          p_is_active:$('#kaActive').checked
-        });
-        closeModal();toast('ナレッジを保存しました');await renderKnowledgeAdmin();
-      }
-    });
+    const openEditor=(k={})=>{
+      const parts=parseKnowledgeBody(k.body||'');
+      return openModal({
+        title:k.id?'ナレッジを編集':'ナレッジを登録',
+        description:'「症状・原因・対応手順・確認結果」の4項目で統一して保存します。対応手順は実際に実施できる順序で入力してください。',
+        wide:true,
+        body:
+          '<div class="modalGrid3"><div class="field" style="grid-column:span 2"><label>タイトル</label><input id="kaTitle" value="'+esc(k.title||'')+'" required></div><div class="field"><label>カテゴリ</label><input id="kaCategory" value="'+esc(k.category||'')+'"></div><div class="field"><label>公開先</label><select id="kaAudience"><option value="internal" '+(k.audience==='internal'?'selected':'')+'>自社のみ</option><option value="support" '+(k.audience==='support'?'selected':'')+'>サポート会社</option><option value="customer" '+(k.audience==='customer'?'selected':'')+'>顧客会社</option><option value="all" '+(k.audience==='all'?'selected':'')+'>全社</option></select></div><div class="field" style="grid-column:span 2"><label>タグ</label><input id="kaTags" value="'+esc((k.tags||[]).filter(x=>x!=='却下').join(', '))+'"></div></div>'+
+          '<div class="modalGrid2">'+
+            '<div class="field"><label>症状・依頼 <span class="muted">必須</span></label><textarea id="kaSymptom" rows="5" placeholder="例：ログイン後にエラーが表示される">'+esc(parts.symptom)+'</textarea></div>'+
+            '<div class="field"><label>原因・確認事項</label><textarea id="kaCause" rows="5" placeholder="例：資格情報の不整合を確認">'+esc(parts.cause)+'</textarea></div>'+
+          '</div>'+
+          '<div class="field"><label>対応手順 <span class="muted">必須</span></label><textarea id="kaProcedure" rows="8" placeholder="1. 現在の設定を確認する\n2. ○○を変更する\n3. 再起動する">'+esc(parts.procedure)+'</textarea><small class="muted">背景説明ではなく、実際に実施できる作業だけを上から順に入力してください。</small></div>'+
+          '<div class="field"><label>確認結果</label><textarea id="kaResult" rows="4" placeholder="例：再ログインし、エラーが表示されないことを確認">'+esc(parts.result)+'</textarea></div>'+
+          '<label class="row"><input id="kaActive" type="checkbox" '+(k.is_active!==false?'checked':'')+'> 公開</label>',
+        confirmLabel:'保存',
+        onSubmit:async()=>{
+          const title=$('#kaTitle').value.trim();
+          const symptom=$('#kaSymptom').value.trim();
+          const cause=$('#kaCause').value.trim();
+          const procedure=$('#kaProcedure').value.trim();
+          const result=$('#kaResult').value.trim();
+          if(!title) throw new Error('タイトルを入力してください。');
+          if(!symptom) throw new Error('症状・依頼を入力してください。');
+          if(!procedure) throw new Error('対応手順を入力してください。');
+          const tags=$('#kaTags').value.split(',').map(x=>x.trim()).filter(Boolean).filter(x=>x!=='却下');
+          await rpc('save_knowledge_article',{
+            p_id:k.id||null,
+            p_title:title,
+            p_category:$('#kaCategory').value.trim()||null,
+            p_body:formatKnowledgeBody({symptom,cause,procedure,result}),
+            p_audience:$('#kaAudience').value,
+            p_tags:tags,
+            p_is_active:$('#kaActive').checked
+          });
+          closeModal();toast('定型形式でナレッジを保存しました');await renderKnowledgeAdmin();
+        }
+      });
+    };
 
     $('#knowledgeAdminNew').onclick=()=>openEditor();
     document.querySelectorAll('.knowledgeAdminEdit').forEach(btn=>btn.onclick=()=>openEditor((data||[]).find(x=>String(x.id)===String(btn.dataset.id))||{}));
@@ -10435,11 +10497,18 @@
       if(!source||!target) return;
       btn.disabled=true;
       try{
-        const mergedBody=[
-          String(target.body||'').trim(),
-          '【追記 '+dateText(source.updated_at||new Date().toISOString())+'】',
-          String(source.body||'').trim()
-        ].filter(Boolean).join('\n\n');
+        const targetParts=parseKnowledgeBody(target.body||'');
+        const sourceParts=parseKnowledgeBody(source.body||'');
+        const mergeSection=(a,b)=>{
+          const values=[String(a||'').trim(),String(b||'').trim()].filter(x=>x&&x!=='未確認');
+          return [...new Set(values)].join('\n');
+        };
+        const mergedBody=formatKnowledgeBody({
+          symptom:mergeSection(targetParts.symptom,sourceParts.symptom),
+          cause:mergeSection(targetParts.cause,sourceParts.cause),
+          procedure:mergeSection(targetParts.procedure,sourceParts.procedure),
+          result:mergeSection(targetParts.result,sourceParts.result)
+        });
         const mergedTags=[...(target.tags||[]),...(source.tags||[])].filter(x=>x!=='候補'&&x!=='却下'&&x!=='統合済み');
         await rpc('save_knowledge_article',{
           p_id:target.id,
@@ -10474,7 +10543,7 @@
           p_id:k.id,
           p_title:k.title,
           p_category:k.category||null,
-          p_body:k.body,
+          p_body:normalizeKnowledgeBody(k.body),
           p_audience:k.audience,
           p_tags:(k.tags||[]).filter(x=>x!=='候補'&&x!=='却下'),
           p_is_active:true
