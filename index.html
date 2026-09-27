@@ -144,6 +144,9 @@
     @media(max-width:680px){.supportTodayGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
     .supportCaseCards{display:grid;gap:10px;margin-top:12px}
     .supportCaseCard{border:1px solid var(--line);border-left:5px solid #94a3b8;border-radius:16px;background:#fff;padding:15px;box-shadow:0 4px 15px rgba(15,23,42,.04)}
+    .supportCaseCard.top-priority{border-width:2px;border-left-width:6px;box-shadow:0 8px 24px rgba(15,23,42,.10)}
+    .supportTopPriorityLabel{display:inline-flex;align-items:center;gap:6px;margin-bottom:8px;padding:5px 9px;border-radius:999px;background:#0f172a;color:#fff;font-size:11px;font-weight:900}
+    .supportCaseCard.top-priority .supportCaseCardActions .primary{min-width:220px}
     .supportCaseCard.urgent{border-left-color:#dc2626}.supportCaseCard.high{border-left-color:#f59e0b}.supportCaseCard.remote{border-left-color:#ea580c}.supportCaseCard.pending-result{border-left-color:#b91c1c;background:#fffafa}.supportCaseCard.queue-warning{border-left-color:#f59e0b;background:#fffbeb}.supportCaseCard.queue-critical{border-left-color:#b91c1c;background:#fff7f7}
     .supportCaseCardHead{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:start}
     .supportCaseCardNo{font-size:11px;color:var(--muted);font-weight:900}
@@ -9561,7 +9564,7 @@
       updateListCount('supportCaseList',filtered.length,data.length);
       if(support){
         $('#supportCaseListHost').innerHTML=filtered.length
-          ? '<div class="supportCaseCards">'+filtered.map(t=>{
+          ? '<div class="supportCaseCards">'+filtered.map((t,index)=>{
               const cardClass=t.support_next_action_notification_active&&t.support_next_action_alert_level==='critical'?'queue-critical':t.support_next_action_notification_active&&t.support_next_action_alert_level==='warning'?'queue-warning':t.teamviewer_result_pending?'pending-result':t.priority==='urgent'?'urgent':t.priority==='high'?'high':t.support_stage==='teamviewer_waiting'?'remote':'';
               const otherAssigned=!!t.support_assignment?.support_assigned_user_id&&!t.support_assignment?.is_mine;
               const canStartNow=t.status!=='closed'&&t.support_stage==='unhandled'&&!otherAssigned;
@@ -9604,7 +9607,9 @@
                 canContinueDirect?'対応を続ける':
                 otherAssigned?'案件を確認':
                 '案件を開く';
-              return '<article class="supportCaseCard '+cardClass+'">'+
+              const topPriority=index===0&&t.status!=='closed'&&view!=='closed';
+              return '<article class="supportCaseCard '+cardClass+(topPriority?' top-priority':'')+'">'+
+                (topPriority?'<div class="supportTopPriorityLabel">最優先・この案件から対応</div>':'')+
                 '<div class="supportCaseCardHead">'+
                   '<div>'+
                     '<div class="supportCaseCardNo">'+esc(t.ticket_number||'—')+'</div>'+
@@ -9635,7 +9640,7 @@
                   '<div class="supportCaseFact"><span>期限状態</span><strong>'+esc(supportDeadlineLabel(t.deadline_state))+'</strong></div>'+
                   '<div class="supportCaseFact"><span>対応予定</span><strong>'+esc(t.support_planned_at?dateTimeText(t.support_planned_at):'未設定')+'</strong></div>'+
                 '</div></details>'+
-                '<div class="supportCaseCardActions"><button class="ghost supportAttentionPlanOpen" type="button" data-id="'+esc(t.id)+'">確認・予定</button><button class="primary ticketDetail" type="button" data-id="'+esc(t.id)+'" data-start="'+(canStartNow?'1':'0')+'" data-action="'+esc(caseActionTarget)+'">'+esc(caseActionLabel)+'</button></div>'+
+                '<div class="supportCaseCardActions"><button class="ghost supportAttentionPlanOpen" type="button" data-id="'+esc(t.id)+'">確認・予定</button><button class="primary ticketDetail" type="button" data-id="'+esc(t.id)+'" data-start="'+(canStartNow?'1':'0')+'" data-action="'+esc(caseActionTarget)+'">'+esc(topPriority?'この案件を対応':caseActionLabel)+'</button></div>'+
               '</article>';
             }).join('')+'</div>'
           : '<div class="empty">該当する案件はありません。</div>';
