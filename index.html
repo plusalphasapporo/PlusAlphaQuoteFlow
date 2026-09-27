@@ -67,6 +67,17 @@
     .workReportPreviewItem{padding:9px 10px;border:1px solid #dcfce7;border-radius:10px;background:#fff;font-size:13px;line-height:1.55}
     .workReportEditDetails{margin-top:12px;border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:#fafafa}
     .workReportEditDetails summary{cursor:pointer;font-weight:800}
+    .internalHandoffFlow{border:2px solid #fed7aa;background:linear-gradient(180deg,#fffaf5,#fff);border-radius:18px;padding:16px;margin:14px 0;box-shadow:0 10px 26px rgba(194,65,12,.07)}
+    .internalHandoffFlowHead{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+    .internalHandoffFlowHead h3{margin:0}.internalHandoffFlowHead p{margin:4px 0 0;color:var(--muted);font-size:13px}
+    .internalHandoffSteps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:14px}
+    .internalHandoffStep{border:1px solid var(--line);border-radius:12px;padding:10px;background:#fff;min-height:78px}
+    .internalHandoffStep strong{display:block;font-size:12px}.internalHandoffStep span{display:block;color:var(--muted);font-size:11px;line-height:1.45;margin-top:4px}
+    .internalHandoffStep.active{border:2px solid #f97316;background:#fff7ed}.internalHandoffStep.done{border-color:#86efac;background:#f7fff9}
+    .internalHandoffWorkGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+    .internalHandoffBox{border:1px solid var(--line);border-radius:13px;padding:12px;background:#fff}
+    .internalHandoffBox strong{display:block;font-size:12px}.internalHandoffBox p{margin:6px 0 0;white-space:pre-wrap;line-height:1.55;color:#475569}
+    @media(max-width:760px){.internalHandoffSteps{grid-template-columns:1fr 1fr}.internalHandoffWorkGrid{grid-template-columns:1fr}}
     @media(max-width:760px){.supportLinearProgress{grid-template-columns:repeat(2,minmax(0,1fr))}.supportLinearBody{margin-left:0}.supportLinearCard{padding:13px}}
     .attachmentGallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-top:10px}
     .attachmentCard{border:1px solid var(--line);border-radius:12px;padding:10px;background:#fff;overflow:hidden}
@@ -7177,6 +7188,14 @@
     const messages=detail.messages||[];
     const attachments=detail.attachments||[];
     const handoffs=detail.handoffs||[];
+    if(internal){
+      for(const h of handoffs){
+        if(h.requested_by_role==='support_staff' && h.state!=='completed'){
+          try{await rpc('mark_internal_handoff_read',{p_handoff_id:h.id});}catch(_){}
+        }
+      }
+      try{await refreshInternalUnreadHandoffBadge();}catch(_){}
+    }
     const asset=detail.asset||null;
     const contract=detail.contract||null;
     const cust=detail.customer||null;
@@ -7461,9 +7480,59 @@
     const handoffStateLabel=v=>({pending:'自社受理待ち',accepted:'自社対応中',completed:'自社対応完了'}[v]||v||'—');
     const handoffRows=handoffs.map(h=>
       '<tr><td>'+esc(handoffStateLabel(h.state))+'</td><td>'+esc(h.reason||'—')+'</td><td>'+esc(h.next_action||'—')+'</td><td>'+esc(dateText(h.created_at))+'</td>'+
-        (internal?'<td>'+(h.state==='pending'?'<button class="linkBtn handoffAccept" data-id="'+esc(h.id)+'" type="button">受理</button>':'')+(h.state==='accepted'?'<button class="linkBtn handoffComplete" data-id="'+esc(h.id)+'" type="button">自社対応完了・サポートへ戻す</button>':'')+'</td>':'')+
+        (internal?'<td>'+(h.state==='pending'?'<button class="linkBtn handoffAccept" data-id="'+esc(h.id)+'" type="button">受理</button>':'')+(h.state==='accepted'?'<button class="linkBtn handoffWorkOpen" data-id="'+esc(h.id)+'" type="button">自社対応を開く</button>':'')+'</td>':'')+
       '</tr>'
     );
+
+    const activeInternalHandoff=internal
+      ? [...handoffs]
+          .filter(h=>h.state==='pending'||h.state==='accepted')
+          .sort((a,b)=>timeValue(b.created_at)-timeValue(a.created_at))[0]||null
+      : null;
+    const completedSupportSteps=sharedProcedureSteps.filter(x=>x?.done);
+    const supportWorkSummaryHtml=completedSupportSteps.length
+      ? completedSupportSteps.map((x,i)=>
+          '<div class="internalHandoffBox"><strong>対応手順 '+(i+1)+'</strong><p>'+esc(x.step||'')+
+          (x.note?'\n確認結果: '+esc(x.note):'')+'</p></div>'
+        ).join('')
+      : '<div class="internalHandoffBox"><strong>対応手順</strong><p>手順の完了記録はありません。対応履歴・メッセージも確認してください。</p></div>';
+    const internalHandoffPanel=internal&&activeInternalHandoff
+      ? '<section id="internalHandoffWorkspace" class="internalHandoffFlow">'+
+          '<div class="internalHandoffFlowHead">'+
+            '<div><h3>自社引継ぎ対応</h3><p>サポート会社の対応内容を確認し、自社で必要な判断・作業を行います。</p></div>'+
+            '<span class="pill '+(activeInternalHandoff.state==='pending'?'warn':'good')+'">'+esc(handoffStateLabel(activeInternalHandoff.state))+'</span>'+
+          '</div>'+
+          '<div class="internalHandoffSteps">'+
+            '<div class="internalHandoffStep done"><strong>1. サポート対応確認</strong><span>実施手順・TeamViewer結果を確認</span></div>'+
+            '<div class="internalHandoffStep done"><strong>2. 引継ぎ理由</strong><span>'+esc(activeInternalHandoff.reason||'理由未記録')+'</span></div>'+
+            '<div class="internalHandoffStep '+(activeInternalHandoff.state==='pending'?'active':'done')+'"><strong>3. 自社対応</strong><span>'+(activeInternalHandoff.state==='pending'?'まず引継ぎを受理':'必要な調査・判断・作業を実施')+'</span></div>'+
+            '<div class="internalHandoffStep '+(activeInternalHandoff.state==='accepted'?'active':'')+'"><strong>4. 結果共有</strong><span>サポートへ戻す、または自社で完了</span></div>'+
+          '</div>'+
+          '<div class="internalHandoffWorkGrid">'+
+            '<div class="internalHandoffBox"><strong>なぜ自社へ引き継がれたか</strong><p>'+esc(activeInternalHandoff.reason||'理由未記録')+'</p></div>'+
+            '<div class="internalHandoffBox"><strong>自社が今やること</strong><p>'+esc(activeInternalHandoff.next_action||'次の対応が未記録です。対応履歴を確認してください。')+'</p></div>'+
+          '</div>'+
+          '<div style="margin-top:12px"><strong>サポート会社が実施した内容</strong><div class="internalHandoffWorkGrid">'+supportWorkSummaryHtml+
+            (latestTeamViewerSession
+              ? '<div class="internalHandoffBox"><strong>TeamViewer</strong><p>状態: '+esc(latestTeamViewerSession.outcome?({resolved:'解決',continue:'継続対応',escalate:'自社引継ぎ'}[latestTeamViewerSession.outcome]||latestTeamViewerSession.outcome):(latestTeamViewerSession.state||'記録あり'))+
+                  (latestTeamViewerSession.work_note?'\n対応内容: '+esc(latestTeamViewerSession.work_note):'')+
+                  (teamviewerDurationText&&teamviewerDurationText!=='—'?'\n対応時間（概算）: '+esc(teamviewerDurationText):'')+
+                '</p></div>'
+              : '')+
+          '</div></div>'+
+          (activeInternalHandoff.state==='pending'
+            ? '<div class="notice warn" style="margin-top:12px"><strong>まず引継ぎを受理してください。</strong><br><span class="muted">受理後、この画面で自社対応結果を入力できます。</span></div>'+
+              '<div class="supportQuickActions"><button id="internalHandoffAcceptPrimary" class="primary" type="button" data-id="'+esc(activeInternalHandoff.id)+'">引継ぎを受理して自社対応を開始</button></div>'
+            : '<div class="field"><label>自社で実施した内容・確認結果 <span class="muted">必須</span></label><textarea id="internalHandoffResult" rows="5" placeholder="例：管理者権限で設定を確認し、○○を修正。正常動作を確認。"></textarea></div>'+
+              '<div class="field"><label>サポート会社へ伝えること</label><textarea id="internalHandoffSupportNote" rows="3" placeholder="再確認してほしい内容、顧客への案内事項など"></textarea></div>'+
+              '<div class="supportQuickActions">'+
+                '<button id="internalHandoffReturnSupport" class="primary" type="button" data-id="'+esc(activeInternalHandoff.id)+'">自社対応完了 → サポートへ戻す</button>'+
+                '<button id="internalHandoffCloseTicket" class="green" type="button" data-id="'+esc(activeInternalHandoff.id)+'">自社で案件を完了</button>'+
+              '</div>'+
+              '<div class="muted" style="margin-top:6px">サポートへ戻す場合は、サポート担当が内容を確認して対応を継続します。自社で完了する場合は、この結果を作業報告として案件を完了します。</div>')+
+          '<div id="internalHandoffMsg" class="notice hidden"></div>'+
+        '</section>'
+      : '';
 
     const timelineEvents=[];
     const pushTimeline=(at,type,title,body='')=>{
@@ -7621,6 +7690,7 @@
               ['機器',asset?.asset_number||'未指定']
             ]))+
         (support?firstLineAssist:'')+
+        internalHandoffPanel+
         '<div id="supportTicketCustomerContext" class="modalGrid2">'+
           '<section class="card section" style="box-shadow:none;margin:0"><h3>案件概要</h3><div class="item"><strong>種別</strong><p>'+supportRequestTypeBadge(t.request_type)+'</p></div><div class="item"><strong>件名</strong><p>'+esc(t.subject||'')+'</p></div>'+supportRequestDetailsHtml(t.request_type,t.request_details||{})+'<div class="item"><strong>補足内容</strong><p style="white-space:pre-wrap">'+esc(displayDescription)+'</p></div><div class="item"><strong>顧客</strong><p>'+esc(cust?.customer_code||'—')+' / '+esc(cust?.name||'—')+'</p></div></section>'+
           '<section class="card section" style="box-shadow:none;margin:0"><h3>連絡・対象情報</h3><div class="item"><strong>主担当者</strong><p>'+esc(primary?.name||'未登録')+'<br><span class="muted">'+esc(primary?.phone||primary?.email||'連絡先未登録')+'</span></p></div><div class="item"><strong>契約</strong><p>'+(contract?esc(contract.contract_number||'—'):'未指定')+'</p></div><div class="item"><strong>機器</strong><p>'+(asset?esc(asset.asset_number||'—')+' / '+esc(asset.model_name||''):'未指定')+'</p></div></section>'+
@@ -7676,6 +7746,12 @@
     $('#ticketDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
     bindSupportDraftInputs(t.id,'message',{body:'#ticketMessageBody',important:'#ticketMessageImportant',visibility:'#ticketMessageVisibility'});
     bindSupportDraftInputs(t.id,'handoff',{reason:'#handoffReason',next_action:'#handoffNextAction'});
+    if(internal&&activeInternalHandoff?.state==='accepted'){
+      bindSupportDraftInputs(t.id,'internal_handoff_work',{
+        result:'#internalHandoffResult',
+        support_note:'#internalHandoffSupportNote'
+      });
+    }
 
     const messageBodyEl=$('#ticketMessageBody');
     const messageVisibilityEl=$('#ticketMessageVisibility');
@@ -9567,14 +9643,99 @@
       };
 
       if(internal){
-        document.querySelectorAll('.handoffAccept').forEach(btn=>btn.onclick=async()=>{
-          btn.disabled=true;try{await rpc('accept_ticket_handoff',{p_handoff_id:btn.dataset.id});toast('引き継ぎを受理しました');await renderTicketDetail(t.id);}
-          catch(err){notice('#ticketActionMsg',err.message||String(err));}finally{btn.disabled=false;}
+        const acceptInternalHandoff=async(btn,handoffId)=>{
+          if(!handoffId) return;
+          btn.disabled=true;
+          try{
+            try{await rpc('mark_internal_handoff_read',{p_handoff_id:handoffId});}catch(_){}
+            await rpc('accept_ticket_handoff',{p_handoff_id:handoffId});
+            toast('引継ぎを受理しました。自社対応を開始します。');
+            await renderTicketDetail(t.id);
+            setTimeout(()=>$('#internalHandoffResult')?.focus(),220);
+          }catch(err){notice('#internalHandoffMsg',err.message||String(err));}
+          finally{btn.disabled=false;}
+        };
+        document.querySelectorAll('.handoffAccept').forEach(btn=>btn.onclick=()=>acceptInternalHandoff(btn,btn.dataset.id));
+        const primaryAccept=$('#internalHandoffAcceptPrimary');
+        if(primaryAccept) primaryAccept.onclick=()=>acceptInternalHandoff(primaryAccept,primaryAccept.dataset.id);
+
+        document.querySelectorAll('.handoffWorkOpen').forEach(btn=>btn.onclick=()=>{
+          $('#internalHandoffWorkspace')?.scrollIntoView({behavior:'smooth',block:'start'});
+          setTimeout(()=>$('#internalHandoffResult')?.focus(),220);
         });
-        document.querySelectorAll('.handoffComplete').forEach(btn=>btn.onclick=async()=>{
-          btn.disabled=true;try{await rpc('complete_ticket_handoff',{p_handoff_id:btn.dataset.id});toast('自社対応を完了し、サポート会社へ戻しました');await renderTicketDetail(t.id);}
-          catch(err){notice('#ticketActionMsg',err.message||String(err));}finally{btn.disabled=false;}
-        });
+
+        const collectInternalHandoffResult=()=>{
+          const result=String($('#internalHandoffResult')?.value||'').trim();
+          const supportNote=String($('#internalHandoffSupportNote')?.value||'').trim();
+          if(!result){
+            notice('#internalHandoffMsg','自社で実施した内容・確認結果を入力してください。');
+            $('#internalHandoffResult')?.focus();
+            return null;
+          }
+          const body=[
+            '【自社対応結果】',
+            '実施内容・確認結果: '+result,
+            supportNote?'サポート会社への共有: '+supportNote:''
+          ].filter(Boolean).join('\n');
+          return {result,supportNote,body};
+        };
+
+        const returnSupport=$('#internalHandoffReturnSupport');
+        if(returnSupport) returnSupport.onclick=async()=>{
+          const report=collectInternalHandoffResult();
+          if(!report) return;
+          returnSupport.disabled=true;
+          $('#internalHandoffCloseTicket')?.setAttribute('disabled','disabled');
+          try{
+            await rpc('post_ticket_message',{
+              p_ticket_id:t.id,
+              p_visibility:'support',
+              p_body:report.body
+            });
+            await rpc('complete_ticket_handoff',{p_handoff_id:returnSupport.dataset.id});
+            clearSupportDraft(t.id,'internal_handoff_work');
+            toast('自社対応結果を保存し、サポート会社へ戻しました');
+            await renderTicketDetail(t.id);
+          }catch(err){notice('#internalHandoffMsg',err.message||String(err));}
+          finally{
+            returnSupport.disabled=false;
+            $('#internalHandoffCloseTicket')?.removeAttribute('disabled');
+          }
+        };
+
+        const closeFromInternal=$('#internalHandoffCloseTicket');
+        if(closeFromInternal) closeFromInternal.onclick=async()=>{
+          const report=collectInternalHandoffResult();
+          if(!report) return;
+          if(!confirm('自社対応の結果を作業報告として、この案件を完了しますか？')) return;
+          closeFromInternal.disabled=true;
+          $('#internalHandoffReturnSupport')?.setAttribute('disabled','disabled');
+          try{
+            await rpc('post_ticket_message',{
+              p_ticket_id:t.id,
+              p_visibility:'support',
+              p_body:report.body
+            });
+            await rpc('complete_ticket_handoff',{p_handoff_id:closeFromInternal.dataset.id});
+            const finalReport=[
+              '【作業報告】',
+              '結果: 解決',
+              '対応内容: '+report.result,
+              report.supportNote?'共有事項: '+report.supportNote:''
+            ].filter(Boolean).join('\n');
+            await rpc('complete_support_ticket_with_report',{
+              p_ticket_id:t.id,
+              p_report_body:finalReport
+            });
+            clearSupportDraft(t.id,'internal_handoff_work');
+            toast('自社対応結果を保存し、案件を完了しました');
+            await renderTicketDetail(t.id);
+          }catch(err){notice('#internalHandoffMsg',err.message||String(err));}
+          finally{
+            closeFromInternal.disabled=false;
+            $('#internalHandoffReturnSupport')?.removeAttribute('disabled');
+          }
+        };
       }
     }
 
