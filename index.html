@@ -7083,12 +7083,31 @@
       [t.subject||'',displayDescription||''].filter(Boolean).join(' ').slice(0,160);
 
     const assistSectionNo=internal?'02':'01';
+    const sharedProcedureSteps=Array.isArray(t.request_details?.support_procedure_progress?.steps)
+      ? t.request_details.support_procedure_progress.steps
+      : [];
+    const sharedProcedurePendingIndex=sharedProcedureSteps.findIndex(x=>!x?.done);
+    const sharedProcedureDoneCount=sharedProcedureSteps.filter(x=>x?.done).length;
     const supportPrimaryStep=(()=>{
       if(t.status==='closed') return {label:'完了済み',button:'対応履歴を確認',hint:'対応履歴・作業報告を確認できます。',target:'history',tone:'ghost'};
       if(supportStage==='unhandled') return {label:'① 受付内容を確認',button:'受付確認して対応開始',hint:'依頼内容・写真・顧客情報を確認後、そのまま対応方法検索へ進みます。',target:'content',tone:'primary'};
-      if(latestTeamViewerSession && teamviewerSessionClosed && !latestTeamViewerSession.outcome) return {label:'④ TeamViewer結果を記録',button:'結果を記録する',hint:'遠隔対応の結果を入力して、完了・継続・引継ぎを決めます。',target:'remote',tone:'green'};
-      if(supportStage==='teamviewer_waiting'||(latestTeamViewerSession&&!teamviewerSessionClosed)) return {label:'③ TeamViewer対応',button:'TeamViewer対応へ進む',hint:'接続・遠隔確認を進めます。',target:'remote',tone:'orange'};
+      if(latestTeamViewerSession && teamviewerSessionClosed && !latestTeamViewerSession.outcome) return {label:'③ TeamViewer結果を記録',button:'結果を記録する',hint:'遠隔対応の結果を入力して、完了・継続・引継ぎを決めます。',target:'remote',tone:'green'};
+      if(supportStage==='teamviewer_waiting'||(latestTeamViewerSession&&!teamviewerSessionClosed)) return {label:'② TeamViewer対応',button:'TeamViewer対応へ進む',hint:'接続・遠隔確認を進めます。',target:'remote',tone:'orange'};
       if(['internal_handoff_waiting','internal_in_progress','support_review_waiting'].includes(supportStage)) return {label:'引継ぎ状況を確認',button:'引継ぎ状況を確認',hint:'同じ案件カルテのまま対応状況を確認します。',target:'history',tone:'primary'};
+      if(sharedProcedureSteps.length && sharedProcedurePendingIndex>=0){
+        const nextStep=String(sharedProcedureSteps[sharedProcedurePendingIndex]?.step||'次の対応手順');
+        return {
+          label:'② 対応手順 '+(sharedProcedureDoneCount+1)+' / '+sharedProcedureSteps.length,
+          button:'次の手順を実施',
+          hint:nextStep,
+          target:'procedure',
+          tone:'primary',
+          stepIndex:sharedProcedurePendingIndex
+        };
+      }
+      if(sharedProcedureSteps.length && sharedProcedurePendingIndex<0){
+        return {label:'③ 作業報告',button:'作業報告へ進む',hint:'対応手順はすべて完了しています。結果を記録して案件を完了します。',target:'report',tone:'green'};
+      }
       return {label:'② 対応方法を確認',button:'対応方法を確認する',hint:'AI・ナレッジ・過去案件から対応方法を確認します。',target:'assist',tone:'primary'};
     })();
     const supportStageControl=support && t.status!=='closed'
@@ -7106,16 +7125,16 @@
           '<div class="notice ok" style="margin-bottom:12px">'+
             '<div class="row between" style="gap:12px;align-items:center;flex-wrap:wrap">'+
               '<div><strong>今やること：'+esc(supportPrimaryStep.label)+'</strong><div class="muted" style="margin-top:4px">'+esc(supportPrimaryStep.hint)+'</div></div>'+
-              (t.status!=='closed'?'<button id="supportPrimaryNext" class="primary" type="button">ここから進める</button>':'')+
+              (t.status!=='closed'?'<button id="supportPrimaryNext" class="'+esc(supportPrimaryStep.tone||'primary')+'" type="button">'+esc(supportPrimaryStep.button||'ここから進める')+'</button>':'')+
             '</div>'+
           '</div>'+
           (support
-            ? '<div class="supportQuickActions" style="margin:8px 0 12px">'+
-                '<button id="ticketActionAi" class="ghost" type="button">対応方法</button>'+
+            ? '<details style="margin:8px 0 12px"><summary style="cursor:pointer;font-weight:700">その他の操作</summary><div class="supportQuickActions" style="margin-top:8px">'+
+                '<button id="ticketActionAi" class="ghost" type="button">対応方法を確認</button>'+
                 '<button id="ticketActionRemote" class="ghost" type="button">TeamViewer</button>'+
                 '<button id="ticketActionFinish" class="ghost" type="button">作業報告</button>'+
                 '<button id="ticketActionCustomer" class="ghost" type="button">顧客・機器</button>'+
-              '</div>'
+              '</div></details>'
             : '<div class="supportMainActions">'+
                 '<button id="ticketActionAi" class="supportMainAction" type="button"><strong>対応方法</strong><small>AI・ナレッジ・過去案件</small></button>'+
                 '<button id="ticketActionRemote" class="supportMainAction orange" type="button"><strong>TeamViewer</strong><small>必要な場合だけ遠隔対応</small></button>'+
@@ -7803,12 +7822,28 @@
       };
 
       if(primaryNext) primaryNext.onclick=async()=>{
+        const checklist=[...document.querySelectorAll('.ticketAssistStepCheck')];
+        const firstPending=checklist.find(el=>!el.checked);
+        if(checklist.length && !firstPending){
+          $('#ticketCloseBtn')?.click();
+          return;
+        }
         const target=supportPrimaryStep.target;
         if(target==='content'){
           await startSupportWork(primaryNext);
         }else if(target==='remote'){
           jump('#supportRemoteWorkspace');
           setTimeout(()=>($('#ticketRemoteResultNote')||$('#ticketRemoteAction')||$('#ticketTeamViewerCreate'))?.focus(),250);
+        }else if(target==='report'){
+          $('#ticketCloseBtn')?.click();
+        }else if(target==='procedure'){
+          jump('#supportAssistWorkspace');
+          setTimeout(()=>{
+            const step=document.querySelector('.ticketAssistStepCheck[data-step="'+supportPrimaryStep.stepIndex+'"]')||firstPending;
+            const note=step?document.querySelector('.ticketAssistStepNote[data-step="'+step.dataset.step+'"]'):null;
+            (note||step||$('#ticketKnowledgeSearch'))?.focus();
+            (step||note)?.scrollIntoView({behavior:'smooth',block:'center'});
+          },250);
         }else if(target==='history'){
           jump('#ticketMessageList');
         }else{
@@ -8410,9 +8445,48 @@
             persistAssistStepState({silentFailure:true});
           },delay);
         };
+        const refreshChecklistPrimaryAction=()=>{
+          const boxes=[...document.querySelectorAll('.ticketAssistStepCheck')];
+          if(!boxes.length) return;
+          const done=boxes.filter(x=>x.checked).length;
+          const pending=boxes.find(x=>!x.checked);
+          const primary=$('#supportPrimaryNext');
+          const topPrimary=$('#supportTopPrimaryAction');
+          const labelHost=primary?.closest('.notice')?.querySelector('strong');
+          const hintHost=labelHost?.parentElement?.querySelector('.muted');
+          if(pending){
+            const idx=Number(pending.dataset.step||0);
+            const stepText=assistSteps[idx]||'次の対応手順';
+            if(primary){
+              primary.textContent='次の手順を実施';
+              primary.className='primary';
+            }
+            if(topPrimary){
+              topPrimary.textContent='次の手順を実施';
+              topPrimary.className='primary';
+            }
+            if(labelHost) labelHost.textContent='今やること：② 対応手順 '+(done+1)+' / '+boxes.length;
+            if(hintHost) hintHost.textContent=stepText;
+          }else{
+            if(primary){
+              primary.textContent='作業報告へ進む';
+              primary.className='green';
+            }
+            if(topPrimary){
+              topPrimary.textContent='作業報告へ進む';
+              topPrimary.className='green';
+            }
+            if(labelHost) labelHost.textContent='今やること：③ 作業報告';
+            if(hintHost) hintHost.textContent='対応手順はすべて完了しています。結果を記録して案件を完了します。';
+          }
+        };
         document.querySelectorAll('.ticketAssistStepCheck').forEach(el=>{
-          el.addEventListener('change',()=>scheduleAssistProgressSave(0));
+          el.addEventListener('change',()=>{
+            scheduleAssistProgressSave(0);
+            refreshChecklistPrimaryAction();
+          });
         });
+        refreshChecklistPrimaryAction();
         document.querySelectorAll('.ticketAssistStepNote').forEach(el=>{
           el.addEventListener('input',()=>scheduleAssistProgressSave(800));
           el.addEventListener('change',()=>scheduleAssistProgressSave(0));
