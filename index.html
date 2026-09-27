@@ -7905,14 +7905,54 @@
       const knowledgeSource=(knowledgeArticles||[]).filter(x=>x.is_active!==false);
       const similarTicketSource=(allSupportTickets||[]).filter(x=>String(x.id)!==String(t.id));
       const renderKnowledgeCandidates=()=>{
-        const q=($('#ticketKnowledgeSearch')?.value||'').trim().toLowerCase();
-        const terms=q.split(/[\s　、。・,\/\\\-]+/).map(x=>x.trim()).filter(x=>x.length>=2);
+        const normalizeSupportSearchText=value=>String(value||'')
+          .normalize('NFKC')
+          .toLowerCase()
+          .replace(/プリンター/g,'プリンタ')
+          .replace(/スキャナー/g,'スキャナ')
+          .replace(/出来ない|出来ません/g,'できない')
+          .replace(/つまった|詰った/g,'詰まった')
+          .replace(/[\s　、。・,\/\\\-]+/g,' ')
+          .trim();
+
+        const expandSupportSearchTerms=value=>{
+          const normalized=normalizeSupportSearchText(value);
+          const base=normalized.split(' ').map(x=>x.trim()).filter(x=>x.length>=2);
+          const expanded=[...base];
+          const add=(...values)=>values.forEach(v=>{
+            const term=normalizeSupportSearchText(v);
+            if(term.length>=2&&!expanded.includes(term)) expanded.push(term);
+          });
+
+          if(/印刷/.test(normalized) && /(できない|できません|不可|出ない|でない|止ま|動かない)/.test(normalized)){
+            add('印刷','印刷できない');
+          }
+          if(/プリンタ/.test(normalized)){
+            add('プリンタ','印刷');
+          }
+          if(/スキャン/.test(normalized) && /(できない|できません|不可|送れない|送信できない|設定|エラー)/.test(normalized)){
+            add('スキャン','設定');
+          }
+          if(/紙/.test(normalized) && /(詰ま|つまり|詰まり)/.test(normalized)){
+            add('紙詰まり');
+          }
+          if(/ログイン/.test(normalized) && /(できない|できません|不可|エラー|入れない)/.test(normalized)){
+            add('ログイン','ログインできない');
+          }
+          if(/メール/.test(normalized) && /(送れない|受信できない|送信できない|設定|エラー)/.test(normalized)){
+            add('メール','設定');
+          }
+          return expanded;
+        };
+
+        const q=normalizeSupportSearchText($('#ticketKnowledgeSearch')?.value||'');
+        const terms=expandSupportSearchTerms(q);
 
         const scoredKnowledge=knowledgeSource.map(x=>{
-          const title=String(x.title||'').toLowerCase();
-          const category=String(x.category||'').toLowerCase();
-          const tags=(x.tags||[]).join(' ').toLowerCase();
-          const body=String(x.body||'').toLowerCase();
+          const title=normalizeSupportSearchText(x.title);
+          const category=normalizeSupportSearchText(x.category);
+          const tags=normalizeSupportSearchText((x.tags||[]).join(' '));
+          const body=normalizeSupportSearchText(x.body);
           let score=0;
           terms.forEach(term=>{
             if(title.includes(term)) score+=8;
@@ -7924,11 +7964,11 @@
         }).filter(v=>!q||v.score>0).sort((a,b)=>b.score-a.score).slice(0,5);
 
         const scoredTickets=similarTicketSource.map(x=>{
-          const subject=String(x.subject||'').toLowerCase();
-          const description=String(x.description||'').toLowerCase();
-          const customerName=String(x.customer_name||'').toLowerCase();
-          const asset=String((x.asset_model_name||'')+' '+(x.asset_number||'')).toLowerCase();
-          const type=String(supportRequestTypeLabel(x.request_type)||'').toLowerCase();
+          const subject=normalizeSupportSearchText(x.subject);
+          const description=normalizeSupportSearchText(x.description);
+          const customerName=normalizeSupportSearchText(x.customer_name);
+          const asset=normalizeSupportSearchText((x.asset_model_name||'')+' '+(x.asset_number||''));
+          const type=normalizeSupportSearchText(supportRequestTypeLabel(x.request_type));
           let score=0;
           terms.forEach(term=>{
             if(subject.includes(term)) score+=10;
