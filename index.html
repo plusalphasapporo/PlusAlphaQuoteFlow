@@ -464,8 +464,7 @@
     <form id="loginForm">
       <div class="field"><label>メールアドレス</label><input id="email" type="email" required autocomplete="username"></div>
       <div class="field"><label>パスワード</label><input id="password" type="password" required autocomplete="current-password"></div>
-      <label class="row" style="margin:10px 0 14px"><input id="trustDevice" type="checkbox"> この端末を信頼する（次回からMFAを省略）</label>
-      <p class="muted" style="margin-top:-6px">個人端末ではONを推奨します。Google Authenticatorで一度認証すると、セッションが有効な間は次回からMFA画面を表示しません。共有端末ではOFFにしてください。</p>
+      <p class="muted" style="margin:10px 0 14px">ログイン後、Google Authenticatorに表示される6桁コードで毎回本人確認を行います。</p>
       <button class="primary" style="width:100%" type="submit">ログイン</button>
       <button id="forgotPasswordBtn" class="ghost" style="width:100%;margin-top:8px" type="button">パスワードを忘れた方</button>
     </form>
@@ -582,36 +581,27 @@
   import QRCode from "https://esm.sh/qrcode@1.5.4";
   window.__quoteFlowModuleReady=true;
 
-  const TRUST_DEVICE_KEY = 'quoteflow_trusted_device';
-  const TRUST_DEVICE_PREF_KEY = 'quoteflow_trusted_device_pref';
   const AUTH_STORAGE_KEY = 'sb-dqtqoghnctdqoljxbjjz-auth-token';
-  const trustedDevice = () => localStorage.getItem(TRUST_DEVICE_KEY) === '1';
-  const trustDevicePreferred = () => localStorage.getItem(TRUST_DEVICE_PREF_KEY) !== '0';
   const GOOGLE_AUTHENTICATOR_ANDROID_URL = 'https://play.google.com/store/apps/details?id=com.google.android.apps.authenticator2';
   const GOOGLE_AUTHENTICATOR_IPHONE_URL = 'https://apps.apple.com/jp/app/google-authenticator/id388497605';
   const authStorage = {
     getItem(key){
-      if(trustedDevice()) return localStorage.getItem(key);
       return sessionStorage.getItem(key);
     },
     setItem(key,value){
-      if(trustedDevice()){
-        localStorage.setItem(key,value);
-        sessionStorage.removeItem(key);
-      }else{
-        sessionStorage.setItem(key,value);
-        localStorage.removeItem(key);
-      }
+      sessionStorage.setItem(key,value);
+      localStorage.removeItem(key);
     },
     removeItem(key){
-      localStorage.removeItem(key);
       sessionStorage.removeItem(key);
+      localStorage.removeItem(key);
     }
   };
 
-  if(!trustedDevice()){
-    localStorage.removeItem(AUTH_STORAGE_KEY);
-  }
+  // 旧「信頼済み端末」設定は使用しない。ブラウザを閉じた後は再ログイン＋MFA。
+  localStorage.removeItem('quoteflow_trusted_device');
+  localStorage.removeItem('quoteflow_trusted_device_pref');
+  localStorage.removeItem(AUTH_STORAGE_KEY);
 
   const supabase = createClient(
     "https://dqtqoghnctdqoljxbjjz.supabase.co",
@@ -6077,10 +6067,10 @@
       body=
         '<section class="card section">'+
           '<div class="formSectionHead"><span class="sectionNo">04</span><h2>セキュリティ</h2></div>'+
-          '<p class="sectionDesc">MFA、パスワード、信頼済み端末、セッション管理は専用画面で管理します。</p>'+
+          '<p class="sectionDesc">MFA、パスワード、セッション管理は専用画面で管理します。</p>'+
           '<div class="grid">'+
             '<div class="kpi"><div class="label">MFA</div><div class="value">必須</div></div>'+
-            '<div class="kpi"><div class="label">信頼済み端末</div><div class="value">対応</div></div>'+
+            '<div class="kpi"><div class="label">6桁確認</div><div class="value">ログインごと</div></div>'+
             '<div class="kpi"><div class="label">パスワード</div><div class="value">12文字以上</div></div>'+
             '<div class="kpi"><div class="label">他端末ログアウト</div><div class="value">対応</div></div>'+
           '</div>'+
@@ -13650,7 +13640,6 @@
 
     const allFactors=[...(factors.data?.totp||[]),...(factors.data?.phone||[])];
     const verified=allFactors.filter(x=>x.status==='verified');
-    const trusted=trustedDevice();
 
     const factorRows=verified.map((factor,index)=>
       '<tr>'+
@@ -13665,11 +13654,11 @@
     );
 
     $('#home').innerHTML=
-      pageIntro('セキュリティ','MFA・パスワード・信頼済み端末・セッションを管理します。')+
+      pageIntro('セキュリティ','MFA・パスワード・セッションを管理します。')+
       kpis([
         ['認証レベル',aal.data?.currentLevel||'—'],
         ['MFA登録',verified.length],
-        ['信頼済み端末',trusted?'有効':'無効'],
+        ['6桁確認','ログインごと'],
         ['ログイン',session.user.email||'—']
       ])+
       '<section class="card section">'+
@@ -13708,14 +13697,7 @@
         '<div id="passwordChangeMsg" class="notice hidden"></div>'+
       '</section>'+
       '<section class="card section">'+
-        '<div class="formSectionHead"><span class="sectionNo">03</span><h2>信頼済み端末</h2></div>'+
-        '<p class="sectionDesc">信頼済みにすると、このブラウザへMFA済みセッションを保持します。共有PCでは無効にしてください。</p>'+
-        '<label class="row" style="margin:12px 0"><input id="securityTrustDevice" type="checkbox" '+(trusted?'checked':'')+'> この端末を信頼する</label>'+
-        '<button id="securityTrustSave" class="primary" type="button">設定を保存</button>'+
-        '<div id="securityTrustMsg" class="notice hidden"></div>'+
-      '</section>'+
-      '<section class="card section">'+
-        '<div class="formSectionHead"><span class="sectionNo">04</span><h2>セッション管理</h2></div>'+
+        '<div class="formSectionHead"><span class="sectionNo">03</span><h2>セッション管理</h2></div>'+
         '<p class="sectionDesc">現在の端末は残したまま、他のブラウザ・端末のログインセッションを終了できます。</p>'+
         '<button id="signOutOthersBtn" class="orange" type="button">他の端末をログアウト</button>'+
         '<div id="sessionManageMsg" class="notice hidden"></div>'+
@@ -13835,25 +13817,6 @@
         notice('#passwordChangeMsg',err.message||String(err));
       }finally{
         if(btn) btn.disabled=false;
-      }
-    };
-
-    $('#securityTrustSave').onclick=()=>{
-      const next=$('#securityTrustDevice').checked;
-      const localValue=localStorage.getItem(AUTH_STORAGE_KEY);
-      const sessionValue=sessionStorage.getItem(AUTH_STORAGE_KEY);
-      const currentValue=localValue||sessionValue;
-
-      if(next){
-        localStorage.setItem(TRUST_DEVICE_KEY,'1');
-        if(currentValue) localStorage.setItem(AUTH_STORAGE_KEY,currentValue);
-        sessionStorage.removeItem(AUTH_STORAGE_KEY);
-        notice('#securityTrustMsg','この端末を信頼済みにしました。次回もログイン状態を保持します。',true);
-      }else{
-        localStorage.removeItem(TRUST_DEVICE_KEY);
-        if(currentValue) sessionStorage.setItem(AUTH_STORAGE_KEY,currentValue);
-        localStorage.removeItem(AUTH_STORAGE_KEY);
-        notice('#securityTrustMsg','信頼済み端末を解除しました。ブラウザ終了後は再ログインとMFAが必要です。',true);
       }
     };
 
@@ -13999,7 +13962,7 @@
       show('loginView');
       $('#logoutBtn').classList.add('hidden');
       $('#userBadge').classList.add('hidden');
-      $('#trustDevice').checked=trustDevicePreferred();
+
       return;
     }
 
@@ -14013,7 +13976,7 @@
             show('loginView');
             $('#logoutBtn').classList.add('hidden');
             $('#userBadge').classList.add('hidden');
-            $('#trustDevice').checked=trustDevicePreferred();
+      
             notice('#loginMsg','セッションが終了しました。もう一度ログインしてください。');
             return;
           }
@@ -14181,14 +14144,6 @@
     if(btn) btn.disabled=true;
     $('#loginMsg').classList.add('hidden');
     try{
-      if($('#trustDevice').checked){
-        localStorage.setItem(TRUST_DEVICE_PREF_KEY,'1');
-        localStorage.setItem(TRUST_DEVICE_KEY,'1');
-      }else{
-        localStorage.setItem(TRUST_DEVICE_PREF_KEY,'0');
-        localStorage.removeItem(TRUST_DEVICE_KEY);
-        localStorage.removeItem(AUTH_STORAGE_KEY);
-      }
       notice('#loginMsg','ログインしています...',true);
       const {error}=await supabase.auth.signInWithPassword({
         email:$('#email').value.trim(),
@@ -14254,11 +14209,7 @@
     const aal=await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
     if(aal.error) return notice('#mfaMsg',aal.error.message);
     if(aal.data?.currentLevel!=='aal2') return notice('#mfaMsg','MFA認証を完了できませんでした。もう一度お試しください。');
-    if($('#trustDevice')?.checked!==false){
-      localStorage.setItem(TRUST_DEVICE_PREF_KEY,'1');
-      localStorage.setItem(TRUST_DEVICE_KEY,'1');
-    }
-    notice('#mfaMsg','MFA認証が完了しました。この端末ではセッションが有効な間、次回からMFAを省略します。',true);
+    notice('#mfaMsg','MFA認証が完了しました。次回ログイン時もGoogle Authenticatorの6桁コードで認証します。',true);
     await boot();
   };
 
@@ -14267,7 +14218,6 @@
     try{
       await supabase.auth.signOut({scope:'local'});
     }finally{
-      localStorage.removeItem(TRUST_DEVICE_KEY);
       localStorage.removeItem(AUTH_STORAGE_KEY);
       sessionStorage.removeItem(AUTH_STORAGE_KEY);
       bootData=null;
@@ -14363,7 +14313,6 @@
           show('loginView');
           $('#logoutBtn').classList.add('hidden');
           $('#userBadge').classList.add('hidden');
-          $('#trustDevice').checked=trustedDevice();
           notice('#loginMsg','セッションが終了しました。もう一度ログインしてください。');
         }
       },0);
