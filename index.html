@@ -7900,7 +7900,10 @@
         jump('#supportRemoteWorkspace');
         setTimeout(()=>($('#ticketRemoteAction')||$('#ticketTeamViewerCreate'))?.focus(),250);
       };
-      if(actionCustomer) actionCustomer.onclick=()=>jump('#supportTicketCustomerContext');
+      if(actionCustomer) actionCustomer.onclick=()=>{
+        jump('#supportTicketCustomerContext');
+        setTimeout(()=>$('#supportTicketCustomerContext button, #supportTicketCustomerContext input, #supportTicketCustomerContext select, #supportTicketCustomerContext textarea')?.focus(),250);
+      };
 
       const openClassification=(type)=>{
         const panel=$('#ticketClassificationPanel');
@@ -7915,6 +7918,11 @@
           '<div class="supportQuickActions"><button id="ticketClassificationSave" class="primary" type="button">'+(isIncident?'障害として保存':'設定依頼として保存')+'</button></div>'+
           '<div id="ticketClassificationMsg" class="notice hidden"></div>';
         $('#ticketClassificationCancel').onclick=()=>panel.classList.add('hidden');
+        setTimeout(()=>{
+          const first=isIncident?$('#classifyOccurredAt'):$('#classifyRequested');
+          (first||$('#ticketClassificationSave'))?.focus();
+          panel.scrollIntoView({behavior:'smooth',block:'center'});
+        },120);
         $('#ticketClassificationSave').onclick=async()=>{
           const btn=$('#ticketClassificationSave'); btn.disabled=true;
           try{
@@ -8704,8 +8712,8 @@
         $('#ticketHandoffBox')?.classList.remove('hidden');
         if($('#handoffReason') && !$('#handoffReason').value) $('#handoffReason').value='AI・ナレッジ・マニュアルおよび遠隔対応で解決できないため';
         if($('#handoffNextAction') && !$('#handoffNextAction').value) $('#handoffNextAction').value='自社担当者で詳細調査・現地対応要否を判断';
-        $('#handoffReason')?.focus();
         $('#ticketHandoffBox')?.scrollIntoView({behavior:'smooth',block:'center'});
+        setTimeout(()=>$('#handoffReason')?.focus(),180);
       };
 
       const createTeamViewerSession=$('#ticketTeamViewerCreate');
