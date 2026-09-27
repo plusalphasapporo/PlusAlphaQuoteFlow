@@ -12,7 +12,10 @@ requireText('createClient(', 'Supabase client initialization');
 requireText('getAuthenticatorAssuranceLevel', 'MFA assurance-level check');
 requireText('AAL2_REQUIRED', 'AAL2 enforcement handling');
 requireText("redirectTo:window.location.origin+window.location.pathname", 'environment-aware auth redirect');
-requireText('TRUST_DEVICE_KEY', 'trusted-device session handling');
+requireText('sessionStorage.getItem(key)', 'session-only auth storage read');
+requireText('sessionStorage.setItem(key,value)', 'session-only auth storage write');
+requireText("localStorage.removeItem('quoteflow_trusted_device')", 'legacy trusted-device cleanup');
+requireText('localStorage.removeItem(AUTH_STORAGE_KEY)', 'persistent auth-token cleanup');
 
 for (const forbidden of ['sb_secret_', 'SUPABASE_SERVICE_ROLE_KEY', 'service_role']) {
   if (html.includes(forbidden)) failures.push(`Forbidden browser secret marker: ${forbidden}`);
