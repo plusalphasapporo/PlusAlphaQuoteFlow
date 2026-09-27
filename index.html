@@ -317,6 +317,17 @@
         @media(max-width:760px){header{grid-template-columns:1fr auto;height:auto;min-height:68px;padding:10px 12px}.globalSearch{grid-column:1/-1;grid-row:2}.brandBlock .sub{display:none}.profileBadge{display:none!important}}
     .wrap{max-width:1380px;margin:auto;padding:22px}
     .login{max-width:460px;margin:8vh auto}
+    #mfaView{max-width:720px}
+    .mfaStep{border:1px solid var(--line);border-radius:16px;padding:16px;margin-top:14px;background:#fff}
+    .mfaStepHead{display:flex;gap:10px;align-items:flex-start;margin-bottom:10px}
+    .mfaStepNo{display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:30px;border-radius:999px;background:#2563eb;color:#fff;font-weight:900}
+    .mfaStoreGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:12px 0}
+    .mfaStoreCard{border:1px solid var(--line);border-radius:14px;padding:14px;text-align:center;background:#f8fafc}
+    .mfaStoreCard h3{margin:0 0 4px;font-size:15px}.mfaStoreCard p{margin:0 0 10px;font-size:12px;color:var(--muted)}
+    .mfaStoreQr{width:150px;height:150px;max-width:100%;background:#fff;border:1px solid var(--line);border-radius:10px;padding:6px}
+    .mfaSetupQr{display:block;max-width:220px;width:100%;margin:12px auto;border-radius:10px}
+    .mfaActionFull{width:100%;margin-top:8px}
+    @media(max-width:620px){.mfaStoreGrid{grid-template-columns:1fr}.mfaStoreQr{width:180px;height:180px}}
     .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:20px;box-shadow:var(--shadow)}
     .field{display:grid;gap:6px;margin:14px 0}.field label{font-size:12px;font-weight:800;color:#475569}
     .field input,.field textarea,.field select{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font:inherit;background:#fff}
@@ -453,26 +464,52 @@
     <form id="loginForm">
       <div class="field"><label>メールアドレス</label><input id="email" type="email" required autocomplete="username"></div>
       <div class="field"><label>パスワード</label><input id="password" type="password" required autocomplete="current-password"></div>
-      <label class="row" style="margin:10px 0 14px"><input id="trustDevice" type="checkbox"> この端末を信頼する</label>
-      <p class="muted" style="margin-top:-6px">信頼済み端末ではログイン状態を保持します。共有端末ではチェックを外してください。</p>
+      <label class="row" style="margin:10px 0 14px"><input id="trustDevice" type="checkbox"> この端末を信頼する（次回からMFAを省略）</label>
+      <p class="muted" style="margin-top:-6px">個人端末ではONを推奨します。Google Authenticatorで一度認証すると、セッションが有効な間は次回からMFA画面を表示しません。共有端末ではOFFにしてください。</p>
       <button class="primary" style="width:100%" type="submit">ログイン</button>
       <button id="forgotPasswordBtn" class="ghost" style="width:100%;margin-top:8px" type="button">パスワードを忘れた方</button>
     </form>
   </section>
 
   <section id="mfaView" class="card login hidden">
-    <h1>MFA認証</h1>
-    <p class="muted">QuoteFlow Cloud は全アカウントで多要素認証が必須です。</p>
+    <h1>Google Authenticator 設定</h1>
+    <p class="muted">QuoteFlow Cloud は全アカウントでMFA認証が必須です。初回だけGoogle Authenticatorを設定します。</p>
     <div id="mfaMsg" class="notice hidden"></div>
-    <div id="mfaEnrollBox">
-      <button id="enrollBtn" class="primary" type="button">Authenticatorを登録</button>
-      <div id="qrWrap" class="hidden" style="margin-top:14px">
-        <img id="qr" alt="MFA QR" style="max-width:220px">
-        <p id="secret" class="muted"></p>
+
+    <div id="mfaAppInstallStep" class="mfaStep hidden">
+      <div class="mfaStepHead"><span class="mfaStepNo">1</span><div><strong>Google Authenticatorをスマートフォンに入手</strong><div class="muted">AndroidまたはiPhoneを選んでください。</div></div></div>
+      <div class="mfaStoreGrid">
+        <div class="mfaStoreCard">
+          <h3>Android</h3>
+          <p>Google Play / Google LLC</p>
+          <img id="mfaAndroidQr" class="mfaStoreQr" alt="Android版 Google Authenticator 入手QR">
+          <a class="primary" style="display:block;text-decoration:none;margin-top:10px" href="https://play.google.com/store/apps/details?id=com.google.android.apps.authenticator2" target="_blank" rel="noopener noreferrer">Google Playで入手</a>
+        </div>
+        <div class="mfaStoreCard">
+          <h3>iPhone</h3>
+          <p>App Store / Google LLC</p>
+          <img id="mfaIphoneQr" class="mfaStoreQr" alt="iPhone版 Google Authenticator 入手QR">
+          <a class="primary" style="display:block;text-decoration:none;margin-top:10px" href="https://apps.apple.com/jp/app/google-authenticator/id388497605" target="_blank" rel="noopener noreferrer">App Storeで入手</a>
+        </div>
+      </div>
+      <button id="mfaAppReadyBtn" class="primary mfaActionFull" type="button">Google Authenticatorを入手済み → 次へ</button>
+    </div>
+
+    <div id="mfaEnrollBox" class="mfaStep hidden">
+      <div class="mfaStepHead"><span class="mfaStepNo">2</span><div><strong>QuoteFlow CloudをGoogle Authenticatorへ登録</strong><div class="muted">次に表示するQRをGoogle Authenticatorで読み取ります。</div></div></div>
+      <button id="enrollBtn" class="primary mfaActionFull" type="button">MFA登録QRを表示</button>
+      <div id="qrWrap" class="hidden" style="margin-top:14px;text-align:center">
+        <img id="qr" class="mfaSetupQr" alt="QuoteFlow Cloud MFA登録QR">
+        <p class="muted">Google Authenticatorで「＋」→「QRコードをスキャン」から読み取ってください。</p>
+        <details><summary>QRを読み取れない場合</summary><p id="secret" class="muted" style="overflow-wrap:anywhere"></p></details>
       </div>
     </div>
-    <div class="field"><label>6桁コード</label><input id="mfaCode" inputmode="numeric" autocomplete="one-time-code"></div>
-    <button id="verifyBtn" class="primary" type="button">認証する</button>
+
+    <div id="mfaVerifyBox" class="mfaStep hidden">
+      <div class="mfaStepHead"><span class="mfaStepNo">3</span><div><strong>6桁コードで認証</strong><div class="muted">Google Authenticatorに表示された6桁コードを入力してください。</div></div></div>
+      <div class="field"><label>6桁コード</label><input id="mfaCode" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code" placeholder="123456"></div>
+      <button id="verifyBtn" class="primary mfaActionFull" type="button">認証してQuoteFlow Cloudを開始</button>
+    </div>
   </section>
 
   <section id="passwordRecoveryView" class="card login hidden">
@@ -542,11 +579,16 @@
 
 <script type="module">
   import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+  import QRCode from "https://esm.sh/qrcode@1.5.4";
   window.__quoteFlowModuleReady=true;
 
   const TRUST_DEVICE_KEY = 'quoteflow_trusted_device';
+  const TRUST_DEVICE_PREF_KEY = 'quoteflow_trusted_device_pref';
   const AUTH_STORAGE_KEY = 'sb-dqtqoghnctdqoljxbjjz-auth-token';
   const trustedDevice = () => localStorage.getItem(TRUST_DEVICE_KEY) === '1';
+  const trustDevicePreferred = () => localStorage.getItem(TRUST_DEVICE_PREF_KEY) !== '0';
+  const GOOGLE_AUTHENTICATOR_ANDROID_URL = 'https://play.google.com/store/apps/details?id=com.google.android.apps.authenticator2';
+  const GOOGLE_AUTHENTICATOR_IPHONE_URL = 'https://apps.apple.com/jp/app/google-authenticator/id388497605';
   const authStorage = {
     getItem(key){
       if(trustedDevice()) return localStorage.getItem(key);
@@ -811,6 +853,7 @@
 
   let bootData=null;
   let mfaState={};
+  let mfaStoreQrReady=false;
   let currentPage='home';
   let manualLogout=false;
   let healthTimer=null;
@@ -13899,11 +13942,29 @@
     }
   }
 
+  async function renderGoogleAuthenticatorStoreQrs(){
+    if(mfaStoreQrReady) return;
+    try{
+      const [androidQr,iphoneQr]=await Promise.all([
+        QRCode.toDataURL(GOOGLE_AUTHENTICATOR_ANDROID_URL,{width:220,margin:1,errorCorrectionLevel:'M'}),
+        QRCode.toDataURL(GOOGLE_AUTHENTICATOR_IPHONE_URL,{width:220,margin:1,errorCorrectionLevel:'M'})
+      ]);
+      if($('#mfaAndroidQr')) $('#mfaAndroidQr').src=androidQr;
+      if($('#mfaIphoneQr')) $('#mfaIphoneQr').src=iphoneQr;
+      mfaStoreQrReady=true;
+    }catch(err){
+      console.warn('Google Authenticator store QR generation failed',err);
+    }
+  }
+
   async function prepareMfa(){
     show('mfaView');
-    $('#mfaEnrollBox').classList.remove('hidden');
+    $('#mfaAppInstallStep').classList.add('hidden');
+    $('#mfaEnrollBox').classList.add('hidden');
+    $('#mfaVerifyBox').classList.add('hidden');
     $('#qrWrap').classList.add('hidden');
     $('#mfaMsg').classList.add('hidden');
+    $('#mfaCode').value='';
     mfaState={};
 
     const aal=await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
@@ -13915,16 +13976,20 @@
     const f=await supabase.auth.mfa.listFactors();
     if(f.error) return notice('#mfaMsg',f.error.message);
 
-    const verified=[...(f.data?.totp||[]),...(f.data?.phone||[])].find(x=>x.status==='verified');
+    const verified=(f.data?.totp||[]).find(x=>x.status==='verified');
     if(verified){
-      $('#mfaEnrollBox').classList.add('hidden');
+      $('#mfaVerifyBox').classList.remove('hidden');
       const ch=await supabase.auth.mfa.challenge({factorId:verified.id});
       if(ch.error) return notice('#mfaMsg',ch.error.message);
-      mfaState={factorId:verified.id,challengeId:ch.data.id};
+      mfaState={factorId:verified.id,challengeId:ch.data.id,existing:true};
+      notice('#mfaMsg','Google Authenticatorに表示されている6桁コードを入力してください。',true);
+      setTimeout(()=>$('#mfaCode')?.focus(),120);
       return;
     }
 
-    notice('#mfaMsg','初回ログインのためAuthenticatorの登録が必要です。QRコードを登録後、6桁コードを入力してください。',true);
+    $('#mfaAppInstallStep').classList.remove('hidden');
+    await renderGoogleAuthenticatorStoreQrs();
+    notice('#mfaMsg','初回設定です。まずGoogle Authenticatorをスマートフォンへ入手してください。',true);
   }
 
   async function boot(){
@@ -13934,7 +13999,7 @@
       show('loginView');
       $('#logoutBtn').classList.add('hidden');
       $('#userBadge').classList.add('hidden');
-      $('#trustDevice').checked=trustedDevice();
+      $('#trustDevice').checked=trustDevicePreferred();
       return;
     }
 
@@ -13948,7 +14013,7 @@
             show('loginView');
             $('#logoutBtn').classList.add('hidden');
             $('#userBadge').classList.add('hidden');
-            $('#trustDevice').checked=trustedDevice();
+            $('#trustDevice').checked=trustDevicePreferred();
             notice('#loginMsg','セッションが終了しました。もう一度ログインしてください。');
             return;
           }
@@ -14117,8 +14182,10 @@
     $('#loginMsg').classList.add('hidden');
     try{
       if($('#trustDevice').checked){
+        localStorage.setItem(TRUST_DEVICE_PREF_KEY,'1');
         localStorage.setItem(TRUST_DEVICE_KEY,'1');
       }else{
+        localStorage.setItem(TRUST_DEVICE_PREF_KEY,'0');
         localStorage.removeItem(TRUST_DEVICE_KEY);
         localStorage.removeItem(AUTH_STORAGE_KEY);
       }
@@ -14140,15 +14207,33 @@
     }
   };
 
+  $('#mfaAppReadyBtn').onclick=()=>{
+    $('#mfaAppInstallStep').classList.add('hidden');
+    $('#mfaEnrollBox').classList.remove('hidden');
+    notice('#mfaMsg','次に、QuoteFlow CloudのMFA登録QRをGoogle Authenticatorで読み取ります。',true);
+  };
+
   $('#enrollBtn').onclick=async()=>{
-    const r=await supabase.auth.mfa.enroll({factorType:'totp',friendlyName:'QuoteFlow Cloud'});
-    if(r.error) return notice('#mfaMsg',r.error.message);
-    const ch=await supabase.auth.mfa.challenge({factorId:r.data.id});
-    if(ch.error) return notice('#mfaMsg',ch.error.message);
-    mfaState={factorId:r.data.id,challengeId:ch.data.id};
-    $('#qr').src=r.data.totp.qr_code;
-    $('#qrWrap').classList.remove('hidden');
-    $('#secret').textContent='Secret: '+r.data.totp.secret;
+    const btn=$('#enrollBtn');
+    btn.disabled=true;
+    try{
+      const r=await supabase.auth.mfa.enroll({factorType:'totp',friendlyName:'QuoteFlow Cloud - Google Authenticator'});
+      if(r.error) throw r.error;
+      const ch=await supabase.auth.mfa.challenge({factorId:r.data.id});
+      if(ch.error) throw ch.error;
+      mfaState={factorId:r.data.id,challengeId:ch.data.id,existing:false};
+      $('#qr').src=r.data.totp.qr_code;
+      $('#qrWrap').classList.remove('hidden');
+      $('#mfaVerifyBox').classList.remove('hidden');
+      $('#secret').textContent='セットアップキー: '+r.data.totp.secret;
+      btn.textContent='MFA登録QRを再表示';
+      notice('#mfaMsg','QRをGoogle Authenticatorで読み取った後、表示された6桁コードを入力してください。',true);
+      setTimeout(()=>$('#mfaCode')?.focus(),120);
+    }catch(err){
+      notice('#mfaMsg',err.message||String(err));
+    }finally{
+      btn.disabled=false;
+    }
   };
 
   $('#verifyBtn').onclick=async()=>{
@@ -14169,6 +14254,11 @@
     const aal=await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
     if(aal.error) return notice('#mfaMsg',aal.error.message);
     if(aal.data?.currentLevel!=='aal2') return notice('#mfaMsg','MFA認証を完了できませんでした。もう一度お試しください。');
+    if($('#trustDevice')?.checked!==false){
+      localStorage.setItem(TRUST_DEVICE_PREF_KEY,'1');
+      localStorage.setItem(TRUST_DEVICE_KEY,'1');
+    }
+    notice('#mfaMsg','MFA認証が完了しました。この端末ではセッションが有効な間、次回からMFAを省略します。',true);
     await boot();
   };
 
