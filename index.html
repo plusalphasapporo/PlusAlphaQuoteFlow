@@ -259,6 +259,19 @@
     .messageVisibilityBanner.support{background:#eff6ff;border:1px solid #93c5fd;color:#1d4ed8}
     .messageVisibilityBanner.internal{background:#f1f5f9;border:1px solid #cbd5e1;color:#334155}
     .messageVisibilityBanner.replyMismatch{box-shadow:inset 0 0 0 2px #dc2626}
+    .messageVisibilityBanner.neutral{background:#f8fafc;border:1px dashed #94a3b8;color:#475569}
+    .messageAudiencePanel{border:1px solid var(--line);border-radius:14px;padding:12px;background:#f8fafc;margin:10px 0}
+    .messageAudiencePanelHead strong{display:block}.messageAudiencePanelHead small{display:block;color:var(--muted);margin-top:3px}
+    .messageAudienceGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}
+    .messageAudienceBtn{min-height:72px;text-align:left;border:1px solid var(--line);background:#fff;border-radius:12px;padding:10px 11px;color:var(--ink)}
+    .messageAudienceBtn strong{display:block;font-size:12px}.messageAudienceBtn small{display:block;margin-top:4px;color:var(--muted);font-size:11px;line-height:1.4}
+    .messageAudienceBtn[data-visibility="customer"].selected{border:2px solid #f97316;background:#fff7ed;color:#9a3412}
+    .messageAudienceBtn[data-visibility="support"].selected{border:2px solid #2563eb;background:#eff6ff;color:#1d4ed8}
+    .messageAudienceBtn[data-visibility="internal"].selected{border:2px solid #64748b;background:#f1f5f9;color:#334155}
+    .ticketMessageCard.visibility-customer{border-left:4px solid #f97316}
+    .ticketMessageCard.visibility-support{border-left:4px solid #2563eb}
+    .ticketMessageCard.visibility-internal{border-left:4px solid #64748b;background:#f8fafc}
+    @media(max-width:680px){.messageAudienceGrid{grid-template-columns:1fr}}
     .messageReplyContext{margin:10px 0;padding:10px 12px;border:1px solid #bfdbfe;border-left:4px solid #2563eb;border-radius:12px;background:#f8fbff}
     .messageReplyContextHead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
     .messageReplyContextBody{font-size:13px;color:#475569;white-space:pre-wrap;max-height:88px;overflow:auto}
@@ -7719,7 +7732,7 @@
           const important=body.startsWith('【重要】');
           const author=m.sender_name||m.created_by_name||m.author_name||'';
           const isNew=timeValue(m.created_at)>previousMessageSeenTs;
-          return '<article class="item ticketMessageCard '+(isNew?'messageNew':'')+'" data-visibility="'+esc(m.visibility||'customer')+'" data-body="'+esc(body.toLowerCase())+'" data-important="'+(important?'1':'0')+'">'+
+          return '<article class="item ticketMessageCard visibility-'+esc(m.visibility||'customer')+' '+(isNew?'messageNew':'')+'" data-visibility="'+esc(m.visibility||'customer')+'" data-body="'+esc(body.toLowerCase())+'" data-important="'+(important?'1':'0')+'">'+
             '<div class="row between"><div class="row">'+
               '<strong>'+(important?'【重要】 ':'')+esc(customer?'メッセージ':visibilityLabel(m.visibility))+'</strong>'+
               (author?'<span class="pill">'+esc(author)+'</span>':'')+
@@ -7848,7 +7861,16 @@
     }else if(support){
       visibilitySelect='<div class="field"><label>公開範囲</label><select id="ticketMessageVisibility"><option value="customer">顧客向け</option><option value="support">サポート内</option></select></div>';
     }else{
-      visibilitySelect='<div class="field"><label>公開範囲</label><select id="ticketMessageVisibility"><option value="customer">顧客向け</option><option value="support">サポート内</option><option value="internal">社内のみ</option></select></div>';
+      visibilitySelect=
+        '<div class="messageAudiencePanel">'+
+          '<div class="messageAudiencePanelHead"><strong>送信先を選択</strong><small>選んだ相手だけに表示されます。未選択では送信できません。</small></div>'+
+          '<div class="messageAudienceGrid">'+
+            '<button class="messageAudienceBtn" data-visibility="customer" type="button"><strong>顧客へ送る</strong><small>顧客画面に表示されます</small></button>'+
+            '<button class="messageAudienceBtn" data-visibility="support" type="button"><strong>サポート会社へ送る</strong><small>サポート会社だけに共有します</small></button>'+
+            '<button class="messageAudienceBtn" data-visibility="internal" type="button"><strong>自社内メモ</strong><small>自社だけに残します</small></button>'+
+          '</div>'+
+          '<select id="ticketMessageVisibility" class="hidden" aria-label="送信先"><option value="">未選択</option><option value="customer">顧客向け</option><option value="support">サポート会社向け</option><option value="internal">自社内のみ</option></select>'+
+        '</div>';
     }
 
     const internalEdit=internal
@@ -8029,7 +8051,7 @@
                 : '<strong>返信担当：未担当</strong><br>「自分が返信する」または顧客向け送信時に担当を確保します。')+
             '</div>':'')+
             visibilitySelect+
-            (!customer?'<div id="ticketMessageVisibilityBanner" class="messageVisibilityBanner customer">このメッセージは顧客に表示されます</div>':'')+
+            (!customer?'<div id="ticketMessageVisibilityBanner" class="messageVisibilityBanner '+(internal?'neutral':'customer')+'">'+(internal?'送信先を選択してください。':'このメッセージは顧客に表示されます')+'</div>':'')+
             '<div id="ticketMessageReplyContext" class="messageReplyContext hidden"></div>'+
             '<div class="row" style="margin:8px 0;gap:6px">'+
               '<button class="ghost ticketMessageTemplate" type="button" data-text="お問い合わせありがとうございます。内容を確認しておりますので、少々お待ちください。">受付連絡</button>'+
@@ -8042,12 +8064,14 @@
             (support?'<div class="field"><label>返信後の次の行動</label><select id="ticketMessageNextAction"><option value="customer_reply_waiting">顧客返信待ち</option><option value="in_progress">対応を続ける</option><option value="internal_review_waiting">社内確認待ち</option><option value="teamviewer_waiting">TeamViewer待ち</option><option value="internal_handoff_waiting">自社引継ぎ待ち</option><option value="completed">完了</option></select><small class="muted">返信後に「次に何をする案件か」を一覧へ反映します。</small></div>':'')+
             '<div class="row between" style="gap:8px">'+
               '<div class="row">'+
-                (!customer?'<button id="ticketMessageInternalNote" class="ghost" type="button">'+(support?'サポート内メモ':'社内メモ')+'</button>':'')+
+                (support?'<button id="ticketMessageInternalNote" class="ghost" type="button">サポート内メモ</button>':'')+
                 '<label class="row" style="gap:6px"><input id="ticketMessageImportant" type="checkbox"> 重要</label>'+
               '</div>'+
               (support
                 ? '<div class="row" style="gap:8px"><button id="ticketMessageSendKeep" class="ghost" type="button">送信・継続対応</button><button id="ticketMessageSendRelease" class="primary" type="button">返信完了・担当解除</button></div>'
-                : '<button class="primary" type="submit">メッセージを送信</button>')+
+                : internal
+                  ? '<button id="ticketMessageSubmit" class="ghost" type="submit" disabled>送信先を選択してください</button>'
+                  : '<button class="primary" type="submit">メッセージを送信</button>')+
             '</div>'+
           '</form><div id="ticketMessageMsg" class="notice hidden"></div></section>'+
         (!customer?'<section class="section"><h3>引き継ぎ履歴</h3>'+dataTable(internal?['状態','理由','次の対応','作成日','操作']:['状態','理由','次の対応','作成日'],handoffRows)+'</section>':'')+
@@ -8101,25 +8125,64 @@
     };
     const updateMessageVisibilityBanner=()=>{
       if(!messageVisibilityEl||!messageVisibilityBanner) return;
-      const v=messageVisibilityEl.value||'customer';
+      const v=messageVisibilityEl.value||'';
       const meta={
-        customer:['customer','顧客に表示されます。個人情報・社内情報の誤送信に注意してください。'],
-        support:['support','サポート会社内だけに表示されます。顧客には表示されません。'],
-        internal:['internal','自社内だけに表示されます。顧客・サポート会社には表示されません。']
-      }[v]||['customer','顧客に表示されます。'];
+        '':['neutral','送信先を選択してください。顧客・サポート会社・自社内のいずれかを明示的に選ぶまで送信できません。'],
+        customer:['customer','送信先：顧客　この内容は顧客画面に表示されます。社内情報・パスワード等を含めないでください。'],
+        support:['support','送信先：サポート会社　顧客には表示されません。サポート会社と自社の案件内共有です。'],
+        internal:['internal','保存先：自社内メモ　顧客・サポート会社には表示されません。']
+      }[v]||['neutral','送信先を選択してください。'];
       messageVisibilityBanner.className='messageVisibilityBanner '+meta[0];
-      const mismatch=!!(messageReplyContext && v!==messageReplyContext.visibility);
+      const mismatch=!!(messageReplyContext && v && v!==messageReplyContext.visibility);
       messageVisibilityBanner.classList.toggle('replyMismatch',mismatch);
       messageVisibilityBanner.textContent=meta[1]+(mismatch?' 返信先の公開範囲と異なります。送信前に確認してください。':'');
+      document.querySelectorAll('.messageAudienceBtn').forEach(btn=>{
+        btn.classList.toggle('selected',btn.dataset.visibility===v);
+        btn.setAttribute('aria-pressed',btn.dataset.visibility===v?'true':'false');
+      });
+      if(messageBodyEl){
+        messageBodyEl.placeholder=v==='customer'
+          ? '顧客へ送る内容を入力してください'
+          : v==='support'
+            ? 'サポート会社へ共有する内容を入力してください'
+            : v==='internal'
+              ? '自社だけに残すメモを入力してください'
+              : '先に送信先を選択してください';
+      }
     };
     const updateMessageActionButtons=()=>{
+      if(!messageVisibilityEl) return;
+      const v=messageVisibilityEl.value||'';
       const releaseBtn=$('#ticketMessageSendRelease');
-      if(!releaseBtn||!messageVisibilityEl) return;
-      const customerVisible=messageVisibilityEl.value==='customer';
-      releaseBtn.disabled=!customerVisible;
-      releaseBtn.title=customerVisible?'顧客へ返信後、この案件の担当を解除します。':'担当解除は顧客向け返信のときだけ選べます。';
+      if(releaseBtn){
+        const customerVisible=v==='customer';
+        releaseBtn.disabled=!customerVisible;
+        releaseBtn.title=customerVisible?'顧客へ返信後、この案件の担当を解除します。':'担当解除は顧客向け返信のときだけ選べます。';
+      }
+      const submit=$('#ticketMessageSubmit');
+      if(submit){
+        submit.disabled=!v;
+        if(!v){
+          submit.textContent='送信先を選択してください';
+          submit.className='ghost';
+        }else if(v==='customer'){
+          submit.textContent='顧客へ送信';
+          submit.className='orange';
+        }else if(v==='support'){
+          submit.textContent='サポート会社へ送信';
+          submit.className='primary';
+        }else{
+          submit.textContent='自社内メモを保存';
+          submit.className='ghost';
+        }
+      }
     };
     if(messageVisibilityEl){
+      document.querySelectorAll('.messageAudienceBtn').forEach(btn=>btn.addEventListener('click',()=>{
+        messageVisibilityEl.value=btn.dataset.visibility||'';
+        messageVisibilityEl.dispatchEvent(new Event('change',{bubbles:true}));
+        messageBodyEl?.focus();
+      }));
       updateMessageVisibilityBanner();
       updateMessageActionButtons();
       messageVisibilityEl.addEventListener('change',()=>{
@@ -9635,6 +9698,7 @@
         if(!rawBody && !files.length) throw new Error('メッセージまたは添付ファイルを入力してください。');
 
         const visibility=$('#ticketMessageVisibility').value;
+        if(!visibility) throw new Error('送信先を選択してください。');
         if(support && visibility==='customer'){
           const latestAssignment=await rpc('support_ticket_assignment_state',{p_ticket_id:t.id});
           if(latestAssignment?.support_assigned_user_id && !latestAssignment?.is_mine){
@@ -9693,8 +9757,9 @@
           });
         }
         clearSupportDraft(t.id,'message');
-        notice('#ticketMessageMsg','メッセージを送信しました。'+(useRelease?' 担当を解除しました。':'')+(files.length?' 添付 '+files.length+'件を追加しました。':''),true);
-        toast(useRelease?'返信完了・担当を解除しました':(files.length?'メッセージと添付を送信しました':'メッセージを送信しました'));
+        const destinationLabel=visibility==='customer'?'顧客':visibility==='support'?'サポート会社':'自社内メモ';
+        notice('#ticketMessageMsg',destinationLabel+'へ'+(visibility==='internal'?'保存':'送信')+'しました。'+(useRelease?' 担当を解除しました。':'')+(files.length?' 添付 '+files.length+'件を追加しました。':''),true);
+        toast(useRelease?'返信完了・担当を解除しました':destinationLabel+'へ'+(visibility==='internal'?'保存しました':'送信しました'));
         messageReleaseAfter=false;
         await renderTicketDetail(t.id);
       }catch(err){notice('#ticketMessageMsg',err.message||String(err));}
