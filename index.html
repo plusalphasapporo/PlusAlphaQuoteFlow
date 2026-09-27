@@ -335,6 +335,9 @@
     .mfaStoreCard h3{margin:0 0 4px;font-size:15px}.mfaStoreCard p{margin:0 0 10px;font-size:12px;color:var(--muted)}
     .mfaStoreQr{width:150px;height:150px;max-width:100%;background:#fff;border:1px solid var(--line);border-radius:10px;padding:6px}
     .mfaSetupQr{display:block;max-width:220px;width:100%;margin:12px auto;border-radius:10px}
+    #mfaCode{font-size:28px;font-weight:900;letter-spacing:.34em;text-align:center;padding-left:calc(12px + .34em);font-variant-numeric:tabular-nums}
+    #mfaCode::placeholder{letter-spacing:.18em;font-weight:600;color:#cbd5e1}
+    .mfaCodeHint{margin:-6px 0 10px;text-align:center;font-size:12px;color:var(--muted)}
     .mfaActionFull{width:100%;margin-top:8px}
     @media(max-width:620px){.mfaProgress{grid-template-columns:1fr}.mfaStoreGrid{grid-template-columns:1fr}.mfaStoreQr{width:180px;height:180px}}
     .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:20px;box-shadow:var(--shadow)}
@@ -520,8 +523,9 @@
 
     <div id="mfaVerifyBox" class="mfaStep hidden">
       <div class="mfaStepHead"><span class="mfaStepNo">3</span><div><strong>6桁コードで認証</strong><div class="muted">Google Authenticatorに表示された6桁コードを入力してください。</div></div></div>
-      <div class="field"><label>6桁コード</label><input id="mfaCode" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code" placeholder="123456"></div>
-      <button id="verifyBtn" class="primary mfaActionFull" type="button">認証してQuoteFlow Cloudを開始</button>
+      <div class="field"><label for="mfaCode">6桁コード</label><input id="mfaCode" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code" placeholder="123456" aria-describedby="mfaCodeHint"></div>
+      <div id="mfaCodeHint" class="mfaCodeHint">Google Authenticatorの現在の6桁コードを入力してください。コードは約30秒ごとに切り替わります。</div>
+      <button id="verifyBtn" class="primary mfaActionFull" type="button" disabled>6桁コードを入力してください</button>
     </div>
   </section>
 
@@ -13970,9 +13974,8 @@
       setMfaProgress(3,true);
       $('#mfaVerifyBox').classList.add('active');
       $('#mfaVerifyBox').classList.remove('hidden');
-      const ch=await supabase.auth.mfa.challenge({factorId:verified.id});
-      if(ch.error) return notice('#mfaMsg',ch.error.message);
-      mfaState={factorId:verified.id,challengeId:ch.data.id,existing:true};
+      mfaState={factorId:verified.id,existing:true};
+      syncMfaVerifyButton();
       notice('#mfaMsg','Google Authenticatorに表示されている6桁コードを入力してください。',true);
       setTimeout(()=>$('#mfaCode')?.focus(),120);
       return;
@@ -14207,9 +14210,7 @@
     try{
       const r=await supabase.auth.mfa.enroll({factorType:'totp',friendlyName:'QuoteFlow Cloud - Google Authenticator'});
       if(r.error) throw r.error;
-      const ch=await supabase.auth.mfa.challenge({factorId:r.data.id});
-      if(ch.error) throw ch.error;
-      mfaState={factorId:r.data.id,challengeId:ch.data.id,existing:false};
+      mfaState={factorId:r.data.id,existing:false};
       $('#qr').src=r.data.totp.qr_code;
       $('#qrWrap').classList.remove('hidden');
       setMfaProgress(3);
@@ -14218,6 +14219,7 @@
       $('#mfaVerifyBox').classList.remove('hidden');
       $('#secret').textContent='セットアップキー: '+r.data.totp.secret;
       btn.textContent='MFA登録QRを再表示';
+      syncMfaVerifyButton();
       notice('#mfaMsg','QRをGoogle Authenticatorで読み取った後、表示された6桁コードを入力してください。',true);
       setTimeout(()=>$('#mfaCode')?.focus(),120);
     }catch(err){
@@ -14227,26 +14229,84 @@
     }
   };
 
-  $('#verifyBtn').onclick=async()=>{
-    let {factorId,challengeId}=mfaState;
-    if(!factorId) return notice('#mfaMsg','Authenticatorを登録してください。');
-    if(!challengeId){
-      const ch=await supabase.auth.mfa.challenge({factorId});
-      if(ch.error) return notice('#mfaMsg',ch.error.message);
-      challengeId=ch.data.id;
+  function syncMfaVerifyButton(){
+    const code=$('#mfaCode')?.value||'';
+    const btn=$('#verifyBtn');
+    if(!btn) return;
+    const ready=/^\d{6}$/.test(code);
+    btn.disabled=!ready;
+    btn.textContent=ready?'6桁コードを確認':'6桁コードを入力してください';
+  }
+
+  function mfaVerifyErrorMessage(err){
+    const msg=String(err?.message||err||'').toLowerCase();
+    if(!navigator.onLine || msg.includes('network') || msg.includes('fetch')){
+      return '通信できませんでした。接続を確認してから、現在表示されている6桁コードでもう一度お試しください。';
     }
-    const v=await supabase.auth.mfa.verify({
-      factorId,
-      challengeId,
-      code:$('#mfaCode').value.trim()
-    });
-    if(v.error) return notice('#mfaMsg',v.error.message);
-    $('#mfaCode').value='';
-    const aal=await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-    if(aal.error) return notice('#mfaMsg',aal.error.message);
-    if(aal.data?.currentLevel!=='aal2') return notice('#mfaMsg','MFA認証を完了できませんでした。もう一度お試しください。');
-    notice('#mfaMsg','MFA認証が完了しました。次回ログイン時もGoogle Authenticatorの6桁コードで認証します。',true);
-    await boot();
+    if(msg.includes('expired') || msg.includes('challenge') && msg.includes('invalid')){
+      return '認証コードの有効時間が過ぎた可能性があります。Google Authenticatorの新しい6桁コードを入力してください。';
+    }
+    if(msg.includes('invalid') || msg.includes('incorrect') || msg.includes('code')){
+      return '6桁コードが一致しません。Google Authenticatorの現在のコードを確認して、もう一度入力してください。';
+    }
+    if(msg.includes('rate') || msg.includes('too many')){
+      return '認証を続けて試したため一時的に制限されています。少し時間を空けてからもう一度お試しください。';
+    }
+    return 'MFA認証を完了できませんでした。Google Authenticatorの現在の6桁コードを確認して、もう一度お試しください。';
+  }
+
+  $('#mfaCode').addEventListener('input',e=>{
+    const digits=String(e.target.value||'').replace(/\D/g,'').slice(0,6);
+    if(e.target.value!==digits) e.target.value=digits;
+    syncMfaVerifyButton();
+    $('#mfaMsg').classList.add('hidden');
+  });
+
+  $('#mfaCode').addEventListener('keydown',e=>{
+    if(e.key==='Enter' && /^\d{6}$/.test($('#mfaCode').value)){
+      e.preventDefault();
+      $('#verifyBtn').click();
+    }
+  });
+
+  $('#verifyBtn').onclick=async()=>{
+    const factorId=mfaState.factorId;
+    const code=$('#mfaCode').value.trim();
+    const btn=$('#verifyBtn');
+    if(!factorId) return notice('#mfaMsg','Authenticatorを登録してください。');
+    if(!/^\d{6}$/.test(code)){
+      syncMfaVerifyButton();
+      return notice('#mfaMsg','Google Authenticatorの6桁コードを入力してください。');
+    }
+
+    btn.disabled=true;
+    btn.textContent='認証しています…';
+
+    try{
+      const ch=await supabase.auth.mfa.challenge({factorId});
+      if(ch.error) throw ch.error;
+
+      const v=await supabase.auth.mfa.verify({
+        factorId,
+        challengeId:ch.data.id,
+        code
+      });
+      if(v.error) throw v.error;
+
+      $('#mfaCode').value='';
+      const aal=await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+      if(aal.error) throw aal.error;
+      if(aal.data?.currentLevel!=='aal2') throw new Error('AAL2_REQUIRED');
+
+      notice('#mfaMsg','本人確認が完了しました。QuoteFlow Cloudを開始します。',true);
+      await boot();
+    }catch(err){
+      console.warn('QuoteFlow MFA verification failed',err);
+      notice('#mfaMsg',mfaVerifyErrorMessage(err));
+      $('#mfaCode').value='';
+      syncMfaVerifyButton();
+      setTimeout(()=>$('#mfaCode')?.focus(),80);
+    }
   };
 
   $('#logoutBtn').onclick=async()=>{
