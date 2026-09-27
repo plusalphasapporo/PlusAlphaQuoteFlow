@@ -40,6 +40,20 @@
     .supportStepNum{width:24px;height:24px;border-radius:999px;display:grid;place-items:center;background:#f1f5f9;font-size:11px;font-weight:900;margin-bottom:8px}
     .supportStep.active .supportStepNum{background:#ea580c;color:#fff}.supportStep.done .supportStepNum{background:#16a34a;color:#fff}
     .supportWorkGrid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(320px,.8fr);gap:14px}
+    .supportLinearFlow{display:flex;flex-direction:column;gap:12px;margin:14px 0}
+    .supportLinearCard{border:1px solid var(--line);border-radius:16px;background:#fff;padding:15px;box-shadow:0 5px 16px rgba(15,23,42,.04)}
+    .supportLinearCard.active{border:2px solid #2563eb;background:#f8fbff;box-shadow:0 10px 24px rgba(37,99,235,.08)}
+    .supportLinearCard.done{border-color:#86efac;background:#f7fff9}
+    .supportLinearCard.optional{border-style:dashed;background:#fafafa}
+    .supportLinearCard.remotePanel{margin-top:0}
+    .supportLinearHead{display:flex;align-items:flex-start;gap:11px}
+    .supportLinearHead>div{min-width:0;flex:1}.supportLinearHead strong{display:block;font-size:15px}.supportLinearHead small{display:block;color:var(--muted);line-height:1.5;margin-top:3px}
+    .supportLinearIndex{flex:0 0 32px;width:32px;height:32px;border-radius:999px;display:grid;place-items:center;background:#e2e8f0;color:#334155;font-size:12px;font-weight:900}
+    .supportLinearCard.active .supportLinearIndex{background:#2563eb;color:#fff}.supportLinearCard.done .supportLinearIndex{background:#16a34a;color:#fff}
+    .supportLinearBody{margin:12px 0 0 43px}.supportLinearSummary{padding:12px;border:1px solid #dbeafe;border-radius:12px;background:#fff}
+    .supportLinearSummary span{display:block;font-size:10px;font-weight:900;color:#64748b;margin-bottom:4px}.supportLinearSummary p{margin:0;white-space:pre-wrap;line-height:1.55;color:#334155}
+    .supportLinearProgress{grid-template-columns:repeat(4,minmax(0,1fr))}
+    @media(max-width:760px){.supportLinearProgress{grid-template-columns:repeat(2,minmax(0,1fr))}.supportLinearBody{margin-left:0}.supportLinearCard{padding:13px}}
     .attachmentGallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-top:10px}
     .attachmentCard{border:1px solid var(--line);border-radius:12px;padding:10px;background:#fff;overflow:hidden}
     .attachmentCard img{width:100%;height:135px;object-fit:cover;border-radius:9px;background:#f8fafc;border:1px solid #eef2f7}
@@ -7126,7 +7140,7 @@
       if(t.status==='closed') return {label:'完了済み',button:'対応履歴を確認',hint:'対応履歴・作業報告を確認できます。',target:'history',tone:'ghost'};
       if(supportStage==='unhandled') return {label:'① 受付内容を確認',button:'受付確認して対応開始',hint:'依頼内容・写真・顧客情報を確認後、そのまま対応方法検索へ進みます。',target:'content',tone:'primary'};
       if(latestTeamViewerSession && teamviewerSessionClosed && !latestTeamViewerSession.outcome) return {label:'③ TeamViewer結果を記録',button:'結果を記録する',hint:'遠隔対応の結果を入力して、完了・継続・引継ぎを決めます。',target:'remote',tone:'green'};
-      if(supportStage==='teamviewer_waiting'||(latestTeamViewerSession&&!teamviewerSessionClosed)) return {label:'② TeamViewer対応',button:'TeamViewer対応へ進む',hint:'接続・遠隔確認を進めます。',target:'remote',tone:'orange'};
+      if(supportStage==='teamviewer_waiting'||(latestTeamViewerSession&&!teamviewerSessionClosed)) return {label:'③ TeamViewer対応',button:'TeamViewer対応へ進む',hint:'接続・遠隔確認を進めます。',target:'remote',tone:'orange'};
       if(['internal_handoff_waiting','internal_in_progress','support_review_waiting'].includes(supportStage)) return {label:'引継ぎ状況を確認',button:'引継ぎ状況を確認',hint:'同じ案件カルテのまま対応状況を確認します。',target:'history',tone:'primary'};
       if(sharedProcedureSteps.length && sharedProcedurePendingIndex>=0){
         const nextStep=String(sharedProcedureSteps[sharedProcedurePendingIndex]?.step||'次の対応手順');
@@ -7140,7 +7154,7 @@
         };
       }
       if(sharedProcedureSteps.length && sharedProcedurePendingIndex<0){
-        return {label:'③ 作業報告',button:'作業報告へ進む',hint:'対応手順はすべて完了しています。結果を記録して案件を完了します。',target:'report',tone:'green'};
+        return {label:'④ 作業報告',button:'作業報告へ進む',hint:'対応手順はすべて完了しています。結果を記録して案件を完了します。',target:'report',tone:'green'};
       }
       return {label:'② 対応方法を確認',button:'対応方法を確認する',hint:'AI・ナレッジ・過去案件から対応方法を確認します。',target:'assist',tone:'primary'};
     })();
@@ -7181,29 +7195,41 @@
                 '<div class="supportQuickActions" style="margin-top:8px"><button id="ticketActionCustomer" class="ghost" type="button">顧客・機器を確認</button></div>'+
               '</div>')+
           '<div class="supportQuickActions" style="margin:0 0 12px">'+
-            (t.status!=='closed'?'<button id="ticketActionIncident" class="ghost" type="button">障害として登録</button>':'')+
-            (t.status!=='closed'?'<button id="ticketActionSetting" class="ghost" type="button">設定依頼として登録</button>':'')+
+            (t.status!=='closed'&&(!support||!supportReadOnlyByOther)?'<button id="ticketActionIncident" class="ghost" type="button">障害として登録</button>':'')+
+            (t.status!=='closed'&&(!support||!supportReadOnlyByOther)?'<button id="ticketActionSetting" class="ghost" type="button">設定依頼として登録</button>':'')+
           '</div>'+
           '<div id="ticketClassificationPanel" class="supportClassificationPanel hidden"></div>'+
-          '<div class="supportFlow">'+
-            '<div class="supportStep '+(supportStage==='unhandled'?'active':'done')+'"><span class="supportStepNum">1</span><strong>受付確認</strong><small>内容・写真・顧客</small></div>'+
-            '<div class="supportStep '+((supportStage==='in_progress'||supportStage==='teamviewer_waiting'||(latestTeamViewerSession&&!teamviewerSessionClosed))?'active':(latestTeamViewerSession||supportStage==='completed'||t.status==='closed'?'done':''))+'"><span class="supportStepNum">2</span><strong>対応</strong><small>AI・ナレッジ / 必要ならTeamViewer</small></div>'+
-            '<div class="supportStep '+((latestTeamViewerSession&&teamviewerSessionClosed&&!latestTeamViewerSession.outcome)?'active':(t.status==='closed'?'done':''))+'"><span class="supportStepNum">3</span><strong>作業報告</strong><small>対応結果を記録</small></div>'+
-            '<div class="supportStep '+(t.status==='closed'?'done':(['internal_handoff_waiting','internal_in_progress','support_review_waiting'].includes(supportStage)?'active':''))+'"><span class="supportStepNum">4</span><strong>完了</strong><small>または自社へ引継ぎ</small></div>'+
+          '<div class="supportFlow supportLinearProgress">'+
+            '<div class="supportStep '+(t.status==='closed'||supportStage!=='unhandled'?'done':'active')+'"><span class="supportStepNum">1</span><strong>受付内容</strong><small>内容・写真・顧客を確認</small></div>'+
+            '<div class="supportStep '+(t.status==='closed'||latestTeamViewerSession||supportStage==='teamviewer_waiting'||supportPrimaryStep.target==='report'?'done':(['assist','procedure'].includes(supportPrimaryStep.target)?'active':''))+'"><span class="supportStepNum">2</span><strong>AI・ナレッジ</strong><small>対応方法・手順を確認</small></div>'+
+            '<div class="supportStep '+(t.status==='closed'||latestTeamViewerSession?.outcome?'done':(latestTeamViewerSession||supportStage==='teamviewer_waiting'?'active':''))+'"><span class="supportStepNum">3</span><strong>TeamViewer</strong><small>必要な場合だけ遠隔対応</small></div>'+
+            '<div class="supportStep '+(t.status==='closed'?'done':(supportPrimaryStep.target==='report'?'active':''))+'"><span class="supportStepNum">4</span><strong>作業報告</strong><small>結果を記録して完了</small></div>'+
           '</div>'+
-          '<div class="supportWorkGrid">'+
-            '<div>'+
-              '<div class="notice"><strong>対応方法を確認</strong><br><span class="muted">AI・ナレッジ・マニュアルから確認し、必要な場合だけTeamViewerを使用します。解決できない場合は自社へ引き継ぎます。</span></div>'+
-              '<div class="modalGrid2">'+
-                '<div class="item"><strong>受付経路</strong><p>'+esc(intakeSource)+'</p></div>'+
-                '<div class="item"><strong>AI連携</strong><p>'+esc(aiStateText)+'</p></div>'+
+          '<div class="supportLinearFlow">'+
+            '<section id="supportLinearIntake" class="supportLinearCard '+(t.status==='closed'||supportStage!=='unhandled'?'done':'active')+'">'+
+              '<div class="supportLinearHead"><span class="supportLinearIndex">1</span><div><strong>受付内容を確認</strong><small>依頼内容・顧客・対象機器・写真を確認します。</small></div></div>'+
+              '<div class="supportLinearBody">'+
+                '<div class="supportLinearSummary"><span>問い合わせ内容</span><p>'+esc(displayDescription||'内容なし')+'</p></div>'+
+                '<div class="supportQuickActions">'+
+                  '<button id="ticketLinearCustomer" class="ghost" type="button">顧客・機器を確認</button>'+
+                  (attachments.length?'<button id="ticketLinearAttachments" class="ghost" type="button">写真・添付を見る '+esc(attachments.length)+'件</button>':'')+
+                '</div>'+
               '</div>'+
-              '<div class="field"><label>AI・ナレッジ・マニュアル検索</label><input id="ticketKnowledgeSearch" value="'+esc(initialSupportSearchQuery)+'" placeholder="症状・機種名・エラー内容など"><small class="muted">問い合わせ内容から自動抽出: '+esc(initialSupportSearchTerms.join(' / ')||'抽出語なし')+'</small></div>'+
-              '<div id="ticketKnowledgeCandidates"></div>'+
-            '</div>'+
-            '<div>'+
-              '<section id="supportRemoteWorkspace" class="remotePanel">'+
-                '<h4>TeamViewer 遠隔対応</h4>'+
+            '</section>'+
+            '<section id="supportKnowledgeWorkspace" class="supportLinearCard '+(t.status==='closed'||latestTeamViewerSession||supportStage==='teamviewer_waiting'||supportPrimaryStep.target==='report'?'done':(['assist','procedure'].includes(supportPrimaryStep.target)?'active':''))+'">'+
+              '<div class="supportLinearHead"><span class="supportLinearIndex">2</span><div><strong>AI・ナレッジで対応方法を確認</strong><small>問い合わせ内容から検索語を自動抽出しています。対応方法を確認し、手順に沿って作業します。</small></div></div>'+
+              '<div class="supportLinearBody">'+
+                '<div class="modalGrid2">'+
+                  '<div class="item"><strong>受付経路</strong><p>'+esc(intakeSource)+'</p></div>'+
+                  '<div class="item"><strong>AI連携</strong><p>'+esc(aiStateText)+'</p></div>'+
+                '</div>'+
+                '<div class="field"><label>AI・ナレッジ・マニュアル検索</label><input id="ticketKnowledgeSearch" value="'+esc(initialSupportSearchQuery)+'" placeholder="症状・機種名・エラー内容など"><small class="muted">問い合わせ内容から自動抽出: '+esc(initialSupportSearchTerms.join(' / ')||'抽出語なし')+'</small></div>'+
+                '<div id="ticketKnowledgeCandidates"></div>'+
+              '</div>'+
+            '</section>'+
+            '<section id="supportRemoteWorkspace" class="supportLinearCard remotePanel '+(t.status==='closed'||latestTeamViewerSession?.outcome?'done':(latestTeamViewerSession||supportStage==='teamviewer_waiting'?'active':'optional'))+'">'+
+              '<div class="supportLinearHead"><span class="supportLinearIndex">3</span><div><strong>TeamViewerで遠隔対応</strong><small>必要な案件だけ使用します。不要な場合はそのまま作業報告へ進めます。</small></div></div>'+
+              '<div class="supportLinearBody">'+
                 '<div class="hint">API連携: '+esc(teamviewerStateText)+'</div>'+
                 '<p class="muted">顧客の同意を確認してから有人サポートセッションを発行します。</p>'+
                 (teamviewerApiState?.token_configured && !latestTeamViewerSession
@@ -7243,13 +7269,20 @@
                       : '')
                   : '')+
                 '<div id="ticketRemoteMsg" class="notice hidden"></div>'+
-              '</section>'+
-            '</div>'+
-          '</div>'+
-          '<div class="supportQuickActions">'+
-            (support&&supportStage==='support_review_waiting'&&t.status!=='closed'?'<button id="ticketReturnContinue" class="primary" type="button">追加対応を続ける</button>':'')+
-            (t.status!=='closed'?'<button id="ticketAssistSolved" class="green" type="button">作業報告 → 完了</button>':'')+
-            (support&&t.status!=='closed'&&supportStage!=='support_review_waiting'?'<button id="ticketAssistEscalate" class="orange" type="button">解決できない → 自社担当へ引継ぎ</button>':'')+
+              '</div>'+
+            '</section>'+
+            '<section id="supportReportWorkspace" class="supportLinearCard '+(t.status==='closed'?'done':(supportPrimaryStep.target==='report'?'active':''))+'">'+
+              '<div class="supportLinearHead"><span class="supportLinearIndex">4</span><div><strong>作業報告を記録して完了</strong><small>実施内容と結果を記録します。解決できない場合は自社へ引き継ぎます。</small></div></div>'+
+              '<div class="supportLinearBody">'+
+                (supportReadOnlyByOther
+                  ? '<div class="notice warn"><strong>閲覧専用です</strong><br><span class="muted">他の担当者が対応中のため、完了・引継ぎ操作はできません。</span></div>'
+                  : '<div class="supportQuickActions">'+
+                      (support&&supportStage==='support_review_waiting'&&t.status!=='closed'?'<button id="ticketReturnContinue" class="primary" type="button">追加対応を続ける</button>':'')+
+                      (t.status!=='closed'?'<button id="ticketAssistSolved" class="green" type="button">作業報告を入力して完了</button>':'')+
+                      (support&&t.status!=='closed'&&supportStage!=='support_review_waiting'?'<button id="ticketAssistEscalate" class="orange" type="button">解決できない → 自社担当へ引継ぎ</button>':'')+
+                    '</div>')+
+              '</div>'+
+            '</section>'+
           '</div>'+
         '</section>'
       : '';
@@ -7404,7 +7437,7 @@
         '</details>'
       : '';
 
-    const actionButtons=!customer
+    const actionButtons=!customer&&(!support||!supportReadOnlyByOther)
       ? '<div class="row" style="margin-top:14px">'+
           (t.status==='closed'?'<button id="ticketReopenBtn" class="green" type="button">問い合わせを再開</button>':'<button id="ticketCloseBtn" class="green" type="button">作業報告・完了</button>')+
           (t.status!=='closed'?'<button id="ticketHandoffToggle" class="ghost" type="button">自社へ引き継ぐ</button>':'')+
@@ -7742,11 +7775,13 @@
       const actionIncident=$('#ticketActionIncident');
       const actionSetting=$('#ticketActionSetting');
       const actionFinish=$('#ticketActionFinish');
+      const linearCustomer=$('#ticketLinearCustomer');
+      const linearAttachments=$('#ticketLinearAttachments');
       if(contentJump) contentJump.onclick=()=>jump('#ticketAttachmentGallery');
       if(customerJump) customerJump.onclick=()=>jump('#supportTicketCustomerContext');
       const aiJump=$('#supportTicketAiJump');
       if(aiJump) aiJump.onclick=()=>{
-        jump('#supportAssistWorkspace');
+        jump('#supportKnowledgeWorkspace');
         setTimeout(()=>$('#ticketKnowledgeSearch')?.focus(),300);
       };
       const remoteJump=$('#supportTicketRemoteJump');
@@ -7856,7 +7891,7 @@
             toast('受付確認を完了し、対応を開始しました');
             await renderTicketDetail(t.id);
           }
-          jump('#supportAssistWorkspace');
+          jump('#supportKnowledgeWorkspace');
           setTimeout(()=>$('#ticketKnowledgeSearch')?.focus(),250);
         }catch(err){
           notice('#ticketActionMsg',err.message||String(err));
@@ -7888,7 +7923,7 @@
           return;
         }
         if(firstPending && ['assist','procedure'].includes(target)){
-          jump('#supportAssistWorkspace');
+          jump('#supportKnowledgeWorkspace');
           setTimeout(()=>{
             const note=document.querySelector('.ticketAssistStepNote[data-step="'+firstPending.dataset.step+'"]');
             (note||firstPending)?.focus();
@@ -7896,11 +7931,11 @@
           },250);
           return;
         }
-        jump('#supportAssistWorkspace');
+        jump('#supportKnowledgeWorkspace');
         setTimeout(()=>$('#ticketKnowledgeSearch')?.focus(),250);
       };
       if(actionAi) actionAi.onclick=()=>{
-        jump('#supportAssistWorkspace');
+        jump('#supportKnowledgeWorkspace');
         setTimeout(()=>$('#ticketKnowledgeSearch')?.focus(),250);
       };
       if(actionRemote) actionRemote.onclick=()=>{
@@ -7911,6 +7946,8 @@
         jump('#supportTicketCustomerContext');
         setTimeout(()=>$('#supportTicketCustomerContext button, #supportTicketCustomerContext input, #supportTicketCustomerContext select, #supportTicketCustomerContext textarea')?.focus(),250);
       };
+      if(linearCustomer) linearCustomer.onclick=()=>jump('#supportTicketCustomerContext');
+      if(linearAttachments) linearAttachments.onclick=()=>jump('#ticketAttachmentGallery');
 
       const openClassification=(type)=>{
         const panel=$('#ticketClassificationPanel');
@@ -7957,7 +7994,7 @@
       if(actionIncident) actionIncident.onclick=()=>openClassification('incident');
       if(actionSetting) actionSetting.onclick=()=>openClassification('setting_request');
       if(actionFinish) actionFinish.onclick=()=>{
-        jump('#supportAssistWorkspace');
+        jump('#supportReportWorkspace');
         setTimeout(()=>$('#ticketAssistSolved')?.focus()||$('#ticketAssistEscalate')?.focus(),250);
       };
     }
