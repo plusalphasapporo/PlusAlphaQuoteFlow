@@ -9037,9 +9037,16 @@
             const completed=normalized.filter(x=>x.done);
             const pending=normalized.filter(x=>!x.done);
             const withNotes=normalized.filter(x=>x.note);
-            const actionText=completed.map((x,i)=>
+            const tvNote=String(latestTeamViewerSession?.work_note||'').trim();
+            const tvOutcome=String(latestTeamViewerSession?.outcome||'').trim();
+            const tvOutcomeLabel={resolved:'解決',continue:'継続対応',escalate:'自社引継ぎ'}[tvOutcome]||'';
+            const actionParts=[];
+            const checklistAction=completed.map((x,i)=>
               (i+1)+'. '+x.step+(x.note?'\n確認結果: '+x.note:'')
             ).join('\n\n');
+            if(checklistAction) actionParts.push(checklistAction);
+            if(tvNote) actionParts.push('【TeamViewer対応】\n'+tvNote);
+            const actionText=actionParts.join('\n\n');
             const causeText=withNotes.map(x=>x.step+'：'+x.note).join('\n');
 
             if(force || !$('#workReportAction').value.trim()){
@@ -9048,7 +9055,11 @@
             if(force || !$('#workReportCause').value.trim()){
               if(causeText) $('#workReportCause').value=causeText;
             }
-            if(hasSavedState){
+            if(tvOutcome==='resolved'){
+              $('#workReportResult').value='解決';
+            }else if(tvOutcome==='continue'){
+              $('#workReportResult').value='経過観察';
+            }else if(hasSavedState){
               $('#workReportResult').value=
                 completed.length===normalized.length?'解決':
                 completed.length>0?'暫定対応':'経過観察';
@@ -9056,9 +9067,14 @@
 
             const summary=$('#workReportAutoSummary');
             if(summary){
-              summary.innerHTML='<strong>対応手順から自動反映</strong><br>'+
-                '<span class="muted">完了 '+completed.length+' / '+normalized.length+
-                ' ・ 確認メモ '+withNotes.length+'件</span>';
+              const summaryParts=[
+                '手順 完了 '+completed.length+' / '+normalized.length,
+                '確認メモ '+withNotes.length+'件',
+                tvNote?'TeamViewer結果 反映済み':''
+              ].filter(Boolean);
+              summary.innerHTML='<strong>案件の対応内容から自動反映</strong><br>'+
+                '<span class="muted">'+summaryParts.join(' ・ ')+
+                (tvOutcomeLabel?' ・ 遠隔結果 '+esc(tvOutcomeLabel):'')+'</span>';
             }
             const remaining=$('#workReportRemaining');
             if(remaining){
@@ -9088,7 +9104,7 @@
             const el=$(selector);
             if(el) el.dispatchEvent(new Event(el.tagName==='SELECT'?'change':'input',{bubbles:true}));
           });
-          toast('対応手順から作業報告を再作成しました');
+          toast('対応手順・TeamViewer結果から作業報告を再作成しました');
         };
         $('#workReportSubmit').onclick=async()=>{
           const btn=$('#workReportSubmit');
