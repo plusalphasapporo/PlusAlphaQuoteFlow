@@ -13687,22 +13687,42 @@
     ).join('');
 
     $('#home').innerHTML=
-      pageIntro('アカウント管理','新規招待、権限、利用状態、MFA、セッションを検索・絞り込みできます。')+
+      pageIntro('アカウント管理','新規登録・招待、権限、利用状態、MFA、セッションを検索・絞り込みできます。')+
       '<section class="card section">'+
-        '<h2>新規アカウント招待</h2>'+
-        '<p class="sectionDesc">初期パスワードは管理者側で設定しません。招待メールから本人が設定し、その後MFAを登録します。</p>'+
-        '<form id="accountInviteForm">'+
+        '<h2>新規アカウント登録</h2>'+
+        '<p class="sectionDesc">管理者が初期パスワードを設定して即時登録します。本人は初回ログイン時に必ず自分のパスワードへ変更し、その後MFAを登録します。</p>'+
+        '<form id="accountCreateForm">'+
           '<div class="row">'+
-            '<div class="field" style="flex:1;min-width:220px"><label>メールアドレス</label><input id="inviteEmail" type="email" required></div>'+
-            '<div class="field" style="flex:1;min-width:220px"><label>表示名</label><input id="inviteDisplayName" required></div>'+
+            '<div class="field" style="flex:1;min-width:220px"><label>メールアドレス</label><input id="createEmail" type="email" autocomplete="off" required></div>'+
+            '<div class="field" style="flex:1;min-width:220px"><label>表示名</label><input id="createDisplayName" autocomplete="off" required></div>'+
           '</div>'+
           '<div class="row">'+
-            '<div class="field" style="flex:2;min-width:240px"><label>所属会社</label><select id="inviteCompany" required><option value="">選択してください</option>'+companyOptions+'</select></div>'+
-            '<div class="field" style="flex:1;min-width:200px"><label>権限</label><select id="inviteRole" required><option value="">会社を選択してください</option></select></div>'+
+            '<div class="field" style="flex:2;min-width:240px"><label>所属会社</label><select id="createCompany" required><option value="">選択してください</option>'+companyOptions+'</select></div>'+
+            '<div class="field" style="flex:1;min-width:200px"><label>権限</label><select id="createRole" required><option value="">会社を選択してください</option></select></div>'+
           '</div>'+
-          '<button class="primary" type="submit">招待メールを送信</button>'+
+          '<div class="row">'+
+            '<div class="field" style="flex:1;min-width:220px"><label>初期パスワード</label><input id="createPassword" type="password" autocomplete="new-password" minlength="12" required></div>'+
+            '<div class="field" style="flex:1;min-width:220px"><label>初期パスワード（確認）</label><input id="createPasswordConfirm" type="password" autocomplete="new-password" minlength="12" required></div>'+
+          '</div>'+
+          '<div class="notice">12文字以上で、英大文字・英小文字・数字・記号を各1文字以上含めてください。初期パスワードは監査ログへ保存しません。</div>'+
+          '<button class="primary" type="submit">アカウントを登録</button>'+
         '</form>'+
-        '<div id="accountInviteMsg" class="notice hidden"></div>'+
+        '<div id="accountCreateMsg" class="notice hidden"></div>'+
+        '<details style="margin-top:14px">'+
+          '<summary>メール招待で登録する場合</summary>'+
+          '<form id="accountInviteForm" style="margin-top:12px">'+
+            '<div class="row">'+
+              '<div class="field" style="flex:1;min-width:220px"><label>メールアドレス</label><input id="inviteEmail" type="email" required></div>'+
+              '<div class="field" style="flex:1;min-width:220px"><label>表示名</label><input id="inviteDisplayName" required></div>'+
+            '</div>'+
+            '<div class="row">'+
+              '<div class="field" style="flex:2;min-width:240px"><label>所属会社</label><select id="inviteCompany" required><option value="">選択してください</option>'+companyOptions+'</select></div>'+
+              '<div class="field" style="flex:1;min-width:200px"><label>権限</label><select id="inviteRole" required><option value="">会社を選択してください</option></select></div>'+
+            '</div>'+
+            '<button class="ghost" type="submit">招待メールを送信</button>'+
+          '</form>'+
+          '<div id="accountInviteMsg" class="notice hidden"></div>'+
+        '</details>'+
       '</section>'+
       '<div id="accountEditHost"></div>'+
       '<section class="card section">'+
@@ -13878,9 +13898,9 @@
     bindListToolbar('accountList',renderRows);
     renderRows();
 
-    function updateInviteRoles(){
-      const select=$('#inviteCompany');
-      const opt=select.options[select.selectedIndex];
+    function roleOptionsForCompanySelect(selectId){
+      const select=$(selectId);
+      const opt=select?.options?.[select.selectedIndex];
       const type=opt?.dataset?.type||'';
       let html='<option value="">選択してください</option>';
       if(type==='internal'){
@@ -13890,9 +13910,68 @@
       }else if(type==='customer'){
         html+='<option value="customer_user">顧客会社</option>';
       }
-      $('#inviteRole').innerHTML=html;
+      return html;
     }
+    function updateCreateRoles(){
+      $('#createRole').innerHTML=roleOptionsForCompanySelect('#createCompany');
+    }
+    function updateInviteRoles(){
+      $('#inviteRole').innerHTML=roleOptionsForCompanySelect('#inviteCompany');
+    }
+    $('#createCompany').onchange=updateCreateRoles;
     $('#inviteCompany').onchange=updateInviteRoles;
+
+    $('#accountCreateForm').onsubmit=async e=>{
+      e.preventDefault();
+      const btn=e.submitter;
+      if(btn) btn.disabled=true;
+      try{
+        const password=$('#createPassword').value;
+        const confirm=$('#createPasswordConfirm').value;
+        if(password!==confirm) throw new Error('初期パスワードが一致しません。');
+        const policyError=passwordPolicyMessage(password);
+        if(policyError) throw new Error(policyError);
+
+        const {data,error}=await supabase.functions.invoke('admin-user',{
+          body:{
+            action:'create',
+            email:$('#createEmail').value.trim(),
+            displayName:$('#createDisplayName').value.trim(),
+            companyId:$('#createCompany').value,
+            role:$('#createRole').value,
+            password
+          }
+        });
+        if(error) throw error;
+        if(data?.error) throw new Error(data.message||data.error);
+
+        notice('#accountCreateMsg','アカウントを登録しました。本人は初回ログイン時にパスワード変更とMFA登録が必要です。',true);
+        $('#accountCreateForm').reset();
+        updateCreateRoles();
+        toast('アカウントを登録しました');
+        setTimeout(()=>go('accounts'),700);
+      }catch(err){
+        const msg=String(err.message||err);
+        const ja=msg.includes('CREATE_FAILED')
+          ? 'アカウントを登録できませんでした。メールアドレスの重複などを確認してください。'
+          : msg.includes('PASSWORD_TOO_SHORT')
+            ? '初期パスワードは12文字以上にしてください。'
+            : msg.includes('PASSWORD_UPPERCASE_REQUIRED')
+              ? '初期パスワードに英大文字を1文字以上入れてください。'
+              : msg.includes('PASSWORD_LOWERCASE_REQUIRED')
+                ? '初期パスワードに英小文字を1文字以上入れてください。'
+                : msg.includes('PASSWORD_NUMBER_REQUIRED')
+                  ? '初期パスワードに数字を1文字以上入れてください。'
+                  : msg.includes('PASSWORD_SYMBOL_REQUIRED')
+                    ? '初期パスワードに記号を1文字以上入れてください。'
+                    : msg;
+        notice('#accountCreateMsg',ja);
+      }finally{
+        $('#createPassword').value='';
+        $('#createPasswordConfirm').value='';
+        if(btn) btn.disabled=false;
+      }
+    };
 
     $('#accountInviteForm').onsubmit=async e=>{
       e.preventDefault();
@@ -14068,6 +14147,7 @@
       'asset.updated':'機器更新',
       'account.profile.updated':'アカウント更新',
       'account.initial_password_set':'初期パスワード設定',
+      'user.created':'ユーザー登録',
       'user.invited':'ユーザー招待',
       'user.disabled':'ユーザー停止',
       'user.enabled':'ユーザー再開',
