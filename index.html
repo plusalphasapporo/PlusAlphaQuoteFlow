@@ -167,6 +167,13 @@
     .supportCaseFilterBar{display:flex;gap:6px;flex-wrap:wrap;padding:7px;background:#eaf0f8;border:1px solid #d8e2ef;border-radius:14px;margin:12px 0}
     .supportCaseFilterBtn{background:transparent;color:#526174;padding:9px 12px;border-radius:10px}
     .supportCaseFilterBtn.active{background:#fff;color:#164b9f;box-shadow:0 2px 10px rgba(15,23,42,.08)}
+    .supportCaseFocusSection{border:2px solid #dbeafe;box-shadow:0 10px 28px rgba(37,99,235,.07)}
+    .supportCaseFocusHead{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:8px}
+    .supportCaseFocusHead h2{margin:0}.supportCaseFocusHead p{margin:4px 0 0;color:var(--muted);font-size:13px}
+    .supportCaseSummaryBox{margin-top:12px;padding:12px 13px;border:1px solid #dbeafe;border-radius:12px;background:#f8fbff}
+    .supportCaseSummaryBox span{display:block;font-size:10px;font-weight:900;color:#64748b;margin-bottom:4px}
+    .supportCaseSummaryBox p{margin:0;color:#334155;font-size:13px;line-height:1.55;white-space:pre-wrap}
+    .supportCaseCard.top-priority .supportCaseSummaryBox{border-color:#93c5fd;background:#eff6ff}
     .ticketMessageCard.messageNew{border-left:4px solid #2563eb;background:#f8fbff}
     .messageDropZone{border:1px dashed #94a3b8;border-radius:12px;padding:12px;background:#f8fafc;transition:.15s}
     .messageDropZone.dragover{border-color:#2563eb;background:#eff6ff}
@@ -9467,6 +9474,17 @@
     const summary=workspace?.summary||{};
     const cmap={};
     (customers||[]).forEach(x=>cmap[x.id]=x);
+    const supportViewCopy={
+      immediate:{title:'今すぐ対応',desc:'対応・返信が必要な案件を優先順で表示します。先頭の案件から進めてください。'},
+      customer_wait:{title:'顧客返信待ち',desc:'顧客からの返答待ち案件です。滞留時間が長い案件を上に表示します。'},
+      internal_review:{title:'社内確認待ち',desc:'社内確認後に再対応する案件です。確認が終わった案件から再開します。'},
+      teamviewer:{title:'TeamViewer待ち',desc:'遠隔接続待ち、または終了後の結果入力が必要な案件です。'},
+      handoff:{title:'自社引継ぎ待ち',desc:'自社側へ引き継いだ案件です。進捗確認後に再対応します。'},
+      attention:{title:'要注意',desc:'期限超過・緊急・長時間滞留など、優先確認が必要な案件です。'},
+      mine:{title:'自分の担当',desc:'現在自分が担当している未完了案件だけを表示します。'},
+      all_open:{title:'対応中すべて',desc:'未完了の案件をすべて表示します。'},
+      closed:{title:'完了',desc:'対応が完了した案件です。'}
+    };
 
     $('#home').innerHTML=
       pageIntro('サポート','顧客・契約・機器・担当者・優先度・対応履歴を案件単位で管理します。')+
@@ -9499,6 +9517,13 @@
               '<button class="supportCaseFilterBtn '+(supportQueueView==="all_open"?"active ":"")+'supportViewTab" type="button" data-view="all_open">対応中すべて</button>'+
               '<button class="supportCaseFilterBtn '+(supportQueueView==="closed"?"active ":"")+'supportViewTab" type="button" data-view="closed">完了</button>'+
             '</div>'+
+          '</section>'+
+          '<section class="card section supportCaseFocusSection">'+
+            '<div class="supportCaseFocusHead"><div><h2 id="supportCaseFocusTitle">'+esc((supportViewCopy[supportQueueView]||supportViewCopy.immediate).title)+'</h2><p id="supportCaseFocusDesc">'+esc((supportViewCopy[supportQueueView]||supportViewCopy.immediate).desc)+'</p></div><span id="supportCaseFocusCount" class="pill">0件</span></div>'+
+            listToolbar('supportCaseList',data,'status','番号・顧客・件名・機器・契約・担当者',[
+              ['queue_priority','キュー優先順'],['deadline_asc','期限が近い順'],['priority_desc','優先度が高い順'],['updated_desc','更新が新しい順'],['created_desc','作成が新しい順']
+            ])+
+            '<div id="ticketDetailHost"></div><div id="supportCaseListHost"></div>'+
           '</section>'
         : '')+
       (internal
@@ -9518,12 +9543,12 @@
         '<div id="supportMessageGlobalSearchMsg" class="notice hidden"></div>'+
         '<div id="supportMessageGlobalSearchResult" style="margin-top:12px"></div>'+
       '</section>'+
-      listToolbar('supportCaseList',data,'status','番号・顧客・件名・機器・契約・担当者',support?[
-        ['queue_priority','キュー優先順'],['deadline_asc','期限が近い順'],['priority_desc','優先度が高い順'],['updated_desc','更新が新しい順'],['created_desc','作成が新しい順']
-      ]:[
-        ['deadline_asc','期限が近い順'],['priority_desc','優先度が高い順'],['updated_desc','更新が新しい順'],['created_desc','作成が新しい順']
-      ])+
-      '<div id="ticketDetailHost"></div><section class="section"><div id="supportCaseListHost"></div></section>';
+      (support
+        ? ''
+        : listToolbar('supportCaseList',data,'status','番号・顧客・件名・機器・契約・担当者',[
+            ['deadline_asc','期限が近い順'],['priority_desc','優先度が高い順'],['updated_desc','更新が新しい順'],['created_desc','作成が新しい順']
+          ])+
+          '<div id="ticketDetailHost"></div><section class="section"><div id="supportCaseListHost"></div></section>');
 
     const priorityRank={urgent:0,high:1,normal:2,low:3};
     const renderRows=()=>{
@@ -9597,6 +9622,8 @@
         return p!==0?p:timeValue(b.updated_at)-timeValue(a.updated_at);
       });
       updateListCount('supportCaseList',filtered.length,data.length);
+      const supportFocusCount=$('#supportCaseFocusCount');
+      if(supportFocusCount) supportFocusCount.textContent=filtered.length+'件';
       if(support){
         $('#supportCaseListHost').innerHTML=filtered.length
           ? '<div class="supportCaseCards">'+filtered.map((t,index)=>{
@@ -9632,6 +9659,8 @@
                   : canContinueDirect&&allProcedureDone
                     ? '対応手順はすべて完了しています。結果を記録して完了します。'
                     : supportQueueThresholdText(t.support_next_action);
+              const listSummary=String(t.description||t.request_details?.description||t.request_details?.summary||'').trim();
+              const listSummaryShort=listSummary.length>180?listSummary.slice(0,180)+'…':listSummary;
               const caseActionLabel=
                 t.status==='closed'?'対応履歴を見る':
                 t.teamviewer_result_pending?'結果を入力':
@@ -9671,13 +9700,14 @@
                   '</div>'+
                   '<div>'+supportAssigneeBadge(t.support_assignment)+'</div>'+
                 '</div>'+
+                (view==='immediate'&&listSummaryShort?'<div class="supportCaseSummaryBox"><span>受付内容</span><p>'+esc(listSummaryShort)+'</p></div>':'')+
                 '<div class="notice '+(t.deadline_state==='overdue'?'error':t.deadline_state==='due_today'?'warn':'')+'" style="margin-top:12px">'+
                   '<strong>今やること：'+esc(listNowLabel)+'</strong>'+
                   (listNowHint?'<div class="muted" style="margin-top:4px">'+esc(listNowHint)+'</div>':'')+
                 '</div>'+
                 '<div class="supportCaseFacts">'+
                   '<div class="supportCaseFact"><span>期限</span><strong>'+esc(dateTimeText(t.resolution_due_at||t.first_response_due_at))+'</strong></div>'+
-                  '<div class="supportCaseFact"><span>担当</span><strong>'+esc(t.support_assignment?.support_assigned_user_name||'未担当')+'</strong></div>'+
+                  '<div class="supportCaseFact"><span>受付</span><strong>'+esc(dateTimeText(t.created_at))+'</strong></div>'+
                 '</div>'+
                 '<details class="supportCaseMore"><summary>詳細情報を表示</summary><div class="supportCaseMoreGrid">'+
                   '<div class="supportCaseFact"><span>工程</span><strong>'+esc(supportStageLabel(t.support_stage))+'</strong></div>'+
@@ -9763,6 +9793,11 @@
         supportQueueView=view||'immediate';
         bar.dataset.active=supportQueueView;
         bar.querySelectorAll('.supportViewTab').forEach(x=>x.classList.toggle('active',x.dataset.view===bar.dataset.active));
+        const copy=supportViewCopy[supportQueueView]||supportViewCopy.immediate;
+        const title=$('#supportCaseFocusTitle');
+        const desc=$('#supportCaseFocusDesc');
+        if(title) title.textContent=copy.title;
+        if(desc) desc.textContent=copy.desc;
         renderRows();
       };
       document.querySelectorAll('.supportViewTab').forEach(btn=>btn.onclick=()=>setSupportQueueView(btn.dataset.view));
