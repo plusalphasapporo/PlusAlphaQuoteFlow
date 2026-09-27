@@ -8199,6 +8199,33 @@
             '</section>'
           : escalationHtml+'<div class="notice" style="margin-top:12px"><strong>対応候補を作成できませんでした。</strong><br><span class="muted">根拠となるナレッジ・過去案件が見つかっていません。推測で回答は作成しません。</span></div>';
 
+        const parseRecommendedKnowledgeBody=body=>{
+          const text=String(body||'').replace(/\r/g,'\n').trim();
+          const parts={symptom:'',cause:'',procedure:'',result:''};
+          if(!text) return parts;
+          const headingMap=[
+            {key:'symptom',re:/^(症状・依頼|問い合わせ内容)\s*[:：]\s*/},
+            {key:'cause',re:/^(原因・確認事項|原因)\s*[:：]\s*/},
+            {key:'procedure',re:/^(対応手順|対応内容|実施手順|作業手順|TeamViewer対応内容)\s*[:：]\s*/},
+            {key:'result',re:/^(確認結果|結果)\s*[:：]\s*/}
+          ];
+          let current='';
+          text.split(/\n+/).forEach(line=>{
+            const raw=String(line||'').trim();
+            if(!raw) return;
+            const heading=headingMap.find(x=>x.re.test(raw));
+            if(heading){
+              current=heading.key;
+              const value=raw.replace(heading.re,'').trim();
+              if(value) parts[current]+=(parts[current]?'\n':'')+value;
+              return;
+            }
+            if(current) parts[current]+=(parts[current]?'\n':'')+raw;
+          });
+          if(!parts.procedure && text) parts.procedure=text;
+          return parts;
+        };
+
         const recommendedKnowledge=scoredKnowledge.find(v=>v.level==='high')||null;
         const referenceKnowledge=recommendedKnowledge
           ? scoredKnowledge.filter(v=>String(v.x.id)!==String(recommendedKnowledge.x.id))
@@ -8208,8 +8235,7 @@
           ? (()=>{
               const v=recommendedKnowledge;
               const x=v.x;
-              const body=String(x.body||'');
-              const preview=body.length>420?body.slice(0,420)+'…':body;
+              const parts=parseRecommendedKnowledgeBody(x.body);
               return '<section class="notice ok" style="margin:14px 0">'+
                 '<div class="row between" style="gap:10px;align-items:flex-start;flex-wrap:wrap">'+
                   '<div><div class="row" style="gap:6px;flex-wrap:wrap"><span class="pill good">推奨対応</span><span class="pill good">一致度 高</span></div>'+
@@ -8218,7 +8244,15 @@
                   '</div>'+
                   '<button class="primary ticketKnowledgeUse" type="button" data-id="'+esc(x.id)+'">この内容を返信に使う</button>'+
                 '</div>'+
-                '<div style="white-space:pre-wrap;margin-top:10px;line-height:1.7">'+esc(preview)+'</div>'+
+                (parts.symptom?'<div class="item" style="margin-top:10px"><strong>症状・依頼</strong><p style="white-space:pre-wrap;margin:6px 0 0">'+esc(parts.symptom)+'</p></div>':'')+
+                '<div class="modalGrid2" style="margin-top:10px">'+
+                  '<div class="item"><strong>原因・確認事項</strong><p style="white-space:pre-wrap;margin:6px 0 0">'+esc(parts.cause||'未確認')+'</p></div>'+
+                  '<div class="item"><strong>確認結果</strong><p style="white-space:pre-wrap;margin:6px 0 0">'+esc(parts.result||'未確認')+'</p></div>'+
+                '</div>'+
+                '<div class="item" style="margin-top:10px;border-width:2px;background:var(--card)">'+
+                  '<div class="row between" style="gap:8px;flex-wrap:wrap"><strong>対応手順</strong><span class="pill good">ここを実施</span></div>'+
+                  '<div style="white-space:pre-wrap;margin-top:8px;line-height:1.8;font-weight:600">'+esc(parts.procedure||'対応手順未登録')+'</div>'+
+                '</div>'+
               '</section>';
             })()
           : '';
