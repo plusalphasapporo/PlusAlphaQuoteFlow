@@ -6298,8 +6298,10 @@
           (openaiApi?.last_api_error?'<div class="notice error">最終エラー: '+esc(openaiApi.last_api_error)+'</div>':'')+
           '<div id="openaiApiKeyMsg" class="notice hidden"></div>'+
           '<div class="supportQuickActions" style="margin-top:14px">'+
-            '<button id="testOpenAiTranscription" class="primary" type="button" '+(openaiApi?.api_key_configured?'':'disabled')+'>最新の録音で文字起こしテスト</button>'+
+            '<button id="testOpenAiApi" class="primary" type="button" '+(openaiApi?.api_key_configured?'':'disabled')+'>OpenAI API接続テスト</button>'+
+            '<button id="testOpenAiTranscription" class="ghost" type="button" '+(openaiApi?.api_key_configured?'':'disabled')+'>最新の録音で文字起こしテスト</button>'+
           '</div>'+
+          '<div id="openaiApiTestMsg" class="notice hidden"></div>'+
           '<div id="openaiTranscriptionMsg" class="notice hidden"></div>'+
         '</section>'+
         '<section class="card section">'+
@@ -6557,6 +6559,26 @@
           await renderSettings('integrations');
         }catch(err){notice('#openaiApiKeyMsg',err.message||String(err));}
         finally{clearOpenAiApiKey.disabled=false;}
+      };
+    }
+
+    const testOpenAiApi=$('#testOpenAiApi');
+    if(testOpenAiApi){
+      testOpenAiApi.onclick=async()=>{
+        testOpenAiApi.disabled=true;
+        try{
+          notice('#openaiApiTestMsg','OpenAI APIと使用モデルを確認しています...',true);
+          const {data,error}=await supabase.functions.invoke('openai-api-test',{body:{}});
+          if(error) throw error;
+          if(data?.error) throw new Error(data?.message||data.error);
+          notice('#openaiApiTestMsg','OpenAI API接続に成功しました。障害解析: '+esc(data?.analysis_model||'—')+' / 文字起こし: '+esc(data?.transcription_model||'—'),true);
+          toast('OpenAI API接続確認に成功しました');
+          setTimeout(()=>renderSettings('integrations'),700);
+        }catch(err){
+          notice('#openaiApiTestMsg',err.message||String(err));
+        }finally{
+          testOpenAiApi.disabled=false;
+        }
       };
     }
 
