@@ -13825,7 +13825,7 @@
             (a.is_current_user?'<p class="muted">自分自身の権限変更・利用停止・アカウント削除はできません。</p>':'')+
             '<div class="row">'+
               '<button class="primary" type="submit">変更を保存</button>'+
-              (!a.is_current_user && Number(a.mfa_count||0)>0?'<button id="accountMfaResetBtn" class="orange" type="button">MFAをリセット</button>':'')+
+              (!a.is_current_user?'<button id="accountMfaResetBtn" class="orange" type="button">MFAをリセット・再登録</button>':'')+
             '</div>'+
           '</form>'+
           '<div id="accountEditMsg" class="notice hidden"></div>'+
