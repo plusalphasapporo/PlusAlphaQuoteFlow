@@ -14945,13 +14945,14 @@
     }
   };
 
-  $('#mfaAppReadyBtn').onclick=()=>{
+  $('#mfaAppReadyBtn').onclick=async()=>{
     setMfaProgress(2);
     $('#mfaAppInstallStep').classList.remove('active');
     $('#mfaAppInstallStep').classList.add('hidden');
     $('#mfaEnrollBox').classList.add('active');
     $('#mfaEnrollBox').classList.remove('hidden');
-    notice('#mfaMsg','次に、QuoteFlow Cloudの登録QRをGoogle Authenticatorで読み取ります。',true);
+    notice('#mfaMsg','QuoteFlow Cloudの登録QRを準備しています...',true);
+    await startMfaEnrollment();
   };
 
   async function cleanupUnverifiedTotpFactors(){
@@ -14981,9 +14982,9 @@
     return true;
   }
 
-  $('#enrollBtn').onclick=async()=>{
+  async function startMfaEnrollment(){
     const btn=$('#enrollBtn');
-    if(showCurrentEnrollmentQr()) return;
+    if(showCurrentEnrollmentQr()) return true;
 
     btn.disabled=true;
     const originalText=btn.textContent;
@@ -14994,15 +14995,25 @@
 
       const r=await supabase.auth.mfa.enroll({factorType:'totp',friendlyName:'QuoteFlow Cloud - Google Authenticator'});
       if(r.error) throw r.error;
+      if(!r.data?.id || !r.data?.totp?.qr_code) throw new Error('MFA登録QRを取得できませんでした。');
 
       mfaState={
         factorId:r.data.id,
         existing:false,
         enrollmentQr:r.data.totp.qr_code,
-        enrollmentSecret:r.data.totp.secret
+        enrollmentSecret:r.data.totp.secret||''
       };
 
-      $('#qr').src=mfaState.enrollmentQr;
+      const qr=$('#qr');
+      qr.onload=()=>{
+        $('#qrWrap').classList.remove('hidden');
+        notice('#mfaMsg','QRをGoogle Authenticatorで読み取った後、表示された6桁コードを入力してください。',true);
+      };
+      qr.onerror=()=>{
+        $('#qrWrap').classList.remove('hidden');
+        notice('#mfaMsg','QR画像を表示できませんでした。下の「QRを読み取れない場合」を開き、セットアップキーをGoogle Authenticatorへ手動入力してください。');
+      };
+      qr.src=mfaState.enrollmentQr;
       $('#qrWrap').classList.remove('hidden');
       setMfaProgress(3);
       $('#mfaEnrollBox').classList.remove('active');
@@ -15011,15 +15022,21 @@
       $('#secret').textContent='セットアップキー: '+mfaState.enrollmentSecret;
       btn.textContent='同じMFA登録QRを再表示';
       syncMfaVerifyButton();
-      notice('#mfaMsg','QRをGoogle Authenticatorで読み取った後、表示された6桁コードを入力してください。',true);
       setTimeout(()=>$('#mfaCode')?.focus(),120);
+      return true;
     }catch(err){
       btn.textContent=originalText;
       console.warn('QuoteFlow MFA enrollment preparation failed',err);
-      notice('#mfaMsg','MFA登録の準備に失敗しました。画面を再読み込みして、もう一度お試しください。');
+      const detail=String(err?.message||err||'').trim();
+      notice('#mfaMsg','MFA登録QRを表示できませんでした。'+(detail?' 詳細: '+detail:'')+' 「MFA登録QRを表示」を押して再試行してください。');
+      return false;
     }finally{
       btn.disabled=false;
     }
+  }
+
+  $('#enrollBtn').onclick=async()=>{
+    await startMfaEnrollment();
   };
 
   function syncMfaVerifyButton(){
