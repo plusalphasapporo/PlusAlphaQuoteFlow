@@ -14993,7 +14993,7 @@
     try{
       await cleanupUnverifiedTotpFactors();
 
-      const r=await supabase.auth.mfa.enroll({factorType:'totp',friendlyName:'QuoteFlow Cloud - Google Authenticator'});
+      const r=await supabase.auth.mfa.enroll({factorType:'totp'});
       if(r.error) throw r.error;
       if(!r.data?.id || !r.data?.totp?.qr_code) throw new Error('MFA登録QRを取得できませんでした。');
 
@@ -15005,16 +15005,27 @@
       };
 
       const qr=$('#qr');
+      const qrWrap=$('#qrWrap');
+      const secretDetails=$('#secret')?.closest('details');
+
+      const showManualFallback=()=>{
+        qrWrap.classList.remove('hidden');
+        if(secretDetails) secretDetails.open=true;
+        notice('#mfaMsg','QR画像を表示できないため、セットアップキーを表示しました。Google Authenticatorで「セットアップキーを入力」を選び、表示されたキーを登録してください。');
+      };
+
       qr.onload=()=>{
-        $('#qrWrap').classList.remove('hidden');
+        qrWrap.classList.remove('hidden');
+        if(secretDetails) secretDetails.open=false;
         notice('#mfaMsg','QRをGoogle Authenticatorで読み取った後、表示された6桁コードを入力してください。',true);
       };
-      qr.onerror=()=>{
-        $('#qrWrap').classList.remove('hidden');
-        notice('#mfaMsg','QR画像を表示できませんでした。下の「QRを読み取れない場合」を開き、セットアップキーをGoogle Authenticatorへ手動入力してください。');
-      };
+      qr.onerror=showManualFallback;
       qr.src=mfaState.enrollmentQr;
-      $('#qrWrap').classList.remove('hidden');
+      qrWrap.classList.remove('hidden');
+
+      setTimeout(()=>{
+        if(!qr.complete || !qr.naturalWidth) showManualFallback();
+      },1200);
       setMfaProgress(3);
       $('#mfaEnrollBox').classList.remove('active');
       $('#mfaVerifyBox').classList.add('active');
