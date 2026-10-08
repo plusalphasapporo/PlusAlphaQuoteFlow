@@ -696,10 +696,14 @@
     return raw||'認証処理に失敗しました。';
   };
 
-  async function loginSecurity(action,email){
-    const {data,error}=await supabase.functions.invoke('login-security',{body:{action,email}});
+  async function loginSecurityLogin(email,password){
+    const {data,error}=await supabase.functions.invoke('login-security',{
+      body:{action:'login',email,password}
+    });
     if(error) throw error;
-    if(data?.error) throw new Error(data.message||data.error);
+    if(data?.error && !['INVALID_CREDENTIALS','ACCOUNT_LOCKED','ACCOUNT_DISABLED'].includes(String(data.error))){
+      throw new Error(data.message||data.error);
+    }
     return data||{};
   }
 
@@ -14977,36 +14981,40 @@
     if(btn) btn.disabled=true;
     $('#loginMsg').classList.add('hidden');
     const email=$('#email').value.trim();
+    const password=$('#password').value;
     try{
       notice('#loginMsg','ログインしています...',true);
 
-      const pre=await loginSecurity('check',email);
-      if(pre.isActive===false) throw new Error('このアカウントは現在停止されています。管理者へお問い合わせください。');
-      if(pre.locked){
-        const until=pre.loginLockedUntil?new Date(pre.loginLockedUntil):null;
-        const t=until&&!Number.isNaN(until.getTime())?until.toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'}):'しばらく';
+      const result=await loginSecurityLogin(email,password);
+
+      if(result.error==='ACCOUNT_DISABLED'){
+        throw new Error('このアカウントは現在停止されています。管理者へお問い合わせください。');
+      }
+
+      if(result.error==='ACCOUNT_LOCKED'){
+        const until=result.loginLockedUntil?new Date(result.loginLockedUntil):null;
+        const t=until&&!Number.isNaN(until.getTime())
+          ?until.toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'})
+          :'15分後';
         throw new Error('ログイン試行回数が上限に達したため一時ロックされています。'+t+'以降に再度お試しください。');
       }
 
-      const {error}=await supabase.auth.signInWithPassword({
-        email,
-        password:$('#password').value
-      });
-      if(error){
-        try{
-          const state=await loginSecurity('failure',email);
-          if(state.locked){
-            const until=state.loginLockedUntil?new Date(state.loginLockedUntil):null;
-            const t=until&&!Number.isNaN(until.getTime())?until.toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'}):'15分後';
-            throw new Error('ログインに5回失敗したため、アカウントを15分間ロックしました。'+t+'以降に再度お試しください。');
-          }
-        }catch(securityErr){
-          if(String(securityErr?.message||securityErr).includes('15分間ロック')) throw securityErr;
-        }
-        throw error;
+      if(result.error==='INVALID_CREDENTIALS' || !result.ok){
+        const err=new Error('メールアドレスまたはパスワードを確認してください。');
+        err.code='invalid_credentials';
+        throw err;
       }
 
-      await loginSecurity('success',email);
+      if(!result.access_token || !result.refresh_token){
+        throw new Error('ログインセッションを開始できませんでした。もう一度お試しください。');
+      }
+
+      const {error:setSessionError}=await supabase.auth.setSession({
+        access_token:result.access_token,
+        refresh_token:result.refresh_token
+      });
+      if(setSessionError) throw setSessionError;
+
       $('#password').value='';
       $('#loginMsg').classList.add('hidden');
       await boot();
