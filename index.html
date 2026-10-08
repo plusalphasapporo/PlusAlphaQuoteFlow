@@ -664,6 +664,20 @@
     if(!/[^A-Za-z0-9]/.test(password)) return '記号を1文字以上含めてください。';
     return '';
   };
+  const assertPasswordSecurity = async (password) => {
+    const {data,error}=await supabase.functions.invoke('password-security-check',{body:{password}});
+    if(error) throw error;
+    if(data?.ok) return true;
+    const code=String(data?.error||'');
+    if(code==='PASSWORD_COMPROMISED') throw new Error('このパスワードは過去の情報漏えいで確認されています。別のパスワードを設定してください。');
+    if(code==='PASSWORD_SECURITY_CHECK_UNAVAILABLE') throw new Error('パスワード安全確認に接続できません。安全のため、現在はパスワードを変更できません。');
+    if(code==='PASSWORD_TOO_SHORT') throw new Error('パスワードは12文字以上にしてください。');
+    if(code==='PASSWORD_UPPERCASE_REQUIRED') throw new Error('英大文字を1文字以上含めてください。');
+    if(code==='PASSWORD_LOWERCASE_REQUIRED') throw new Error('英小文字を1文字以上含めてください。');
+    if(code==='PASSWORD_NUMBER_REQUIRED') throw new Error('数字を1文字以上含めてください。');
+    if(code==='PASSWORD_SYMBOL_REQUIRED') throw new Error('記号を1文字以上含めてください。');
+    throw new Error(code||'パスワード安全確認に失敗しました。');
+  };
   const authErrorMessage = (err) => {
     const code=String(err?.code||'').toLowerCase();
     const name=String(err?.name||'');
@@ -13938,6 +13952,7 @@
             if(password!==confirmPassword) throw new Error('パスワードが一致しません。');
             const policyError=passwordPolicyMessage(password);
             if(policyError) throw new Error(policyError);
+            await assertPasswordSecurity(password);
             const {data,error}=await supabase.functions.invoke('admin-user',{
               body:{action:'reset_password',userId:a.user_id,password}
             });
@@ -14030,6 +14045,7 @@
         if(password!==confirm) throw new Error('初期パスワードが一致しません。');
         const policyError=passwordPolicyMessage(password);
         if(policyError) throw new Error(policyError);
+        await assertPasswordSecurity(password);
 
         const {data,error}=await supabase.functions.invoke('admin-user',{
           body:{
@@ -14529,6 +14545,7 @@
         if(!/[0-9]/.test(newPassword)) throw new Error('数字を1文字以上含めてください。');
         if(!/[^A-Za-z0-9]/.test(newPassword)) throw new Error('記号を1文字以上含めてください。');
         if(currentPassword===newPassword) throw new Error('現在のパスワードとは異なるパスワードを設定してください。');
+        await assertPasswordSecurity(newPassword);
 
         const {error}=await supabase.auth.updateUser({
           current_password:currentPassword,
@@ -14884,6 +14901,7 @@
       if(password!==confirm) throw new Error('パスワードが一致しません。');
       const policyError=passwordPolicyMessage(password);
       if(policyError) throw new Error(policyError);
+      await assertPasswordSecurity(password);
 
       const {error}=await supabase.auth.updateUser({password});
       if(error) throw error;
