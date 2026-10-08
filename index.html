@@ -696,6 +696,13 @@
     return raw||'認証処理に失敗しました。';
   };
 
+  async function loginSecurity(action,email){
+    const {data,error}=await supabase.functions.invoke('login-security',{body:{action,email}});
+    if(error) throw error;
+    if(data?.error) throw new Error(data.message||data.error);
+    return data||{};
+  }
+
   const READ_ONLY_RPCS = new Set([
     'app_health','current_auth_onboarding_state','current_app_bootstrap',
     'internal_command_center','internal_handoff_queue','internal_business_dashboard','internal_unread_handoff_notifications',
@@ -13835,11 +13842,14 @@
               'MFA: '+(Number(a.mfa_count||0)>0?'登録済み':'未登録')+
               ' / セッション: '+esc(a.session_count||0)+
               ' / 最終ログイン: '+esc(dateText(a.last_sign_in_at))+
+              (a.is_login_locked?' / <strong>ログイン一時ロック中</strong>':'')+
+              (Number(a.failed_login_count||0)>0?' / 失敗回数: '+esc(a.failed_login_count):'')+
             '</div>'+
             (a.is_current_user?'<p class="muted">自分自身の権限変更・利用停止・アカウント削除はできません。</p>':'')+
             '<div class="row">'+
               '<button class="primary" type="submit">変更を保存</button>'+
               (!a.is_current_user?'<button id="accountMfaResetBtn" class="orange" type="button">MFAをリセット・再登録</button>':'')+
+              (!a.is_current_user&&a.is_login_locked?'<button id="accountLoginUnlockBtn" class="ghost" type="button">ログインロック解除</button>':'')+
             '</div>'+
           '</form>'+
           '<div id="accountEditMsg" class="notice hidden"></div>'+
@@ -13896,6 +13906,28 @@
           if(save) save.disabled=false;
         }
       };
+
+      const unlockBtn=$('#accountLoginUnlockBtn');
+      if(unlockBtn){
+        unlockBtn.onclick=async()=>{
+          if(!confirm('このアカウントのログインロックを解除しますか？')) return;
+          unlockBtn.disabled=true;
+          try{
+            const {data,error}=await supabase.functions.invoke('admin-user',{
+              body:{action:'unlock_login',userId:a.user_id}
+            });
+            if(error) throw error;
+            if(data?.error) throw new Error(data.message||data.error);
+            notice('#accountEditMsg','ログインロックを解除しました。失敗回数も0に戻しました。',true);
+            toast('ログインロックを解除しました');
+            setTimeout(()=>go('accounts'),600);
+          }catch(err){
+            notice('#accountEditMsg',err.message||String(err));
+          }finally{
+            unlockBtn.disabled=false;
+          }
+        };
+      }
 
       const resetBtn=$('#accountMfaResetBtn');
       if(resetBtn){
@@ -14944,13 +14976,37 @@
     const btn=e.submitter;
     if(btn) btn.disabled=true;
     $('#loginMsg').classList.add('hidden');
+    const email=$('#email').value.trim();
     try{
       notice('#loginMsg','ログインしています...',true);
+
+      const pre=await loginSecurity('check',email);
+      if(pre.isActive===false) throw new Error('このアカウントは現在停止されています。管理者へお問い合わせください。');
+      if(pre.locked){
+        const until=pre.loginLockedUntil?new Date(pre.loginLockedUntil):null;
+        const t=until&&!Number.isNaN(until.getTime())?until.toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'}):'しばらく';
+        throw new Error('ログイン試行回数が上限に達したため一時ロックされています。'+t+'以降に再度お試しください。');
+      }
+
       const {error}=await supabase.auth.signInWithPassword({
-        email:$('#email').value.trim(),
+        email,
         password:$('#password').value
       });
-      if(error) throw error;
+      if(error){
+        try{
+          const state=await loginSecurity('failure',email);
+          if(state.locked){
+            const until=state.loginLockedUntil?new Date(state.loginLockedUntil):null;
+            const t=until&&!Number.isNaN(until.getTime())?until.toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'}):'15分後';
+            throw new Error('ログインに5回失敗したため、アカウントを15分間ロックしました。'+t+'以降に再度お試しください。');
+          }
+        }catch(securityErr){
+          if(String(securityErr?.message||securityErr).includes('15分間ロック')) throw securityErr;
+        }
+        throw error;
+      }
+
+      await loginSecurity('success',email);
       $('#password').value='';
       $('#loginMsg').classList.add('hidden');
       await boot();
