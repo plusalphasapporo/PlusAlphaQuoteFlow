@@ -37,3 +37,16 @@ body[data-role="support_staff"] .headerLogout{color:#fff;border-color:rgba(255,2
 @media(max-width:1050px){header{grid-template-columns:220px 1fr auto}}
 @media(max-width:980px){.wrap{padding:14px}.appShell{grid-template-columns:1fr;gap:12px}.side{position:static;padding:8px}#navMenu{display:flex;gap:5px;overflow-x:auto}.navBtn{flex:none;width:auto;white-space:nowrap}}
 @media(max-width:780px){header{grid-template-columns:minmax(0,1fr) auto;height:auto;min-height:64px;gap:8px;padding:10px 12px}.brand{font-size:17px}.globalSearch{grid-column:1/-1;grid-row:2}.headerActions{grid-column:2;grid-row:1}.workspaceHead{padding:5px 0 14px}.workspaceHead h1{font-size:22px}.card{padding:14px}.kpi{padding:13px}.kpi .value{font-size:25px}th,td{padding:10px 11px}}
+
+/* Consistent accessible actions and role-specific header contrast. */
+button:focus-visible,a:focus-visible,[tabindex]:focus-visible{outline:3px solid #7fb4ff;outline-offset:2px}
+.navBtn:focus-visible,.workspaceTab:focus-visible{outline:3px solid #b7d8ff;outline-offset:2px}
+body[data-role="customer_user"] header{background:#14532d;border-color:#14532d;color:#fff}
+body[data-role="customer_user"] .brand{color:#fff}
+body[data-role="customer_user"] .brandBlock .sub{color:#dcfce7}
+body[data-role="customer_user"] .headerActions{color:#fff}
+body[data-role="customer_user"] .headerPill,body[data-role="customer_user"] .headerIconBtn{color:#fff;background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.22)}
+body[data-role="customer_user"] .headerLogout{color:#fff;border-color:rgba(255,255,255,.22)}
+body[data-role="support_staff"] .globalSearch,body[data-role="customer_user"] .globalSearch{background:#fff;color:#334155}
+@media(max-width:980px){.side{max-height:none;overflow:visible}}
+@media(max-width:780px){.globalSearch{width:100%;min-width:0}#navMenu{scrollbar-width:thin}}
