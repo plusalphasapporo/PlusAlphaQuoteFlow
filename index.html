@@ -5566,24 +5566,48 @@
     bindUnifiedTabs(t=>renderProcurementWorkspace(t));
   }
 
+  function customerMatchesQuickFilter(c,filter){
+    if(filter==='hold') return !!c.manual_hold;
+    if(filter==='unassigned') return !String(c.sales_owner_name||'').trim();
+    if(filter==='no_phone') return !String(c.phone||'').trim()&&!String(c.mobile||'').trim();
+    return true;
+  }
+
   async function renderCustomers(){
     const data=await rpc('internal_customers_list');
-
+    const customers=data||[];
+    const quickFilters=[
+      ['all','すべて',customers.length],
+      ['hold','手動ホールド',customers.filter(c=>customerMatchesQuickFilter(c,'hold')).length],
+      ['unassigned','営業担当未設定',customers.filter(c=>customerMatchesQuickFilter(c,'unassigned')).length],
+      ['no_phone','電話未登録',customers.filter(c=>customerMatchesQuickFilter(c,'no_phone')).length]
+    ];
+    let quickFilter='all';
     $('#home').innerHTML=
-      pageIntro('顧客','顧客を検索・絞り込み・並び替えし、一覧から顧客カルテを開けます。')+
-      '<section class="card section"><div class="row between"><div><h3>顧客一覧</h3><p class="sectionDesc">会社名・フリガナ・法人番号・業種・営業担当・連絡先・住所で検索できます。</p></div><button id="customerCreateOpen" class="primary" type="button">＋ 新規顧客登録</button></div></section>'+
-      listToolbar('customerList',data||[],'status','顧客名・顧客コード・電話・メール・住所',[
+      pageIntro('顧客管理','顧客を探してカルテを開き、問い合わせ・機器・契約・情報フォルダまで確認できます。')+
+      '<section id="customerDirectory" class="card section customerDirectoryHead">'+
+        '<div class="row between"><div><h2>顧客一覧</h2><p class="sectionDesc">顧客名・電話番号・顧客コードで検索できます。</p></div>'+
+        '<button id="customerCreateOpen" class="primary" type="button">＋ 新規顧客登録</button></div>'+
+        '<div class="customerDirectoryMetrics" aria-label="顧客の登録状況">'+
+          quickFilters.map(([key,label,count])=>
+            '<button class="customerDirectoryMetric customerQuickFilter" type="button" data-quick-filter="'+esc(key)+'" aria-pressed="'+(key==='all'?'true':'false')+'">'+
+              '<span>'+esc(label)+'</span><strong>'+esc(count)+'</strong></button>'
+          ).join('')+
+        '</div>'+
+      '</section>'+
+      listToolbar('customerList',customers,'status','顧客名・コード・電話・メール・住所',[
         ['updated_desc','更新が新しい順'],
         ['name_asc','顧客名順'],
         ['code_asc','顧客コード順']
       ])+
       '<div id="customerDetailHost"></div>'+
-      '<section class="section"><div id="customerListHost"></div></section>';
+      '<section class="section customerDirectoryResults"><div class="row between"><div><h3>検索結果</h3><p id="customerListResults" class="sectionDesc" role="status" aria-live="polite"></p></div></div><div id="customerListHost"></div></section>';
 
     const renderRows=()=>{
       const state=listToolbarState('customerList');
-      let filtered=(data||[]).filter(c=>{
-        if(state.status!=='all' && c.status!==state.status) return false;
+      let filtered=customers.filter(c=>{
+        if(!customerMatchesQuickFilter(c,quickFilter)) return false;
+        if(state.status!=='all'&&c.status!==state.status) return false;
         if(!state.query) return true;
         return [
           c.customer_code,c.name,c.name_kana,c.trade_name,c.customer_type,c.industry,
@@ -5591,42 +5615,43 @@
           c.postal_code,c.address1,c.address2,c.status,c.internal_note
         ].some(v=>String(v||'').toLowerCase().includes(state.query));
       });
-
       filtered=[...filtered].sort((a,b)=>{
         if(state.sort==='name_asc') return compareText(a.name,b.name);
         if(state.sort==='code_asc') return compareText(a.customer_code,b.customer_code);
         return timeValue(b.updated_at)-timeValue(a.updated_at);
       });
-
-      updateListCount('customerList',filtered.length,(data||[]).length);
+      updateListCount('customerList',filtered.length,customers.length);
+      $('#customerListResults').textContent=filtered.length+'件表示 / 登録 '+customers.length+'件';
       const rows=filtered.map(c=>
         '<tr>'+
-          '<td>'+esc(c.customer_code||'—')+'</td>'+
-          '<td><strong>'+esc(c.name)+'</strong>'+(c.trade_name?'<br><span class="muted">'+esc(c.trade_name)+'</span>':'')+'</td>'+
-          '<td>'+esc(({corporation:'法人',sole_proprietor:'個人事業主',individual:'個人',public:'公共',other:'その他'}[c.customer_type]||c.customer_type||'—'))+(c.industry?'<br><span class="muted">'+esc(c.industry)+'</span>':'')+'</td>'+
+          '<td><strong>'+esc(c.name||'名称未登録')+'</strong><br><span class="muted">'+esc(c.customer_code||'コード未設定')+(c.trade_name?' / '+esc(c.trade_name):'')+'</span></td>'+
+          '<td>'+esc(c.phone||c.mobile||'電話未登録')+(c.email?'<br><span class="muted">'+esc(c.email)+'</span>':'')+'</td>'+
           '<td>'+esc(c.sales_owner_name||'未設定')+'</td>'+
-          '<td>'+esc(c.phone||c.mobile||'—')+(c.email?'<br><span class="muted">'+esc(c.email)+'</span>':'')+'</td>'+
-          '<td>'+esc(statusText(c.status))+'</td>'+
-          '<td>'+(c.manual_hold?'<span class="hold">手動ホールド中</span>':'<span class="normal">通常</span>')+'</td>'+
+          '<td>'+esc(statusText(c.status))+(c.manual_hold?'<br><span class="hold">手動ホールド中</span>':'')+'</td>'+
           '<td>'+esc(dateText(c.updated_at))+'</td>'+
-          '<td><button class="linkBtn customerDetail" type="button" data-id="'+esc(c.id)+'">顧客カルテ</button></td>'+
+          '<td><button class="primary customerDetail" type="button" data-id="'+esc(c.id)+'">カルテを開く</button></td>'+
         '</tr>'
       );
-
-      $('#customerListHost').innerHTML=dataTable(
-        ['顧客コード','顧客名','区分・業種','営業担当','連絡先','状態','取引状態','更新日','操作'],rows
-      );
-
+      $('#customerListHost').innerHTML=rows.length
+        ? dataTable(['顧客名 / コード','電話・メール','営業担当','状態','更新日','操作'],rows)
+        : '<div class="empty">条件に一致する顧客はありません。検索語や絞り込みを変更してください。</div>';
       document.querySelectorAll('.customerDetail').forEach(btn=>{
         btn.onclick=async()=>{
           btn.disabled=true;
-          try{ await renderCustomerDetail(btn.dataset.id); }
-          catch(err){ toast(err.message||String(err)); }
-          finally{ btn.disabled=false; }
+          try{await renderCustomerDetail(btn.dataset.id);}
+          catch(err){toast(err.message||String(err));}
+          finally{btn.disabled=false;}
         };
       });
     };
-
+    document.querySelectorAll('#customerDirectory .customerQuickFilter').forEach(btn=>btn.onclick=()=>{
+      quickFilter=btn.dataset.quickFilter||'all';
+      document.querySelectorAll('#customerDirectory .customerQuickFilter').forEach(item=>{
+        const active=item.dataset.quickFilter===quickFilter;
+        item.setAttribute('aria-pressed',String(active));
+      });
+      renderRows();
+    });
     $('#customerCreateOpen').onclick=renderCustomerCreate;
     bindListToolbar('customerList',renderRows);
     renderRows();
