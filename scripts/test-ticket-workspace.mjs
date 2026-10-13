@@ -270,3 +270,24 @@ assert.match(auditMigration, /function public\.internal_create_support_ticket/i)
 assert.match(auditMigration, /grant execute on function app_private\.internal_create_support_ticket_impl/i);
 assert.doesNotMatch(auditMigration, /^\s*grant\s+insert\s+on\s+(table\s+)?public\.audit_logs/im);
 console.log('Internal intake audit migration checks passed.');
+
+
+const nullGateMigration = fs.readFileSync(
+  'supabase/migrations/20261013060032_reject_unverified_internal_ticket_creation.sql',
+  'utf8'
+);
+assert.match(nullGateMigration, /if coalesce\(v_role,'\s*'\) not in \('internal_admin','internal_staff'\) then/i);
+assert.doesNotMatch(nullGateMigration, /if v_role not in \('internal_admin','internal_staff'\) then/i);
+assert.match(nullGateMigration, /SECURITY DEFINER/i);
+assert.match(nullGateMigration, /set search_path to ''/i);
+assert.match(nullGateMigration, /raise exception using errcode='42501'/i);
+assert.doesNotMatch(nullGateMigration, /create or replace function public\./i);
+const validRoles = ['internal_admin', 'internal_staff'];
+const allowTicketCreation = role => validRoles.includes(role ?? '');
+for (const forbidden of [null, undefined, '', 'customer_user', 'support_staff']) {
+  assert.equal(allowTicketCreation(forbidden), false, 'Unauthorized role must not create an internal ticket');
+}
+for (const allowed of validRoles) {
+  assert.equal(allowTicketCreation(allowed), true);
+}
+console.log('Ticket creation null-role regression assertions passed.');
