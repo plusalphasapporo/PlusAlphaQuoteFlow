@@ -1,0 +1,39 @@
+/* QuoteFlow Cloud unified operations UI / 2026-10-13
+   Role-neutral base styles. Existing permission/RLS logic must remain unchanged.
+   To enable: include <link rel="stylesheet" href="./assets/operations-ui.css"> after the embedded stylesheet. */
+:root{--navy:#17283f;--navy2:#203955;--bg:#f5f7fa;--card:#fff;--ink:#17253a;--muted:#64748b;--line:#e1e6ee;--blue:#1769cf;--blue2:#1255a8;--soft:#eaf2fc;--shadow:0 1px 3px rgba(15,23,42,.045)}
+body{font-size:14px;line-height:1.5}
+header{height:66px;background:#fff;color:var(--ink);border-bottom:1px solid var(--line);box-shadow:0 1px 3px rgba(15,23,42,.03)}
+.brand{color:#152844;letter-spacing:-.025em}.brandBlock .sub{color:#64748b;opacity:1}
+.globalSearch{background:#f3f6fa;box-shadow:none;border:1px solid #e3e9f1}
+.globalSearch:focus-within{background:#fff;border-color:#93b8ea;box-shadow:0 0 0 3px rgba(37,99,235,.09)}
+.headerPill,.headerIconBtn{color:#334155;background:#f6f8fb;border:1px solid var(--line)}
+.headerLogout{color:#334155;border-color:var(--line)}.headerActions{color:#334155}
+.wrap{max-width:1600px;padding:20px 24px}.appShell{grid-template-columns:224px minmax(0,1fr);gap:22px}
+.side{background:#17283f;color:#e8edf5;border-color:#17283f;box-shadow:none;border-radius:12px;padding:14px 9px}
+.sideTitle{color:#a8b7cb;font-size:11px}
+.navBtn{color:#dae3ef;border-radius:7px;font-weight:600;padding:11px 12px}
+.navBtn:hover{background:#243b57;color:#fff}.navBtn.active{background:#215c9f;color:#fff;border-color:#316daf}
+.workspaceHead{padding:6px 0 18px;border:0;border-bottom:1px solid var(--line);box-shadow:none;border-radius:0;background:transparent}
+.workspaceHead h1{font-size:26px;letter-spacing:-.025em}.workspaceHead .meta{font-size:12px}
+.pageIntro{margin:22px 0 12px}.pageIntro h2{font-size:19px;letter-spacing:-.015em}
+.card,.kpi,.item{border-radius:10px;box-shadow:var(--shadow)}.card{padding:19px}.kpi{padding:17px 19px}
+.kpi .label{font-size:12px;color:#52637a}.kpi .value{font-size:29px;letter-spacing:-.025em}.grid{gap:12px}
+.tableWrap{border-radius:9px;box-shadow:var(--shadow)}table{font-variant-numeric:tabular-nums}
+th,td{padding:12px 14px;line-height:1.5}th{background:#f6f8fb;color:#475569;font-weight:750;white-space:nowrap}
+tbody tr:hover{background:#f7faff}td{border-bottom-color:#e8edf3}
+.field input,.field textarea,.field select{border-color:#cfd8e4;border-radius:7px}
+.field input:focus,.field textarea:focus,.field select:focus{outline:2px solid #a4c8f5;outline-offset:0}
+button{border-radius:7px}.pill{border-radius:6px;font-size:11px;padding:4px 8px}
+.workspaceTabs{background:#f0f3f7;border-color:#e1e6ee;border-radius:9px;padding:4px}
+.workspaceTab{border-radius:6px}.workspaceTab.active{box-shadow:0 1px 3px rgba(15,23,42,.08)}
+.appModal{border-radius:12px}.appModalHead h2{font-size:20px}.section{margin-top:20px}
+body[data-role="support_staff"] header{color:#fff;background:#7c2d12;border-color:#7c2d12}
+body[data-role="support_staff"] .brand{color:#fff}
+body[data-role="support_staff"] .brandBlock .sub{color:#ffedd5}
+body[data-role="support_staff"] .headerActions{color:#fff}
+body[data-role="support_staff"] .headerPill,body[data-role="support_staff"] .headerIconBtn{color:#fff;background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2)}
+body[data-role="support_staff"] .headerLogout{color:#fff;border-color:rgba(255,255,255,.2)}
+@media(max-width:1050px){header{grid-template-columns:220px 1fr auto}}
+@media(max-width:980px){.wrap{padding:14px}.appShell{grid-template-columns:1fr;gap:12px}.side{position:static;padding:8px}#navMenu{display:flex;gap:5px;overflow-x:auto}.navBtn{flex:none;width:auto;white-space:nowrap}}
+@media(max-width:780px){header{grid-template-columns:minmax(0,1fr) auto;height:auto;min-height:64px;gap:8px;padding:10px 12px}.brand{font-size:17px}.globalSearch{grid-column:1/-1;grid-row:2}.headerActions{grid-column:2;grid-row:1}.workspaceHead{padding:5px 0 14px}.workspaceHead h1{font-size:22px}.card{padding:14px}.kpi{padding:13px}.kpi .value{font-size:25px}th,td{padding:10px 11px}}
