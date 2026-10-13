@@ -23,3 +23,21 @@ jobs:
 
       - name: Validate production HTML
         run: node scripts/validate-static.mjs
+
+      - name: Test operations UI stylesheet
+        run: node scripts/test-operations-ui.mjs
+
+      - name: Test customer directory and profile
+        run: node scripts/test-customer-ui.mjs
+
+      - name: Test asset ledger
+        run: node scripts/test-asset-ledger-ui.mjs
+
+      - name: Test case management and support navigation
+        run: node scripts/test-case-workflow-ui.mjs
+
+      - name: Test internal handoff workflow
+        run: node scripts/test-handoff-workflow-ui.mjs
+
+      - name: Test support operations workspace
+        run: node scripts/test-support-workspace-ui.mjs

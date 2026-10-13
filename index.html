@@ -450,6 +450,7 @@
       .appModalLayer{padding:8px}.appModal{max-height:calc(100vh - 16px);border-radius:14px}.appModalHead,.appModalBody,.appModalFoot{padding-left:14px;padding-right:14px}.modalGrid2,.modalGrid3,.amountSummary{grid-template-columns:1fr}
     }
   </style>
+  <link rel="stylesheet" href="./assets/operations-ui.css">
 </head>
 <body>
 <header>
@@ -2519,7 +2520,7 @@
         rpc('internal_unread_handoff_notifications'),
         rpc('internal_support_cases_list'),
         rpc('support_deadline_states'),
-        rpc('callconnect_dashboard')
+        rpcOptional('callconnect_dashboard',{}, {integration_state:'degraded'})
       ]);
       const internalDeadlineMap={};
       (deadlineStates||[]).forEach(x=>internalDeadlineMap[x.ticket_id]=x);
@@ -2543,7 +2544,6 @@
       const internalDueToday=internalDeadlineTickets.filter(t=>t.deadline_state==='due_today');
       const internalUnset=internalDeadlineTickets.filter(t=>t.deadline_state==='unset');
       const internalUrgent=internalSupportTickets.filter(t=>t.status!=='closed'&&t.priority==='urgent');
-      const internalHigh=internalSupportTickets.filter(t=>t.status!=='closed'&&t.priority==='high');
       const internalUnassigned=internalSupportTickets.filter(t=>t.status!=='closed'&&!t.assigned_internal_user_id);
       const internalFocusTickets=[...internalSupportTickets]
         .filter(t=>t.status!=='closed'&&(
@@ -2644,15 +2644,23 @@
       );
 
       home.innerHTML=
-        pageIntro('自社TOP','自社で判断・対応が必要な案件を最優先で表示します。通常業務は下段に分けています。')+
-        '<section class="card section internalCommandCenter">'+
+        pageIntro('業務ダッシュボード','緊急対応・今日の業務・詳細一覧へ、目的に合わせて移動できます。')+
+        '<nav class="internalDashNav" aria-label="ダッシュボード内の移動">'+
+          '<span class="internalDashNavLabel">画面内を移動</span>'+
+          '<button type="button" class="dashboardJump" data-target="internalPriority">優先確認</button>'+
+          '<button type="button" class="dashboardJump" data-target="internalTodayWork">今日の作業</button>'+
+          '<button type="button" class="dashboardJump" data-target="internalRegularWork">通常業務</button>'+
+          '<button type="button" class="dashboardJump" data-target="internalOperationsDetails">詳細一覧</button>'+
+        '</nav>'+
+        '<section id="internalPriority" tabindex="-1" class="card section internalCommandCenter">'+
           '<div class="internalCommandHead"><div><h2>自社対応センター</h2><p>まずここだけ確認すれば、サポート会社からの引継ぎ・緊急障害・期限案件を把握できます。</p></div><span class="pill">'+esc(ops.business_date||'')+'</span></div>'+
           '<div class="supportTodayGrid">'+
-            '<button class="supportTodayTile danger internalJumpHandoffs" type="button"><span>新着引継ぎ</span><strong>'+esc(unreadHandoffs?.count||0)+'</strong><em>未確認の引継ぎ</em></button>'+
-            '<button class="supportTodayTile warn internalJumpHandoffs" type="button"><span>未処理引継ぎ</span><strong>'+esc((q||[]).length)+'</strong><em>受理・判断が必要</em></button>'+
-            '<button class="supportTodayTile danger internalJumpSupport" data-focus="urgent" type="button"><span>緊急案件</span><strong>'+esc(internalUrgent.length)+'</strong><em>優先して確認</em></button>'+
-            '<button class="supportTodayTile danger internalJumpSupport" data-focus="overdue" type="button"><span>期限超過</span><strong>'+esc(internalOverdue.length)+'</strong><em>すぐに確認</em></button>'+
-            '<button class="supportTodayTile warn internalJumpSupport" data-focus="due_today" type="button"><span>本日期限</span><strong>'+esc(internalDueToday.length)+'</strong><em>本日中に判断</em></button>'+
+            '<button class="supportTodayTile '+(Number(unreadHandoffs?.count||0)>0?'danger':'')+' internalJumpHandoffs" type="button"><span>新着引継ぎ</span><strong>'+esc(unreadHandoffs?.count||0)+'</strong><em>未確認の引継ぎ</em></button>'+
+            '<button class="supportTodayTile '+((q||[]).length?'warn':'')+' internalJumpHandoffs" type="button"><span>未処理引継ぎ</span><strong>'+esc((q||[]).length)+'</strong><em>受理・判断が必要</em></button>'+
+            '<button class="supportTodayTile '+(internalUrgent.length?'danger':'')+' internalJumpSupport" data-focus="urgent" type="button"><span>緊急案件</span><strong>'+esc(internalUrgent.length)+'</strong><em>優先して確認</em></button>'+
+            '<button class="supportTodayTile '+(internalOverdue.length?'danger':'')+' internalJumpSupport" data-focus="overdue" type="button"><span>期限超過</span><strong>'+esc(internalOverdue.length)+'</strong><em>すぐに確認</em></button>'+
+            '<button class="supportTodayTile '+(internalDueToday.length?'warn':'')+' internalJumpSupport" data-focus="due_today" type="button"><span>本日期限</span><strong>'+esc(internalDueToday.length)+'</strong><em>本日中に判断</em></button>'+
+            '<button class="supportTodayTile '+(internalUnassigned.length?'warn':'')+' internalJumpSupport" data-focus="unassigned" type="button"><span>自社担当未設定</span><strong>'+esc(internalUnassigned.length)+'</strong><em>担当者の割り当て</em></button>'+
           '</div>'+
           '<div class="internalActionStrip">'+
             '<button class="internalActionBtn dangerAction internalQuickAction" data-action="incident" type="button"><strong>＋ 障害を登録</strong><small>自社で受けた障害をすぐ登録</small></button>'+
@@ -2666,19 +2674,9 @@
             '<div class="internalFocusList">'+(internalFocusCards||'<div class="empty">現在、優先確認が必要な問い合わせはありません。</div>')+'</div>'+
           '</div>'+
         '</section>'+
-        '<section class="card section"><div class="row between"><div><h2>通常業務</h2><p class="sectionDesc">見積・受注・発注・入荷・納品などの業務状況です。</p></div></div>'+
-          kpis([
-            ['承認待ち',ops.kpis?.approval_waiting],
-            ['受注化待ち',ops.kpis?.accepted_without_order],
-            ['発注未作成',ops.kpis?.orders_without_purchase_order],
-            ['入荷超過',ops.kpis?.receiving_overdue],
-            ['本日入荷',ops.kpis?.receiving_due_today],
-            ['本日納品',ops.kpis?.deliveries_today],
-            ['納品超過',ops.kpis?.deliveries_overdue],
-            ['高優先度案件',internalHigh.length],
-            ['自社担当未設定',internalUnassigned.length],
-            ['期限未設定',internalUnset.length]
-          ])+
+        '<section id="internalTodayWork" class="card section internalTodayWork" tabindex="-1">'+
+          '<div class="row between"><div><h2>今日の優先対応</h2><p class="sectionDesc">期限超過 → 本日予定 → 承認・受注・発注 → 問い合わせの順で並びます。</p></div><span class="pill">表示 '+esc(actionRows.length)+'件</span></div>'+
+          (actionRows.length?dataTable(['優先','対応内容','顧客','詳細','期限・状態','操作'],actionRows):'<div class="empty">現在、優先対応に表示する業務はありません。</div>')+
         '</section>'+
         ((unreadHandoffs?.items||[]).length
           ? '<section class="card section"><div class="row between"><div><h2>サポート会社からの新着引継ぎ</h2><p class="sectionDesc">まだあなたが確認していない引継ぎです。内容確認後、そのまま受理できます。</p></div><span class="hold">'+esc(unreadHandoffs.count||0)+'件未読</span></div>'+
@@ -2702,10 +2700,20 @@
           '<div class="row between"><div><h2>サポート期限管理</h2><p class="sectionDesc">期限超過・本日期限・期限未設定をまとめて確認します。</p></div><div class="row"><span class="hold">超過 '+esc(internalOverdue.length)+'</span><span class="pill warn">本日 '+esc(internalDueToday.length)+'</span><span class="pill">未設定 '+esc(internalUnset.length)+'</span></div></div>'+
           dataTable(['期限状態','案件','種別','顧客','初動期限','完了目標','操作'],internalDeadlineRows)+
         '</section>'+
-        '<section class="card section">'+
-          '<div class="row between"><div><h2>今日の優先対応</h2><p class="sectionDesc">期限超過 → 本日予定 → 承認・受注・発注 → 問い合わせの順で並びます。</p></div><span class="pill">'+esc(ops.business_date||'')+'</span></div>'+
-          dataTable(['優先','対応内容','顧客','詳細','期限・状態','操作'],actionRows)+
+        '<section id="internalRegularWork" tabindex="-1" class="card section"><div class="row between"><div><h2>通常業務</h2><p class="sectionDesc">見積・受注・発注・入荷・納品などの業務状況です。</p></div></div>'+
+          kpis([
+            ['承認待ち',ops.kpis?.approval_waiting],
+            ['受注化待ち',ops.kpis?.accepted_without_order],
+            ['発注未作成',ops.kpis?.orders_without_purchase_order],
+            ['入荷超過',ops.kpis?.receiving_overdue],
+            ['本日入荷',ops.kpis?.receiving_due_today],
+            ['本日納品',ops.kpis?.deliveries_today],
+            ['納品超過',ops.kpis?.deliveries_overdue]
+          ])+
         '</section>'+
+        '<details id="internalOperationsDetails" tabindex="-1" class="internalDashDetails section">'+
+          '<summary><span>業務別の詳細一覧</span><small>入荷・納品・電話・問い合わせ・引き継ぎ</small></summary>'+
+          '<div class="internalDashDetailsBody">'+
         '<section class="card section">'+
           '<div class="row between"><div><h2>未入荷</h2><p class="sectionDesc">未入荷残数と納期を確認し、ここから直接入荷登録へ進めます。</p></div><button class="ghost dashGoProc" type="button">入荷一覧を開く</button></div>'+
           dataTable(['発注番号','仕入先','顧客','明細','入荷','未入荷','納期','操作'],receivingRows)+
@@ -2717,9 +2725,9 @@
         '<section class="card section">'+
           '<div class="row between"><div><h2>CallConnect</h2><p class="sectionDesc">入電・不在着信・顧客照合状況を確認します。</p></div><button class="ghost dashGoCallConnect" type="button">CallConnectを開く</button></div>'+
           '<div class="modalGrid3">'+
-            '<div class="item"><strong>接続状態</strong><p>'+esc(callconnectDash?.integration_state==='connected'?'接続済み':'設定待ち')+'</p></div>'+
-            '<div class="item"><strong>受信通話</strong><p>'+esc(callconnectDash?.total_calls||0)+'件</p></div>'+
-            '<div class="item"><strong>未照合</strong><p>'+esc(callconnectDash?.unmatched_calls||0)+'件</p></div>'+
+            '<div class="item"><strong>接続状態</strong><p>'+esc(callconnectDash?.integration_state==='degraded'?'確認できません':callconnectDash?.integration_state==='connected'?'接続済み':'設定待ち')+'</p></div>'+
+            '<div class="item"><strong>受信通話</strong><p>'+esc(callconnectDash?.integration_state==='degraded'?'確認できません':String(callconnectDash?.total_calls??0)+'件')+'</p></div>'+
+            '<div class="item"><strong>未照合</strong><p>'+esc(callconnectDash?.integration_state==='degraded'?'確認できません':String(callconnectDash?.unmatched_calls??0)+'件')+'</p></div>'+
           '</div>'+
         '</section>'+
         '<section class="card section">'+
@@ -2730,7 +2738,9 @@
           ((q||[]).length?(q||[]).map(h=>
             '<div class="item"><h3>'+esc(h.ticket_number||'')+' '+esc(h.customer_name||'')+'</h3><p>'+esc(h.subject||'')+'</p><p>理由: '+esc(h.reason||'')+'</p><p>次: '+esc(h.next_action||'')+'</p><button class="primary accept" data-id="'+esc(h.id)+'">受理する</button></div>'
           ).join(''):'<p class="muted">未処理の引き継ぎはありません。</p>')+
-        '</section>';
+        '</section>'+
+          '</div>'+
+        '</details>';
 
       const openReceivingItem=async(itemId)=>{
         await renderProcurementWorkspace('receiving');
@@ -2768,6 +2778,15 @@
         },180);
       };
 
+      document.querySelectorAll('.dashboardJump').forEach(btn=>btn.onclick=()=>{
+        const target=home.querySelector('#'+btn.dataset.target);
+        if(!target) return;
+        if(target.tagName==='DETAILS') target.open=true;
+        const container=target.closest('details');
+        if(container) container.open=true;
+        target.scrollIntoView({behavior:'smooth',block:'start'});
+        target.focus({preventScroll:true});
+      });
       document.querySelectorAll('.internalQuickAction').forEach(btn=>btn.onclick=async()=>{
         const action=btn.dataset.action||'';
         if(action==='incident') return openInternalSupportCreate('incident');
@@ -4535,6 +4554,35 @@
     }
   }
 
+  function customerIdentityHeader(c,tab,overview=false){
+    const shortcuts=[['overview','概要'],['contacts','担当者'],['assets','OA機器'],['tickets','問い合わせ'],['files','情報フォルダ'],['transactions','取引・契約']];
+    return '<div class="customerIdentityHeader">'+
+      '<div class="customerIdentityTop"><div><span class="customerIdentityEyebrow">顧客カルテ / '+esc(c.customer_code||'コード未設定')+'</span>'+
+      '<h2>'+esc(c.name||'顧客名未登録')+'</h2>'+
+      (c.trade_name?'<p class="sectionDesc">'+esc(c.trade_name)+'</p>':'')+
+      (c.manual_hold?'<span class="hold">手動ホールド中</span>':'')+
+      '</div><button id="customerDetailClose" class="ghost" type="button">一覧へ戻る</button></div>'+
+      '<nav class="customerProfileJump" aria-label="顧客カルテの主要項目">'+
+      shortcuts.map(([key,label])=>'<button class="customerProfileJumpBtn" type="button" data-tab="'+esc(key)+'" aria-current="'+(key===tab?'page':'false')+'">'+esc(label)+'</button>').join('')+
+      '</nav></div>';
+  }
+
+  function bindCustomerIdentityNavigation(customerId,host){
+    const close=host.querySelector('#customerDetailClose');
+    if(close) close.onclick=()=>{
+      host.innerHTML='';
+      document.querySelector('#customerDirectory')?.scrollIntoView({behavior:'smooth',block:'start'});
+      document.querySelector('#customerListSearch')?.focus({preventScroll:true});
+    };
+    host.querySelectorAll('.customerProfileJumpBtn').forEach(btn=>btn.onclick=async()=>{
+      if(btn.dataset.tab==='') return;
+      btn.disabled=true;
+      try{await renderCustomerDetail(customerId,btn.dataset.tab);}
+      catch(err){toast(err.message||String(err));}
+      finally{btn.disabled=false;}
+    });
+  }
+
   async function renderCustomerDetail(customerId,tab='overview'){
     const host=$('#customerDetailHost');
     const tabs=[
@@ -4689,27 +4737,20 @@
 
       host.innerHTML=
         '<section class="card section">'+
-          '<div class="quoteDetailHead">'+
-            '<div><h2>顧客カルテ</h2><p class="sectionDesc">'+esc(c.customer_code||'—')+' / '+esc(c.name||'')+(c.trade_name?' / '+esc(c.trade_name):'')+'</p></div>'+
-            '<div class="row">'+
-              '<button id="customerOverviewNewQuote" class="primary" type="button">＋ この顧客で見積作成</button>'+
-              '<button id="customerOverviewCallConnectSync" class="ghost" type="button">CallConnectへ同期</button>'+
-              '<button id="customerOverviewEditToggle" class="ghost" type="button">基本情報を編集</button>'+
-              '<button id="customerDetailClose" class="ghost" type="button">閉じる</button>'+
-            '</div>'+
+          customerIdentityHeader(c,tab,true)+
+          '<div class="customerIdentityActions">'+
+            '<button id="customerOverviewNewQuote" class="primary" type="button">＋ この顧客で見積作成</button>'+
+            '<button id="customerOverviewCallConnectSync" class="ghost" type="button">CallConnectへ同期</button>'+
+            '<button id="customerOverviewEditToggle" class="ghost" type="button">基本情報を編集</button>'+
           '</div>'+
           unifiedTabs(tabs,tab,'customer')+
           '<div id="customerUnifiedTabBody">'+
             (c.manual_hold?'<div class="notice error"><strong>手動ホールド中</strong><br>新規取引を進める前にホールド理由・解除可否を確認してください。</div>':'')+
             kpis([
-              ['対応中',openSupportTickets.length],
-              ['障害',openIncidentCount],
-              ['設定依頼',openSettingCount],
-              ['問い合わせ',openInquiryCount],
-              ['有効契約',activeContracts.length],
-              ['稼働機器',activeAssets.length],
               ['要確認',attention.length],
-              ['直近案件',recentSupportTickets.length]
+              ['対応中',openSupportTickets.length],
+              ['稼働機器',activeAssets.length],
+              ['有効契約',activeContracts.length]
             ])+
             '<section class="customerSupportSnapshot">'+
               '<div class="customerSupportSnapshotHead"><div><h3>顧客サポート概要</h3><p>この顧客の契約・機器・問い合わせ状況を、ここだけで確認できます。</p></div><span class="pill">'+esc(openSupportTickets.length)+'件対応中</span></div>'+
@@ -4794,7 +4835,7 @@
           '</div>'+
         '</section>';
 
-      $('#customerDetailClose').onclick=()=>{host.innerHTML='';};
+      bindCustomerIdentityNavigation(customerId,host);
       $('#customerOverviewNewQuote').onclick=()=>renderCustomerQuoteCreate(customerId);
       $('#customerOverviewTransactions').onclick=()=>renderCustomerDetail(customerId,'transactions');
       $('#customerOverviewHistory').onclick=()=>renderCustomerDetail(customerId,'history');
@@ -5046,11 +5087,11 @@
 
     host.innerHTML=
       '<section class="card section">'+
-        '<div class="quoteDetailHead"><div><h2>顧客カルテ</h2><p class="sectionDesc">'+esc(c.customer_code||'—')+' / '+esc(c.name||'')+'</p></div><button id="customerDetailClose" class="ghost" type="button">閉じる</button></div>'+
+        customerIdentityHeader(c,tab,false)+
         unifiedTabs(tabs,tab,'customer')+
         '<div id="customerUnifiedTabBody">'+content+'</div>'+
       '</section>';
-    $('#customerDetailClose').onclick=()=>{host.innerHTML='';};
+    bindCustomerIdentityNavigation(customerId,host);
     bindUnifiedTabs(t=>renderCustomerDetail(customerId,t));
 
     if(tab==='files'){
@@ -5547,24 +5588,48 @@
     bindUnifiedTabs(t=>renderProcurementWorkspace(t));
   }
 
+  function customerMatchesQuickFilter(c,filter){
+    if(filter==='hold') return !!c.manual_hold;
+    if(filter==='unassigned') return !String(c.sales_owner_name||'').trim();
+    if(filter==='no_phone') return !String(c.phone||'').trim()&&!String(c.mobile||'').trim();
+    return true;
+  }
+
   async function renderCustomers(){
     const data=await rpc('internal_customers_list');
-
+    const customers=data||[];
+    const quickFilters=[
+      ['all','すべて',customers.length],
+      ['hold','手動ホールド',customers.filter(c=>customerMatchesQuickFilter(c,'hold')).length],
+      ['unassigned','営業担当未設定',customers.filter(c=>customerMatchesQuickFilter(c,'unassigned')).length],
+      ['no_phone','電話未登録',customers.filter(c=>customerMatchesQuickFilter(c,'no_phone')).length]
+    ];
+    let quickFilter='all';
     $('#home').innerHTML=
-      pageIntro('顧客','顧客を検索・絞り込み・並び替えし、一覧から顧客カルテを開けます。')+
-      '<section class="card section"><div class="row between"><div><h3>顧客一覧</h3><p class="sectionDesc">会社名・フリガナ・法人番号・業種・営業担当・連絡先・住所で検索できます。</p></div><button id="customerCreateOpen" class="primary" type="button">＋ 新規顧客登録</button></div></section>'+
-      listToolbar('customerList',data||[],'status','顧客名・顧客コード・電話・メール・住所',[
+      pageIntro('顧客管理','顧客を探してカルテを開き、問い合わせ・機器・契約・情報フォルダまで確認できます。')+
+      '<section id="customerDirectory" class="card section customerDirectoryHead">'+
+        '<div class="row between"><div><h2>顧客一覧</h2><p class="sectionDesc">顧客名・電話番号・顧客コードで検索できます。</p></div>'+
+        '<button id="customerCreateOpen" class="primary" type="button">＋ 新規顧客登録</button></div>'+
+        '<div class="customerDirectoryMetrics" aria-label="顧客の登録状況">'+
+          quickFilters.map(([key,label,count])=>
+            '<button class="customerDirectoryMetric customerQuickFilter" type="button" data-quick-filter="'+esc(key)+'" aria-pressed="'+(key==='all'?'true':'false')+'">'+
+              '<span>'+esc(label)+'</span><strong>'+esc(count)+'</strong></button>'
+          ).join('')+
+        '</div>'+
+      '</section>'+
+      listToolbar('customerList',customers,'status','顧客名・コード・電話・メール・住所',[
         ['updated_desc','更新が新しい順'],
         ['name_asc','顧客名順'],
         ['code_asc','顧客コード順']
       ])+
       '<div id="customerDetailHost"></div>'+
-      '<section class="section"><div id="customerListHost"></div></section>';
+      '<section class="section customerDirectoryResults"><div class="row between"><div><h3>検索結果</h3><p id="customerListResults" class="sectionDesc" role="status" aria-live="polite"></p></div></div><div id="customerListHost"></div></section>';
 
     const renderRows=()=>{
       const state=listToolbarState('customerList');
-      let filtered=(data||[]).filter(c=>{
-        if(state.status!=='all' && c.status!==state.status) return false;
+      let filtered=customers.filter(c=>{
+        if(!customerMatchesQuickFilter(c,quickFilter)) return false;
+        if(state.status!=='all'&&c.status!==state.status) return false;
         if(!state.query) return true;
         return [
           c.customer_code,c.name,c.name_kana,c.trade_name,c.customer_type,c.industry,
@@ -5572,42 +5637,43 @@
           c.postal_code,c.address1,c.address2,c.status,c.internal_note
         ].some(v=>String(v||'').toLowerCase().includes(state.query));
       });
-
       filtered=[...filtered].sort((a,b)=>{
         if(state.sort==='name_asc') return compareText(a.name,b.name);
         if(state.sort==='code_asc') return compareText(a.customer_code,b.customer_code);
         return timeValue(b.updated_at)-timeValue(a.updated_at);
       });
-
-      updateListCount('customerList',filtered.length,(data||[]).length);
+      updateListCount('customerList',filtered.length,customers.length);
+      $('#customerListResults').textContent=filtered.length+'件表示 / 登録 '+customers.length+'件';
       const rows=filtered.map(c=>
         '<tr>'+
-          '<td>'+esc(c.customer_code||'—')+'</td>'+
-          '<td><strong>'+esc(c.name)+'</strong>'+(c.trade_name?'<br><span class="muted">'+esc(c.trade_name)+'</span>':'')+'</td>'+
-          '<td>'+esc(({corporation:'法人',sole_proprietor:'個人事業主',individual:'個人',public:'公共',other:'その他'}[c.customer_type]||c.customer_type||'—'))+(c.industry?'<br><span class="muted">'+esc(c.industry)+'</span>':'')+'</td>'+
+          '<td><strong>'+esc(c.name||'名称未登録')+'</strong><br><span class="muted">'+esc(c.customer_code||'コード未設定')+(c.trade_name?' / '+esc(c.trade_name):'')+'</span></td>'+
+          '<td>'+esc(c.phone||c.mobile||'電話未登録')+(c.email?'<br><span class="muted">'+esc(c.email)+'</span>':'')+'</td>'+
           '<td>'+esc(c.sales_owner_name||'未設定')+'</td>'+
-          '<td>'+esc(c.phone||c.mobile||'—')+(c.email?'<br><span class="muted">'+esc(c.email)+'</span>':'')+'</td>'+
-          '<td>'+esc(statusText(c.status))+'</td>'+
-          '<td>'+(c.manual_hold?'<span class="hold">手動ホールド中</span>':'<span class="normal">通常</span>')+'</td>'+
+          '<td>'+esc(statusText(c.status))+(c.manual_hold?'<br><span class="hold">手動ホールド中</span>':'')+'</td>'+
           '<td>'+esc(dateText(c.updated_at))+'</td>'+
-          '<td><button class="linkBtn customerDetail" type="button" data-id="'+esc(c.id)+'">顧客カルテ</button></td>'+
+          '<td><button class="primary customerDetail" type="button" data-id="'+esc(c.id)+'">カルテを開く</button></td>'+
         '</tr>'
       );
-
-      $('#customerListHost').innerHTML=dataTable(
-        ['顧客コード','顧客名','区分・業種','営業担当','連絡先','状態','取引状態','更新日','操作'],rows
-      );
-
+      $('#customerListHost').innerHTML=rows.length
+        ? dataTable(['顧客名 / コード','電話・メール','営業担当','状態','更新日','操作'],rows)
+        : '<div class="empty">条件に一致する顧客はありません。検索語や絞り込みを変更してください。</div>';
       document.querySelectorAll('.customerDetail').forEach(btn=>{
         btn.onclick=async()=>{
           btn.disabled=true;
-          try{ await renderCustomerDetail(btn.dataset.id); }
-          catch(err){ toast(err.message||String(err)); }
-          finally{ btn.disabled=false; }
+          try{await renderCustomerDetail(btn.dataset.id);}
+          catch(err){toast(err.message||String(err));}
+          finally{btn.disabled=false;}
         };
       });
     };
-
+    document.querySelectorAll('#customerDirectory .customerQuickFilter').forEach(btn=>btn.onclick=()=>{
+      quickFilter=btn.dataset.quickFilter||'all';
+      document.querySelectorAll('#customerDirectory .customerQuickFilter').forEach(item=>{
+        const active=item.dataset.quickFilter===quickFilter;
+        item.setAttribute('aria-pressed',String(active));
+      });
+      renderRows();
+    });
     $('#customerCreateOpen').onclick=renderCustomerCreate;
     bindListToolbar('customerList',renderRows);
     renderRows();
@@ -7911,9 +7977,14 @@
     renderRows();
   }
 
-  async function openTicketWorkspace(ticketId){
+  function supportWorkspaceJumpTarget(key){
+    const targets={intake:'supportLinearIntake',knowledge:'supportKnowledgeWorkspace',remote:'supportRemoteWorkspace',report:'supportReportWorkspace',customer:'supportTicketCustomerContext',reply:'ticketMessageForm',history:'ticketMessageList',files:'ticketAttachmentGallery',handoffs:'ticketHandoffHistory'};
+    return Object.prototype.hasOwnProperty.call(targets,key)?targets[key]:null;
+  }
+
+  async function openTicketWorkspace(ticketId,returnPage=null){
     const role=bootData?.context?.role;
-    const backPage=role==='support_staff'?'support_cases':'support';
+    const backPage=(returnPage==='cases'||returnPage==='handoffs')&&['internal_admin','internal_staff'].includes(role)?returnPage:role==='support_staff'?'support_cases':'support';
     currentPage=backPage;
     setActiveNav();
     $('#home').innerHTML=
@@ -8344,12 +8415,13 @@
             (t.status!=='closed'&&(!support||!supportReadOnlyByOther)?'<button id="ticketActionSetting" class="ghost" type="button">設定依頼として登録</button>':'')+
           '</div>'+
           '<div id="ticketClassificationPanel" class="supportClassificationPanel hidden"></div>'+
+          '<div class="supportFlowHint">工程を選択して該当する作業場所に移動できます。</div>'+ 
           '<div class="supportFlow supportLinearProgress">'+
-            '<div class="supportStep '+(t.status==='closed'||supportStage!=='unhandled'?'done':'active')+'"><span class="supportStepNum">1</span><strong>受付内容</strong><small>内容・写真・顧客を確認</small></div>'+
-            '<div class="supportStep '+(t.status==='closed'||latestTeamViewerSession||supportStage==='teamviewer_waiting'||supportPrimaryStep.target==='report'?'done':(['assist','procedure'].includes(supportPrimaryStep.target)?'active':''))+'"><span class="supportStepNum">2</span><strong>AI・ナレッジ</strong><small>対応方法・手順を確認</small></div>'+
-            '<div class="supportStep '+(t.status==='closed'||latestTeamViewerSession?.outcome?'done':(latestTeamViewerSession||supportStage==='teamviewer_waiting'?'active':''))+'"><span class="supportStepNum">3</span><strong>TeamViewer</strong><small>必要な場合だけ遠隔対応</small></div>'+
-            '<div class="supportStep '+(t.status==='closed'?'done':(supportPrimaryStep.target==='report'?'active':''))+'"><span class="supportStepNum">4</span><strong>作業報告</strong><small>結果を記録して完了</small></div>'+
-          '</div>'+
+            '<button type="button" class="supportStep supportWorkspaceJump '+(t.status==='closed'||supportStage!=='unhandled'?'done':'active')+'" data-jump="intake"><span class="supportStepNum">1</span><strong>受付内容</strong><small>内容・写真・顧客を確認</small></button>'+
+            '<button type="button" class="supportStep supportWorkspaceJump '+(t.status==='closed'||latestTeamViewerSession||supportStage==='teamviewer_waiting'||supportPrimaryStep.target==='report'?'done':(['assist','procedure'].includes(supportPrimaryStep.target)?'active':''))+'" data-jump="knowledge"><span class="supportStepNum">2</span><strong>AI・ナレッジ</strong><small>対応方法・手順を確認</small></button>'+
+            '<button type="button" class="supportStep supportWorkspaceJump '+(t.status==='closed'||latestTeamViewerSession?.outcome?'done':(latestTeamViewerSession||supportStage==='teamviewer_waiting'?'active':''))+'" data-jump="remote"><span class="supportStepNum">3</span><strong>TeamViewer</strong><small>必要な場合だけ遠隔対応</small></button>'+
+            '<button type="button" class="supportStep supportWorkspaceJump '+(t.status==='closed'?'done':(supportPrimaryStep.target==='report'?'active':''))+'" data-jump="report"><span class="supportStepNum">4</span><strong>作業報告</strong><small>結果を記録して完了</small></button>'+
+          '</button>'+
           '<div class="supportLinearFlow">'+
             '<section id="supportLinearIntake" class="supportLinearCard '+(t.status==='closed'||supportStage!=='unhandled'?'done':'active')+'">'+
               '<div class="supportLinearHead"><span class="supportLinearIndex">1</span><div><strong>受付内容を確認</strong><small>依頼内容・顧客・対象機器・写真を確認します。</small></div></div>'+
@@ -8763,7 +8835,15 @@
             '<div class="supportTicketFacts">'+
               '<div class="supportTicketFact"><span>問い合わせ内容</span><strong>'+esc((displayDescription||'内容なし').slice(0,140))+(String(displayDescription||'').length>140?'…':'')+'</strong></div>'+
               '<div class="supportTicketFact"><span>顧客 / 対象</span><strong>'+esc(cust?.name||'顧客未登録')+' / '+esc(asset?.asset_number||asset?.model_name||'機器未指定')+'</strong></div>'+
-            '</div>'+supportTopSummary
+            '</div>'+
+             '<div class="supportWorkspaceQuickContext">'+
+             '<div><span>顧客・連絡先</span><strong>'+esc(cust?.name||'顧客未登録')+'</strong><small>'+esc(primary?.phone||primary?.email||'連絡先未登録')+'</small></div>'+
+             '<div><span>対象機器</span><strong>'+esc(asset?.model_name||asset?.asset_number||'未指定')+'</strong><small>'+esc(asset?.serial_number||'シリアル未登録')+'</small></div>'+
+             '<div><span>契約</span><strong>'+esc(contract?.contract_number||'未指定')+'</strong><small>'+esc(contract?statusText(contract.status):'確認してください')+'</small></div>'+
+             '</div>'+
+             '<nav class="supportWorkspaceQuickNav" aria-label="作業画面内を移動">'+
+             [['customer','顧客・機器'],['intake','受付内容'],['knowledge','AI・ナレッジ'],['remote','TeamViewer'],['report','作業報告'],['reply','返信'],['history','履歴'],['files','添付'],['handoffs','引継ぎ']].map(([key,label])=>'<button type="button" class="supportWorkspaceJump" data-jump="'+key+'">'+label+'</button>').join('')+
+             '</nav>'+supportTopSummary
           : internal
             ? internalTopPanel
             : kpis([
@@ -8822,7 +8902,7 @@
                   : '<button class="primary" type="submit">メッセージを送信</button>')+
             '</div>'+
           '</form><div id="ticketMessageMsg" class="notice hidden"></div></section>'+
-        (!customer?'<section class="section"><h3>引き継ぎ履歴</h3>'+dataTable(internal?['状態','理由','次の対応','作成日','操作']:['状態','理由','次の対応','作成日'],handoffRows)+'</section>':'')+
+        (!customer?'<section id="ticketHandoffHistory" class="section"><h3>引き継ぎ履歴</h3>'+dataTable(internal?['状態','理由','次の対応','作成日','操作']:['状態','理由','次の対応','作成日'],handoffRows)+'</section>':'')+
         (!customer?'<section id="ticketAiIncidentSection" class="section">'+
           '<div class="row between" style="gap:12px;align-items:flex-start;flex-wrap:wrap"><div><h3>AI障害解析</h3><p class="sectionDesc">案件情報・機器情報・通話・メッセージ・社内ナレッジと、添付された障害写真をまとめて解析します。</p></div><span class="pill '+(aiState==='connected'?'good':aiState==='manual'?'warn':'')+'">OpenAI '+esc(aiStateText)+'</span></div>'+
           '<div class="grid" style="margin-top:10px">'+
@@ -9306,6 +9386,15 @@
     }
 
     if(support){
+      document.querySelectorAll('.supportWorkspaceJump').forEach(btn=>btn.onclick=()=>{
+        const targetId=supportWorkspaceJumpTarget(btn.dataset.jump);
+        if(!targetId) return;
+        const target=document.getElementById(targetId);
+        if(!target) return;
+        target.scrollIntoView({behavior:'smooth',block:'start'});
+        if(!target.hasAttribute('tabindex')) target.setAttribute('tabindex','-1');
+        target.focus({preventScroll:true});
+      });
       const jump=(selector)=>{
         const el=$(selector);
         if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
@@ -11492,6 +11581,12 @@
 
     $('#home').innerHTML=
       pageIntro(internal?'問い合わせ管理':'サポート',internal?'自社受付からサポート会社対応・自社引継ぎ・完了まで、案件の現在地を確認します。':'顧客・契約・機器・担当者・優先度・対応履歴を案件単位で管理します。')+
+      '<div class="supportQuickBar">'+
+        (support?'<button id="supportFastIntake" class="primary" type="button">＋ 新規受付・対応開始</button>'+
+                 '<button id="supportQuickHandoffs" class="ghost" type="button">引継ぎ状況</button>':
+          internal?'<button id="internalSupportFastIntake" class="primary" type="button">＋ 新規受付</button>'+
+                 '<button id="internalSupportCases" class="ghost" type="button">案件管理一覧</button>':'')+
+      '</div>'+
       kpis([
         ['未対応',summary.open||0],
         ['対応中',summary.in_progress||0],
@@ -11941,6 +12036,12 @@
         $('#supportCaseListHost')?.scrollIntoView({behavior:'smooth',block:'start'});
       });
     }
+    $('#supportFastIntake')?.addEventListener('click',()=>go('support_new'));
+    $('#supportQuickHandoffs')?.addEventListener('click',()=>go('support_handoffs'));
+    $('#internalSupportFastIntake')?.addEventListener('click',()=>{
+      $('#supportCaseCreateToggle')?.click();
+    });
+    $('#internalSupportCases')?.addEventListener('click',()=>go('cases'));
     bindListToolbar('supportCaseList',renderRows);
     renderRows();
 
@@ -12513,6 +12614,7 @@
         '<div class="quoteDetailHead">'+
           '<div><h2>機器カルテ</h2><p class="sectionDesc">'+esc(a.asset_number||'未採番')+' / '+esc(c.name||'')+'</p></div>'+
           '<div class="row">'+
+            '<button id="assetOpenCustomer" class="ghost" type="button">顧客カルテ</button>'+
             '<button id="assetNewTicketBtn" class="primary" type="button">＋ この機器で問い合わせ</button>'+
             '<button id="assetDetailCloseBtn" class="ghost" type="button">閉じる</button>'+
           '</div>'+
@@ -12578,6 +12680,10 @@
       '</section>';
 
     $('#assetDetailCloseBtn').onclick=()=>{$('#assetDetailHost').innerHTML='';};
+    $('#assetOpenCustomer').onclick=async()=>{
+      await go('customers');
+      await renderCustomerDetail(a.customer_id);
+    };
 
     if(a.installed_at){
       const dt=new Date(a.installed_at);
@@ -12665,6 +12771,24 @@
     $('#assetDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
   }
 
+  function assetLedgerWarrantyDays(asset,asOf=new Date()){
+    if(!asset.warranty_until) return null;
+    const date=new Date(String(asset.warranty_until).slice(0,10)+'T12:00:00');
+    if(!Number.isFinite(date.getTime())) return null;
+    const today=new Date(asOf.getFullYear(),asOf.getMonth(),asOf.getDate(),12);
+    const end=new Date(date.getFullYear(),date.getMonth(),date.getDate(),12);
+    return Math.round((end.getTime()-today.getTime())/86400000);
+  }
+
+  function assetLedgerMatchesQuickFilter(asset,filter,asOf=new Date()){
+    if(filter==='open_tickets') return Number(asset.open_ticket_count||0)>0;
+    if(filter==='contract_unlinked') return !asset.contract_id&&!asset.contract_number;
+    const days=assetLedgerWarrantyDays(asset,asOf);
+    if(filter==='warranty_expired') return days!==null&&days<0;
+    if(filter==='warranty_soon') return days!==null&&days>=0&&days<=60;
+    return true;
+  }
+
   async function renderAssetLedger(){
     const role=bootData?.context?.role;
     if(role==='customer_user'){
@@ -12674,27 +12798,93 @@
       return;
     }
 
-    const [assets,customers]=await Promise.all([rpc('internal_assets_list'),rpc('internal_customers_list')]);
-    const options=(customers||[]).map(c=>'<option value="'+esc(c.id)+'">'+esc(c.customer_code||'—')+' / '+esc(c.name)+'</option>').join('');
-    const rows=(assets||[]).map(a=>
-      '<tr>'+
-        '<td><strong>'+esc(a.asset_number||'未採番')+'</strong></td>'+
-        '<td>'+esc(a.customer?.name||'—')+'</td>'+
-        '<td>'+esc(a.model_name||'—')+'</td>'+
-        '<td>'+esc(a.serial_number||'—')+'</td>'+
-        '<td>'+esc(dateText(a.warranty_until))+'</td>'+
-        '<td>'+(a.contract_number?esc(a.contract_number)+'<br><span class="muted">'+esc(statusText(a.contract_status))+'</span>':'未紐づけ')+'</td>'+
-        '<td>'+esc(a.installation_location||'—')+'</td>'+
-        '<td>'+esc(statusText(a.status))+'</td>'+
-        '<td>'+(Number(a.open_ticket_count||0)>0?'<span class="hold">'+esc(a.open_ticket_count)+'</span>':esc(a.open_ticket_count||0))+'</td>'+
-        '<td><button class="linkBtn assetLedgerOpen" type="button" data-id="'+esc(a.id)+'">カルテ</button></td>'+
-      '</tr>'
-    );
-    $('#home').innerHTML=
-      pageIntro('機器台帳','機器番号・シリアル・保証期限・契約・設置場所・対応状況を一元管理します。')+
-      '<section class="card section"><div class="unifiedToolbar"><div><h2>機器一覧</h2><p class="sectionDesc">納品から自動登録された機器と手動登録した機器を同じ台帳で管理します。</p></div><button id="assetLedgerCreateBtn" class="primary" type="button">＋機器登録</button></div>'+
-      '<div id="assetDetailHost"></div>'+dataTable(['機器番号','顧客','機種','シリアル','保証期限','契約','設置場所','状態','対応中','操作'],rows)+'</section>';
 
+    const [assets,customers]=await Promise.all([rpc('internal_assets_list'),rpc('internal_customers_list')]);
+    const allAssets=assets||[];
+    const options=(customers||[]).map(c=>'<option value="'+esc(c.id)+'">'+esc(c.customer_code||'—')+' / '+esc(c.name)+'</option>').join('');
+    const filters=[
+      ['all','すべて',allAssets.length],
+      ['open_tickets','対応中あり',allAssets.filter(a=>assetLedgerMatchesQuickFilter(a,'open_tickets')).length],
+      ['warranty_expired','保証期限切れ',allAssets.filter(a=>assetLedgerMatchesQuickFilter(a,'warranty_expired')).length],
+      ['warranty_soon','保証60日以内',allAssets.filter(a=>assetLedgerMatchesQuickFilter(a,'warranty_soon')).length],
+      ['contract_unlinked','契約未紐づけ',allAssets.filter(a=>assetLedgerMatchesQuickFilter(a,'contract_unlinked')).length]
+    ];
+    let quickFilter='all';
+    $('#home').innerHTML=
+      pageIntro('機器台帳','機器を検索し、保証・契約・問い合わせ状況から必要なカルテを開きます。')+
+      '<section id="assetLedgerDirectory" class="card section assetLedgerDirectory">'+
+        '<div class="row between"><div><h2>OA機器台帳</h2><p class="sectionDesc">納品からの自動登録と手動登録をまとめて管理します。</p></div>'+
+        '<button id="assetLedgerCreateBtn" class="primary" type="button">＋ 機器登録</button></div>'+
+        '<div class="assetLedgerMetrics" aria-label="機器台帳の状況">'+
+          filters.map(([key,label,count])=>'<button class="assetLedgerMetric assetLedgerQuickFilter" type="button" data-quick-filter="'+esc(key)+'" aria-pressed="'+(key==='all'?'true':'false')+'"><span>'+esc(label)+'</span><strong>'+esc(count)+'</strong></button>').join('')+
+        '</div>'+
+      '</section>'+
+      listToolbar('assetLedger',allAssets,'status','機器番号・顧客名・型番・シリアル・設置場所',[
+        ['updated_desc','更新が新しい順'],
+        ['customer_asc','顧客名順'],
+        ['asset_asc','機器番号順'],
+        ['warranty_asc','保証期限が近い順'],
+        ['open_tickets_desc','対応中の多い順']
+      ])+
+      '<div id="assetLedgerDetailHost"><div id="assetDetailHost"></div></div>'+
+      '<section class="section assetLedgerResultTable"><div class="row between"><h3>機器検索結果</h3><p id="assetLedgerResults" class="sectionDesc" role="status" aria-live="polite"></p></div><div id="assetListHost"></div></section>';
+
+    const renderAssetRows=()=>{
+      const state=listToolbarState('assetLedger');
+      let filtered=allAssets.filter(a=>{
+        if(!assetLedgerMatchesQuickFilter(a,quickFilter)) return false;
+        if(state.status!=='all'&&a.status!==state.status) return false;
+        return !state.query||[
+          a.asset_number,a.customer?.name,a.customer?.customer_code,
+          a.model_name,a.serial_number,a.installation_location,
+          a.product_code,a.source_delivery_number,a.contract_number
+        ].some(v=>String(v||'').toLowerCase().includes(state.query));
+      });
+      filtered=[...filtered].sort((a,b)=>{
+        if(state.sort==='customer_asc') return compareText(a.customer?.name,b.customer?.name);
+        if(state.sort==='asset_asc') return compareText(a.asset_number,b.asset_number);
+        if(state.sort==='warranty_asc') return (timeValue(a.warranty_until)||Number.MAX_SAFE_INTEGER)-(timeValue(b.warranty_until)||Number.MAX_SAFE_INTEGER);
+        if(state.sort==='open_tickets_desc') return Number(b.open_ticket_count||0)-Number(a.open_ticket_count||0)||timeValue(b.updated_at)-timeValue(a.updated_at);
+        return timeValue(b.updated_at)-timeValue(a.updated_at);
+      });
+      updateListCount('assetLedger',filtered.length,allAssets.length);
+      $('#assetLedgerResults').textContent=filtered.length+'件表示 / 登録 '+allAssets.length+'件';
+      const rows=filtered.map(a=>{
+        const days=assetLedgerWarrantyDays(a);
+        const warranty=days===null?'<span class="muted">未設定</span>':days<0?'<span class="hold">期限切れ '+esc(dateText(a.warranty_until))+'</span>':days<=60?'<span class="pill warn">残り '+esc(days)+'日</span>':'<span>'+esc(dateText(a.warranty_until))+'</span>';
+        return '<tr>'+
+          '<td><strong>'+esc(a.asset_number||'未採番')+'</strong><br><span class="muted">'+esc(a.model_name||'機種未設定')+'</span></td>'+
+          '<td>'+esc(a.customer?.name||'顧客未設定')+(a.customer_id?'<br><button class="linkBtn assetLedgerCustomerOpen" type="button" data-id="'+esc(a.customer_id)+'">顧客カルテ</button>':'')+'</td>'+
+          '<td>'+esc(a.serial_number||'未登録')+'</td>'+
+          '<td>'+warranty+'</td>'+
+          '<td>'+(a.contract_number?esc(a.contract_number):'<span class="muted">未紐づけ</span>')+'</td>'+
+          '<td>'+esc(a.installation_location||'未設定')+'</td>'+
+          '<td>'+esc(statusText(a.status))+'</td>'+
+          '<td>'+(Number(a.open_ticket_count||0)>0?'<span class="hold">'+esc(a.open_ticket_count)+'件</span>':'0件')+'</td>'+
+          '<td><button class="primary assetLedgerOpen" type="button" data-id="'+esc(a.id)+'">機器カルテ</button></td>'+
+        '</tr>';
+      });
+      $('#assetListHost').innerHTML=rows.length
+        ? dataTable(['機器番号・機種','顧客','シリアル','保証期限','契約','設置場所','状態','対応中','操作'],rows)
+        : '<div class="empty">条件に一致する機器はありません。検索語や絞り込みを変更してください。</div>';
+      document.querySelectorAll('.assetLedgerOpen').forEach(btn=>btn.onclick=async()=>{
+        btn.disabled=true;
+        try{await renderAssetDetail(btn.dataset.id);}
+        catch(err){toast(err.message||String(err));}
+        finally{btn.disabled=false;}
+      });
+      document.querySelectorAll('.assetLedgerCustomerOpen').forEach(btn=>btn.onclick=async()=>{
+        btn.disabled=true;
+        try{await go('customers');await renderCustomerDetail(btn.dataset.id);}
+        catch(err){toast(err.message||String(err));}
+        finally{btn.disabled=false;}
+      });
+    };
+    document.querySelectorAll('#assetLedgerDirectory .assetLedgerQuickFilter').forEach(btn=>btn.onclick=()=>{
+      quickFilter=btn.dataset.quickFilter||'all';
+      document.querySelectorAll('#assetLedgerDirectory .assetLedgerQuickFilter').forEach(item=>item.setAttribute('aria-pressed',String(item.dataset.quickFilter===quickFilter)));
+      renderAssetRows();
+    });
     $('#assetLedgerCreateBtn').onclick=()=>openModal({
       title:'機器を登録',description:'手動でOA機器台帳へ追加します。納品フローからも自動登録されます。',
       body:
@@ -12707,7 +12897,9 @@
         closeModal();toast('機器を登録しました');await go('assets');
       }
     });
-    document.querySelectorAll('.assetLedgerOpen').forEach(btn=>btn.onclick=()=>renderAssetDetail(btn.dataset.id));
+
+    bindListToolbar('assetLedger',renderAssetRows);
+    renderAssetRows();
   }
 
   async function renderContractDetail(contractId){
@@ -12973,81 +13165,180 @@
     document.querySelectorAll('.contractWorkspaceOpen').forEach(btn=>btn.onclick=()=>renderContractDetail(btn.dataset.id));
   }
 
+  function caseDirectoryMatchesQuickFilter(ticket,filter){
+    const closed=ticket.status==='closed'||ticket.status==='resolved';
+    if(filter==='active') return !closed;
+    if(filter==='priority') return !closed&&['urgent','high'].includes(ticket.priority);
+    if(filter==='unassigned') return !closed&&(!String(ticket.assigned_name||'').trim()||ticket.assigned_name==='未割当'||ticket.assigned_name==='未設定');
+    if(filter==='handoff') return !closed&&!!ticket.handoff_state&&!['completed','closed','none'].includes(String(ticket.handoff_state));
+    return true;
+  }
+
   async function renderCasesWorkspace(){
     const data=await rpc('internal_case_directory');
-    const rows=(data||[]).map(x=>
-      '<tr><td>'+esc(x.ticket_number||'—')+'</td><td>'+esc(x.customer_name||'')+'</td><td><strong>'+esc(x.subject||'')+'</strong><br><span class="muted">'+esc(x.asset_name||'')+'</span></td><td>'+esc(statusText(x.status))+'</td><td>'+esc(x.priority||'normal')+'</td><td>'+esc(x.assigned_name||'未割当')+'</td><td>'+esc(x.handoff_state||'—')+'</td><td><button class="linkBtn caseOpenBtn" type="button" data-id="'+esc(x.id)+'">対応画面</button></td></tr>'
-    );
-    $('#home').innerHTML=pageIntro('案件管理','問い合わせを案件として横断管理します。')+'<div id="ticketDetailHost"></div><section class="card section">'+dataTable(['案件番号','顧客','内容/機器','状態','優先度','自社担当','引継ぎ','操作'],rows)+'</section>';
-    document.querySelectorAll('.caseOpenBtn').forEach(btn=>btn.onclick=async()=>{await renderTicketDetail(btn.dataset.id);});
+    const cases=data||[];
+    const counts=[
+      ['all','すべて',cases.length],
+      ['active','対応中',cases.filter(x=>caseDirectoryMatchesQuickFilter(x,'active')).length],
+      ['priority','緊急・高優先度',cases.filter(x=>caseDirectoryMatchesQuickFilter(x,'priority')).length],
+      ['unassigned','担当未設定',cases.filter(x=>caseDirectoryMatchesQuickFilter(x,'unassigned')).length],
+      ['handoff','引継ぎ確認',cases.filter(x=>caseDirectoryMatchesQuickFilter(x,'handoff')).length]
+    ];
+    let quickFilter='active';
+    $('#home').innerHTML=pageIntro('案件管理','現在対応が必要な案件を確認し、受付・対応・履歴へそのまま進めます。')+
+      '<section id="caseDirectory" class="card section">'+
+        '<div class="row between"><div><h2>案件一覧</h2><p class="sectionDesc">案件番号・顧客・件名・機器で検索できます。</p></div>'+
+          '<button id="caseDirectoryNew" class="primary" type="button">＋ 問い合わせを登録</button></div>'+
+        '<div class="caseDirectoryMetrics" aria-label="案件の状況">'+
+          counts.map(([key,label,count])=>'<button type="button" class="caseDirectoryMetric caseDirectoryQuickFilter" data-quick-filter="'+esc(key)+'" aria-pressed="'+(key===quickFilter?'true':'false')+'"><span>'+esc(label)+'</span><strong>'+esc(count)+'</strong></button>').join('')+
+        '</div>'+
+      '</section>'+
+      listToolbar('caseDirectory',cases,'status','案件番号・顧客・内容・機器・担当者',[
+        ['priority_desc','優先度が高い順'],
+        ['customer_asc','顧客名順'],
+        ['number_asc','案件番号順']
+      ])+
+      '<section class="section caseDirectoryResults"><div class="row between"><h3>検索結果</h3><p id="caseDirectoryResults" class="sectionDesc" role="status" aria-live="polite"></p></div>'+
+        '<div id="caseDirectoryListHost"></div></section>';
+    const priorityRank={urgent:0,high:1,normal:2,low:3};
+    const renderRows=()=>{
+      const state=listToolbarState('caseDirectory');
+      const filtered=cases.filter(x=>{
+        if(!caseDirectoryMatchesQuickFilter(x,quickFilter)) return false;
+        if(state.status!=='all'&&x.status!==state.status) return false;
+        return !state.query||[x.ticket_number,x.customer_name,x.subject,x.asset_name,x.assigned_name,x.handoff_state,x.priority,x.status]
+          .some(v=>String(v||'').toLowerCase().includes(state.query));
+      }).sort((a,b)=>{
+        if(state.sort==='customer_asc') return compareText(a.customer_name,b.customer_name);
+        if(state.sort==='number_asc') return compareText(a.ticket_number,b.ticket_number);
+        return (priorityRank[a.priority]??9)-(priorityRank[b.priority]??9);
+      });
+      updateListCount('caseDirectory',filtered.length,cases.length);
+      $('#caseDirectoryResults').textContent=filtered.length+'件表示 / 登録 '+cases.length+'件';
+      const rows=filtered.map(x=>
+        '<tr>'+
+          '<td><strong>'+esc(x.ticket_number||'—')+'</strong><br><span class="muted">'+esc(statusText(x.status))+'</span></td>'+
+          '<td><strong>'+esc(x.subject||'件名なし')+'</strong><br><span class="muted">'+esc(x.asset_name||'機器未指定')+'</span></td>'+
+          '<td>'+esc(x.customer_name||'顧客未設定')+(x.customer_id?'<br><button type="button" class="linkBtn caseDirectoryCustomerOpen" data-id="'+esc(x.customer_id)+'">顧客カルテ</button>':'')+'</td>'+
+          '<td>'+(x.priority==='urgent'?'<span class="hold">緊急</span>':x.priority==='high'?'<span class="pill warn">高</span>':esc(x.priority||'通常'))+'</td>'+
+          '<td>'+esc(x.assigned_name||'未割当')+'</td>'+
+          '<td>'+esc(x.handoff_state||'—')+'</td>'+
+          '<td><button type="button" class="primary caseDirectoryOpen" data-id="'+esc(x.id)+'">対応画面を開く</button></td>'+
+        '</tr>'
+      );
+      $('#caseDirectoryListHost').innerHTML=rows.length
+        ? dataTable(['案件番号・状態','件名・機器','顧客','優先度','自社担当','引継ぎ','操作'],rows)
+        : '<div class="empty">条件に一致する案件はありません。絞り込みや検索語を変更してください。</div>';
+      document.querySelectorAll('.caseDirectoryOpen').forEach(btn=>btn.onclick=async()=>{
+        btn.disabled=true;
+        try{await openTicketWorkspace(btn.dataset.id,'cases');}
+        catch(err){toast(err.message||String(err));}
+        finally{btn.disabled=false;}
+      });
+      document.querySelectorAll('.caseDirectoryCustomerOpen').forEach(btn=>btn.onclick=async()=>{
+        btn.disabled=true;
+        try{await go('customers');await renderCustomerDetail(btn.dataset.id);}
+        catch(err){toast(err.message||String(err));}
+        finally{btn.disabled=false;}
+      });
+    };
+    document.querySelectorAll('#caseDirectory .caseDirectoryQuickFilter').forEach(btn=>btn.onclick=()=>{
+      quickFilter=btn.dataset.quickFilter||'active';
+      document.querySelectorAll('#caseDirectory .caseDirectoryQuickFilter').forEach(item=>
+        item.setAttribute('aria-pressed',String(item.dataset.quickFilter===quickFilter)));
+      renderRows();
+    });
+    $('#caseDirectoryNew').onclick=()=>go('support');
+    bindListToolbar('caseDirectory',renderRows);
+    renderRows();
+  }
+
+  function internalHandoffMatchesFilter(h,filter,query){
+    if(filter!=='all'&&h.state!==filter) return false;
+    if(!query) return true;
+    return [h.ticket_number,h.customer_name,h.subject,h.reason,h.next_action,h.requested_by_name,h.requested_by_role]
+      .some(v=>String(v||'').toLowerCase().includes(query.toLowerCase()));
+  }
+
+  function internalHandoffStateOrder(state){
+    return {pending:0,accepted:1,completed:2}[state]??3;
   }
 
   async function renderHandoffsWorkspace(){
     const data=await rpc('internal_handoff_history');
     const handoffs=data||[];
-    const pending=handoffs.filter(h=>h.state==='pending');
-    const accepted=handoffs.filter(h=>h.state==='accepted');
-    const completed=handoffs.filter(h=>h.state==='completed');
-
-    const cards=handoffs.map(h=>
-      '<article class="supportCaseCard '+(h.state==='pending'?'urgent':'')+'">'+
-        '<div class="supportCaseCardHead">'+
-          '<div>'+
-            '<div class="supportCaseCardNo">'+esc(h.ticket_number||'—')+'</div>'+
-            '<div class="supportCaseCardTitle">'+esc(h.subject||'件名なし')+'</div>'+
-            '<div class="supportCaseCardCustomer">'+esc(h.customer_name||'顧客未登録')+'</div>'+
-            '<div class="supportCaseBadges">'+
-              '<span class="pill '+(h.state==='pending'?'warn':h.state==='accepted'?'good':'')+'">'+esc(h.state==='pending'?'受理待ち':h.state==='accepted'?'自社対応中':'対応完了')+'</span>'+
-            '</div>'+
-          '</div>'+
-          '<span class="muted">'+esc(dateTimeText(h.created_at))+'</span>'+
-        '</div>'+
-        '<div class="supportCaseFacts">'+
-          '<div class="supportCaseFact"><span>引継ぎ理由</span><strong>'+esc(h.reason||'—')+'</strong></div>'+
-          '<div class="supportCaseFact"><span>次に行うこと</span><strong>'+esc(h.next_action||'—')+'</strong></div>'+
-          '<div class="supportCaseFact"><span>依頼者</span><strong>'+esc(h.requested_by_name||h.requested_by_role||'—')+'</strong></div>'+
-          '<div class="supportCaseFact"><span>案件</span><strong>'+esc(h.ticket_number||'—')+'</strong></div>'+
-        '</div>'+
-        '<div class="supportCaseCardActions">'+
-          (h.ticket_id?'<button class="ghost internalHandoffOpen" type="button" data-ticket-id="'+esc(h.ticket_id)+'">案件カルテ確認</button>':'')+
-          (h.state==='pending'?'<button class="primary internalHandoffAccept" type="button" data-id="'+esc(h.id)+'" data-ticket-id="'+esc(h.ticket_id||'')+'">受理して対応開始</button>':'')+
-          (h.state==='accepted'?'<button class="primary internalHandoffOpen" type="button" data-ticket-id="'+esc(h.ticket_id||'')+'">案件カルテで対応を続ける</button>':'')+
-        '</div>'+
-      '</article>'
-    ).join('');
-
+    const filters=[
+      ['pending','受理待ち',handoffs.filter(h=>h.state==='pending').length],
+      ['accepted','自社対応中',handoffs.filter(h=>h.state==='accepted').length],
+      ['completed','完了',handoffs.filter(h=>h.state==='completed').length],
+      ['all','すべて',handoffs.length]
+    ];
+    let selectedFilter='pending';
     $('#home').innerHTML=
-      pageIntro('引継ぎ管理','サポート会社から届いた内容を確認し、同じ案件カルテのまま自社対応を続けます。')+
-      '<div class="supportTodayGrid">'+
-        '<div class="supportTodayTile danger"><span>受理待ち</span><strong>'+esc(pending.length)+'</strong><em>最優先で確認</em></div>'+
-        '<div class="supportTodayTile"><span>自社対応中</span><strong>'+esc(accepted.length)+'</strong><em>現在対応している案件</em></div>'+
-        '<div class="supportTodayTile"><span>完了</span><strong>'+esc(completed.length)+'</strong><em>サポート会社へ返却済み</em></div>'+
-      '</div>'+
-      '<div id="ticketDetailHost"></div>'+
+      pageIntro('引継ぎ管理','サポート会社から届いた引継ぎを、受理待ち・自社対応中・完了に分けて確認します。')+
       '<section class="card section">'+
-        '<div class="row between"><div><h2>引継ぎ案件</h2><p class="sectionDesc">理由と次対応を確認して、受理後は案件カルテでそのまま作業します。</p></div></div>'+
-        (cards?'<div class="supportCaseCards">'+cards+'</div>':'<div class="empty">引継ぎ案件はありません。</div>')+
+        '<div class="row between"><div><h2>引継ぎ状況</h2><p class="sectionDesc">引継ぎ理由と次の対応を確認し、同じ案件カルテで作業を続けます。</p></div></div>'+
+        '<div id="handoffStateFilters" class="handoffStateFilters" aria-label="引継ぎの状態">'+
+          filters.map(([key,label,count])=>'<button type="button" class="handoffStateButton" data-state="'+esc(key)+'" aria-pressed="'+(key===selectedFilter?'true':'false')+'"><span>'+esc(label)+'</span><strong>'+esc(count)+'</strong></button>').join('')+
+        '</div>'+
+      '</section>'+
+      '<section class="card section">'+
+        '<div class="row between"><div><h2>引継ぎ案件</h2><p class="sectionDesc">案件番号・顧客名・理由・次の対応を検索できます。</p></div><span id="handoffListCount" class="pill" role="status" aria-live="polite"></span></div>'+
+        '<div class="field"><label for="handoffSearch">案件を検索</label><input id="handoffSearch" type="search" placeholder="案件番号・顧客・内容・理由・次の対応"></div>'+
+        '<div id="handoffCardsHost"></div>'+
       '</section>';
-
-    document.querySelectorAll('.internalHandoffOpen').forEach(btn=>btn.onclick=async()=>{
-      btn.disabled=true;
-      try{await renderTicketDetail(btn.dataset.ticketId);}
-      catch(err){toast(err.message||String(err));}
-      finally{btn.disabled=false;}
+    const renderHandoffCards=()=>{
+      const query=($('#handoffSearch')?.value||'').trim().toLowerCase();
+      const filtered=handoffs.filter(h=>internalHandoffMatchesFilter(h,selectedFilter,query))
+        .sort((a,b)=>internalHandoffStateOrder(a.state)-internalHandoffStateOrder(b.state)||timeValue(b.created_at)-timeValue(a.created_at));
+      $('#handoffListCount').textContent=filtered.length+'件表示 / 全'+handoffs.length+'件';
+      $('#handoffCardsHost').innerHTML=filtered.length
+        ? '<div class="supportCaseCards">'+filtered.map(h=>{
+          let openButton='';
+          if(h.ticket_id) openButton='<button class="ghost internalHandoffOpen" type="button" data-ticket-id="'+esc(h.ticket_id)+'">案件カルテを開く</button>';
+          return '<article class="supportCaseCard '+(h.state==='pending'?'urgent':'')+'">'+
+            '<div class="supportCaseCardHead"><div>'+
+              '<div class="supportCaseCardNo">'+esc(h.ticket_number||'番号未設定')+'</div>'+
+              '<div class="supportCaseCardTitle">'+esc(h.subject||'件名なし')+'</div>'+
+              '<div class="supportCaseCardCustomer">'+esc(h.customer_name||'顧客未登録')+'</div>'+
+              '<span class="pill '+(h.state==='pending'?'warn':h.state==='accepted'?'good':'')+'">'+
+                esc(h.state==='pending'?'受理待ち':h.state==='accepted'?'自社対応中':h.state==='completed'?'完了':String(h.state||'状態不明'))+'</span>'+
+            '</div><span class="muted">'+esc(dateTimeText(h.created_at))+'</span></div>'+
+            '<div class="handoffDecisionGrid">'+
+              '<div class="handoffReason"><span>引継ぎ理由</span><strong>'+esc(h.reason||'未記入')+'</strong></div>'+
+              '<div class="handoffNextAction"><span>次に行うこと</span><strong>'+esc(h.next_action||'未記入')+'</strong></div>'+
+            '</div>'+
+            '<div class="supportCaseFacts"><div class="supportCaseFact"><span>依頼者</span><strong>'+esc(h.requested_by_name||h.requested_by_role||'不明')+'</strong></div></div>'+
+            '<div class="supportCaseCardActions">'+
+              openButton+
+              (h.state==='pending'?'<button class="primary internalHandoffAccept" type="button" data-id="'+esc(h.id)+'" data-ticket-id="'+esc(h.ticket_id||'')+'">'+(h.ticket_id?'受理して対応開始':'受理する')+'</button>':'')+
+            '</div>'+
+          '</article>';
+        }).join('')+'</div>'
+        : '<div class="empty">該当する引継ぎ案件はありません。検索条件を変更してください。</div>';
+      document.querySelectorAll('.internalHandoffOpen').forEach(btn=>btn.onclick=async()=>{
+        btn.disabled=true;
+        try{await openTicketWorkspace(btn.dataset.ticketId,'handoffs');}
+        catch(err){toast(err.message||String(err));btn.disabled=false;}
+      });
+      document.querySelectorAll('.internalHandoffAccept').forEach(btn=>btn.onclick=async()=>{
+        btn.disabled=true;
+        try{
+          await rpc('accept_ticket_handoff',{p_handoff_id:btn.dataset.id});
+          toast('引継ぎを受理しました');
+          if(btn.dataset.ticketId) await openTicketWorkspace(btn.dataset.ticketId,'handoffs');
+          else await renderHandoffsWorkspace();
+        }catch(err){toast(err.message||String(err));btn.disabled=false;}
+      });
+    };
+    document.querySelectorAll('#handoffStateFilters .handoffStateButton').forEach(btn=>btn.onclick=()=>{
+      selectedFilter=btn.dataset.state||'pending';
+      document.querySelectorAll('#handoffStateFilters .handoffStateButton').forEach(item=>
+        item.setAttribute('aria-pressed',String(item.dataset.state===selectedFilter)));
+      renderHandoffCards();
     });
-
-    document.querySelectorAll('.internalHandoffAccept').forEach(btn=>btn.onclick=async()=>{
-      btn.disabled=true;
-      try{
-        await rpc('accept_ticket_handoff',{p_handoff_id:btn.dataset.id});
-        toast('引継ぎを受理しました。案件カルテを開きます');
-        if(btn.dataset.ticketId) await renderTicketDetail(btn.dataset.ticketId);
-        else await renderHandoffsWorkspace();
-      }catch(err){toast(err.message||String(err));}
-      finally{btn.disabled=false;}
-    });
-
-    document.querySelectorAll('.internalHandoffComplete').forEach(btn=>btn.remove());
+    $('#handoffSearch').oninput=renderHandoffCards;
+    renderHandoffCards();
   }
 
   async function renderAnalysis(){
