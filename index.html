@@ -10967,41 +10967,28 @@
               customerNote?'顧客案内: '+customerNote:''
             ].filter(Boolean).join('\n');
 
-            if(makeKnowledge){
-              const knowledgeBody=[
-                '症状・依頼: '+[t.subject||'',displayDescription||''].filter(Boolean).join('\n'),
-                '原因・確認事項: '+(cause||'未確認'),
-                '対応手順: '+action,
-                '確認結果: '+result+(customerNote?'\n顧客案内: '+customerNote:'')
-              ].join('\n\n');
-
-              if(internal){
-                await rpc('save_knowledge_article',{
-                  p_id:null,
-                  p_title:(t.subject||'サポート対応')+' - 対応手順',
-                  p_category:supportRequestTypeLabel(t.request_type),
-                  p_body:knowledgeBody,
-                  p_audience:'support',
-                  p_tags:[supportRequestTypeLabel(t.request_type),'作業報告'],
-                  p_is_active:true
-                });
-              }else{
-                await rpc('post_ticket_message',{
-                  p_ticket_id:t.id,
-                  p_visibility:'internal',
-                  p_body:'【ナレッジ候補】\n'+knowledgeBody
-                }).catch(()=>{});
-              }
-            }
-
-            await rpc('complete_support_ticket_with_report',{
+            const knowledgeBody=makeKnowledge ? [
+              '症状・依頼: '+[t.subject||'',displayDescription||''].filter(Boolean).join('\n'),
+              '原因・確認事項: '+(cause||'未確認'),
+              '対応手順: '+action,
+              '確認結果: '+result+(customerNote?'\n顧客案内: '+customerNote:'')
+            ].join('\n\n') : '';
+            const completion=await rpc('complete_support_ticket_with_knowledge',{
               p_ticket_id:t.id,
-              p_report_body:reportBody
+              p_report_body:reportBody,
+              p_create_knowledge:makeKnowledge,
+              p_knowledge_title:(t.subject||'サポート対応')+' - 対応手順',
+              p_knowledge_category:supportRequestTypeLabel(t.request_type),
+              p_knowledge_body:knowledgeBody
             });
+            const knowledgeStatus=completion?.knowledge_status||'not_created';
+            if(completion?.already_closed){
+              toast('この案件は既に完了しています。二重登録は行いません。');
+            }
             clearSupportDraft(t.id,'work_report');
             clearSupportDraft(t.id,'handoff');
             clearSupportDraft(t.id,'message');
-            toast(makeKnowledge?'作業報告を保存し、案件を完了しました':'作業報告を保存して案件を完了しました');
+            toast(completion?.already_closed?'完了済み案件を確認しました':makeKnowledge?'作業報告とナレッジを保存しました':'作業報告を保存して案件を完了しました');
             if(support){
               const customerMessages=(messages||[]).filter(m=>m.visibility==='customer');
               const latestCustomerMessage=customerMessages.length
@@ -11031,9 +11018,7 @@
                   '<section class="formSection">'+
                     '<div class="formSectionHead"><span class="sectionNo">03</span><h3>ナレッジ</h3></div>'+
                     '<div>'+(
-                      makeKnowledge
-                        ? (internal?'サポート会社向けナレッジとして保存しました。':'自社へナレッジ候補として共有しました。')
-                        : '今回はナレッジ保存を行っていません。'
+                      knowledgeStatus==='article_saved'?'ナレッジとして保存しました。':knowledgeStatus==='suggestion_submitted'?'自社へのナレッジ候補を提出しました。':completion?.already_closed?'完了済みのためナレッジは追加登録していません。':'今回はナレッジ保存を行っていません。'
                     )+'</div>'+
                   '</section>'+
                 '</div>'+
