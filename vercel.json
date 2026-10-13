@@ -29,5 +29,8 @@
         }
       ]
     }
-  ]
+  ],
+  "buildCommand": "node scripts/build-staging-preview.mjs",
+  "outputDirectory": "dist",
+  "framework": null
 }
