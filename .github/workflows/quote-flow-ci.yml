@@ -23,3 +23,5 @@ jobs:
 
       - name: Validate production HTML
         run: node scripts/validate-static.mjs
+      - name: Test ticket workspace recovery
+        run: node scripts/test-ticket-workspace.mjs
