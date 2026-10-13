@@ -12,7 +12,7 @@ function extract(start, end) {
 }
 
 const workspaceSource = extract(
-  '  async function openTicketWorkspace(ticketId){',
+  '  async function openTicketWorkspace(ticketId,returnPage=null){',
   '\n  async function renderTicketDetail(ticketId){'
 );
 assert.match(workspaceSource, /案件カルテを読み込み中/);
