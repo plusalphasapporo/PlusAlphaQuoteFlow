@@ -2520,7 +2520,7 @@
         rpc('internal_unread_handoff_notifications'),
         rpc('internal_support_cases_list'),
         rpc('support_deadline_states'),
-        rpc('callconnect_dashboard')
+        rpcOptional('callconnect_dashboard',{}, {integration_state:'degraded'})
       ]);
       const internalDeadlineMap={};
       (deadlineStates||[]).forEach(x=>internalDeadlineMap[x.ticket_id]=x);
@@ -2645,15 +2645,23 @@
       );
 
       home.innerHTML=
-        pageIntro('自社TOP','自社で判断・対応が必要な案件を最優先で表示します。通常業務は下段に分けています。')+
-        '<section class="card section internalCommandCenter">'+
+        pageIntro('業務ダッシュボード','緊急対応・今日の業務・詳細一覧へ、目的に合わせて移動できます。')+
+        '<nav class="internalDashNav" aria-label="ダッシュボード内の移動">'+
+          '<span class="internalDashNavLabel">画面内を移動</span>'+
+          '<button type="button" class="dashboardJump" data-target="internalPriority">優先確認</button>'+
+          '<button type="button" class="dashboardJump" data-target="internalTodayWork">今日の作業</button>'+
+          '<button type="button" class="dashboardJump" data-target="internalRegularWork">通常業務</button>'+
+          '<button type="button" class="dashboardJump" data-target="internalOperationsDetails">詳細一覧</button>'+
+        '</nav>'+
+        '<section id="internalPriority" tabindex="-1" class="card section internalCommandCenter">'+
           '<div class="internalCommandHead"><div><h2>自社対応センター</h2><p>まずここだけ確認すれば、サポート会社からの引継ぎ・緊急障害・期限案件を把握できます。</p></div><span class="pill">'+esc(ops.business_date||'')+'</span></div>'+
           '<div class="supportTodayGrid">'+
-            '<button class="supportTodayTile danger internalJumpHandoffs" type="button"><span>新着引継ぎ</span><strong>'+esc(unreadHandoffs?.count||0)+'</strong><em>未確認の引継ぎ</em></button>'+
-            '<button class="supportTodayTile warn internalJumpHandoffs" type="button"><span>未処理引継ぎ</span><strong>'+esc((q||[]).length)+'</strong><em>受理・判断が必要</em></button>'+
-            '<button class="supportTodayTile danger internalJumpSupport" data-focus="urgent" type="button"><span>緊急案件</span><strong>'+esc(internalUrgent.length)+'</strong><em>優先して確認</em></button>'+
-            '<button class="supportTodayTile danger internalJumpSupport" data-focus="overdue" type="button"><span>期限超過</span><strong>'+esc(internalOverdue.length)+'</strong><em>すぐに確認</em></button>'+
-            '<button class="supportTodayTile warn internalJumpSupport" data-focus="due_today" type="button"><span>本日期限</span><strong>'+esc(internalDueToday.length)+'</strong><em>本日中に判断</em></button>'+
+            '<button class="supportTodayTile '+(Number(unreadHandoffs?.count||0)>0?'danger':'')+' internalJumpHandoffs" type="button"><span>新着引継ぎ</span><strong>'+esc(unreadHandoffs?.count||0)+'</strong><em>未確認の引継ぎ</em></button>'+
+            '<button class="supportTodayTile '+((q||[]).length?'warn':'')+' internalJumpHandoffs" type="button"><span>未処理引継ぎ</span><strong>'+esc((q||[]).length)+'</strong><em>受理・判断が必要</em></button>'+
+            '<button class="supportTodayTile '+(internalUrgent.length?'danger':'')+' internalJumpSupport" data-focus="urgent" type="button"><span>緊急案件</span><strong>'+esc(internalUrgent.length)+'</strong><em>優先して確認</em></button>'+
+            '<button class="supportTodayTile '+(internalOverdue.length?'danger':'')+' internalJumpSupport" data-focus="overdue" type="button"><span>期限超過</span><strong>'+esc(internalOverdue.length)+'</strong><em>すぐに確認</em></button>'+
+            '<button class="supportTodayTile '+(internalDueToday.length?'warn':'')+' internalJumpSupport" data-focus="due_today" type="button"><span>本日期限</span><strong>'+esc(internalDueToday.length)+'</strong><em>本日中に判断</em></button>'+
+            '<button class="supportTodayTile '+(internalUnassigned.length?'warn':'')+' internalJumpSupport" data-focus="unassigned" type="button"><span>自社担当未設定</span><strong>'+esc(internalUnassigned.length)+'</strong><em>担当者の割り当て</em></button>'+
           '</div>'+
           '<div class="internalActionStrip">'+
             '<button class="internalActionBtn dangerAction internalQuickAction" data-action="incident" type="button"><strong>＋ 障害を登録</strong><small>自社で受けた障害をすぐ登録</small></button>'+
@@ -2667,7 +2675,11 @@
             '<div class="internalFocusList">'+(internalFocusCards||'<div class="empty">現在、優先確認が必要な問い合わせはありません。</div>')+'</div>'+
           '</div>'+
         '</section>'+
-        '<section class="card section"><div class="row between"><div><h2>通常業務</h2><p class="sectionDesc">見積・受注・発注・入荷・納品などの業務状況です。</p></div></div>'+
+        '<section id="internalTodayWork" class="card section internalTodayWork" tabindex="-1">'+
+          '<div class="row between"><div><h2>今日の優先対応</h2><p class="sectionDesc">期限超過 → 本日予定 → 承認・受注・発注 → 問い合わせの順で並びます。</p></div><span class="pill">表示 '+esc(actionRows.length)+'件</span></div>'+
+          (actionRows.length?dataTable(['優先','対応内容','顧客','詳細','期限・状態','操作'],actionRows):'<div class="empty">現在、優先対応に表示する業務はありません。</div>')+
+        '</section>'+
+        '<section id="internalRegularWork" tabindex="-1" class="card section"><div class="row between"><div><h2>通常業務</h2><p class="sectionDesc">見積・受注・発注・入荷・納品などの業務状況です。</p></div></div>'+
           kpis([
             ['承認待ち',ops.kpis?.approval_waiting],
             ['受注化待ち',ops.kpis?.accepted_without_order],
@@ -2703,10 +2715,9 @@
           '<div class="row between"><div><h2>サポート期限管理</h2><p class="sectionDesc">期限超過・本日期限・期限未設定をまとめて確認します。</p></div><div class="row"><span class="hold">超過 '+esc(internalOverdue.length)+'</span><span class="pill warn">本日 '+esc(internalDueToday.length)+'</span><span class="pill">未設定 '+esc(internalUnset.length)+'</span></div></div>'+
           dataTable(['期限状態','案件','種別','顧客','初動期限','完了目標','操作'],internalDeadlineRows)+
         '</section>'+
-        '<section class="card section">'+
-          '<div class="row between"><div><h2>今日の優先対応</h2><p class="sectionDesc">期限超過 → 本日予定 → 承認・受注・発注 → 問い合わせの順で並びます。</p></div><span class="pill">'+esc(ops.business_date||'')+'</span></div>'+
-          dataTable(['優先','対応内容','顧客','詳細','期限・状態','操作'],actionRows)+
-        '</section>'+
+        '<details id="internalOperationsDetails" tabindex="-1" class="internalDashDetails section">'+
+          '<summary><span>業務別の詳細一覧</span><small>入荷・納品・電話・問い合わせ・引き継ぎ</small></summary>'+
+          '<div class="internalDashDetailsBody">'+
         '<section class="card section">'+
           '<div class="row between"><div><h2>未入荷</h2><p class="sectionDesc">未入荷残数と納期を確認し、ここから直接入荷登録へ進めます。</p></div><button class="ghost dashGoProc" type="button">入荷一覧を開く</button></div>'+
           dataTable(['発注番号','仕入先','顧客','明細','入荷','未入荷','納期','操作'],receivingRows)+
@@ -2718,9 +2729,9 @@
         '<section class="card section">'+
           '<div class="row between"><div><h2>CallConnect</h2><p class="sectionDesc">入電・不在着信・顧客照合状況を確認します。</p></div><button class="ghost dashGoCallConnect" type="button">CallConnectを開く</button></div>'+
           '<div class="modalGrid3">'+
-            '<div class="item"><strong>接続状態</strong><p>'+esc(callconnectDash?.integration_state==='connected'?'接続済み':'設定待ち')+'</p></div>'+
-            '<div class="item"><strong>受信通話</strong><p>'+esc(callconnectDash?.total_calls||0)+'件</p></div>'+
-            '<div class="item"><strong>未照合</strong><p>'+esc(callconnectDash?.unmatched_calls||0)+'件</p></div>'+
+            '<div class="item"><strong>接続状態</strong><p>'+esc(callconnectDash?.integration_state==='degraded'?'確認できません':callconnectDash?.integration_state==='connected'?'接続済み':'設定待ち')+'</p></div>'+
+            '<div class="item"><strong>受信通話</strong><p>'+esc(callconnectDash?.integration_state==='degraded'?'確認できません':String(callconnectDash?.total_calls??0)+'件')+'</p></div>'+
+            '<div class="item"><strong>未照合</strong><p>'+esc(callconnectDash?.integration_state==='degraded'?'確認できません':String(callconnectDash?.unmatched_calls??0)+'件')+'</p></div>'+
           '</div>'+
         '</section>'+
         '<section class="card section">'+
@@ -2731,7 +2742,9 @@
           ((q||[]).length?(q||[]).map(h=>
             '<div class="item"><h3>'+esc(h.ticket_number||'')+' '+esc(h.customer_name||'')+'</h3><p>'+esc(h.subject||'')+'</p><p>理由: '+esc(h.reason||'')+'</p><p>次: '+esc(h.next_action||'')+'</p><button class="primary accept" data-id="'+esc(h.id)+'">受理する</button></div>'
           ).join(''):'<p class="muted">未処理の引き継ぎはありません。</p>')+
-        '</section>';
+        '</section>'+
+          '</div>'+
+        '</details>';
 
       const openReceivingItem=async(itemId)=>{
         await renderProcurementWorkspace('receiving');
@@ -2769,6 +2782,15 @@
         },180);
       };
 
+      document.querySelectorAll('.dashboardJump').forEach(btn=>btn.onclick=()=>{
+        const target=home.querySelector('#'+btn.dataset.target);
+        if(!target) return;
+        if(target.tagName==='DETAILS') target.open=true;
+        const container=target.closest('details');
+        if(container) container.open=true;
+        target.scrollIntoView({behavior:'smooth',block:'start'});
+        target.focus({preventScroll:true});
+      });
       document.querySelectorAll('.internalQuickAction').forEach(btn=>btn.onclick=async()=>{
         const action=btn.dataset.action||'';
         if(action==='incident') return openInternalSupportCreate('incident');
