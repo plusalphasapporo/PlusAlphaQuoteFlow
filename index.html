@@ -7977,6 +7977,11 @@
     renderRows();
   }
 
+  function supportWorkspaceJumpTarget(key){
+    const targets={intake:'supportLinearIntake',knowledge:'supportKnowledgeWorkspace',remote:'supportRemoteWorkspace',report:'supportReportWorkspace',customer:'supportTicketCustomerContext',reply:'ticketMessageForm',history:'ticketMessageList',files:'ticketAttachmentGallery',handoffs:'ticketHandoffHistory'};
+    return Object.prototype.hasOwnProperty.call(targets,key)?targets[key]:null;
+  }
+
   async function openTicketWorkspace(ticketId,returnPage=null){
     const role=bootData?.context?.role;
     const backPage=(returnPage==='cases'||returnPage==='handoffs')&&['internal_admin','internal_staff'].includes(role)?returnPage:role==='support_staff'?'support_cases':'support';
@@ -8410,12 +8415,13 @@
             (t.status!=='closed'&&(!support||!supportReadOnlyByOther)?'<button id="ticketActionSetting" class="ghost" type="button">設定依頼として登録</button>':'')+
           '</div>'+
           '<div id="ticketClassificationPanel" class="supportClassificationPanel hidden"></div>'+
+          '<div class="supportFlowHint">工程を選択して該当する作業場所に移動できます。</div>'+ 
           '<div class="supportFlow supportLinearProgress">'+
-            '<div class="supportStep '+(t.status==='closed'||supportStage!=='unhandled'?'done':'active')+'"><span class="supportStepNum">1</span><strong>受付内容</strong><small>内容・写真・顧客を確認</small></div>'+
-            '<div class="supportStep '+(t.status==='closed'||latestTeamViewerSession||supportStage==='teamviewer_waiting'||supportPrimaryStep.target==='report'?'done':(['assist','procedure'].includes(supportPrimaryStep.target)?'active':''))+'"><span class="supportStepNum">2</span><strong>AI・ナレッジ</strong><small>対応方法・手順を確認</small></div>'+
-            '<div class="supportStep '+(t.status==='closed'||latestTeamViewerSession?.outcome?'done':(latestTeamViewerSession||supportStage==='teamviewer_waiting'?'active':''))+'"><span class="supportStepNum">3</span><strong>TeamViewer</strong><small>必要な場合だけ遠隔対応</small></div>'+
-            '<div class="supportStep '+(t.status==='closed'?'done':(supportPrimaryStep.target==='report'?'active':''))+'"><span class="supportStepNum">4</span><strong>作業報告</strong><small>結果を記録して完了</small></div>'+
-          '</div>'+
+            '<button type="button" class="supportStep supportWorkspaceJump '+(t.status==='closed'||supportStage!=='unhandled'?'done':'active')+' data-jump="intake"><span class="supportStepNum">1</span><strong>受付内容</strong><small>内容・写真・顧客を確認</small></button>'+
+            '<button type="button" class="supportStep supportWorkspaceJump '+(t.status==='closed'||latestTeamViewerSession||supportStage==='teamviewer_waiting'||supportPrimaryStep.target==='report'?'done':(['assist','procedure'].includes(supportPrimaryStep.target)?'active':''))+' data-jump="knowledge"><span class="supportStepNum">2</span><strong>AI・ナレッジ</strong><small>対応方法・手順を確認</small></button>'+
+            '<button type="button" class="supportStep supportWorkspaceJump '+(t.status==='closed'||latestTeamViewerSession?.outcome?'done':(latestTeamViewerSession||supportStage==='teamviewer_waiting'?'active':''))+' data-jump="remote"><span class="supportStepNum">3</span><strong>TeamViewer</strong><small>必要な場合だけ遠隔対応</small></button>'+
+            '<button type="button" class="supportStep supportWorkspaceJump '+(t.status==='closed'?'done':(supportPrimaryStep.target==='report'?'active':''))+' data-jump="report"><span class="supportStepNum">4</span><strong>作業報告</strong><small>結果を記録して完了</small></button>'+
+          '</button>'+
           '<div class="supportLinearFlow">'+
             '<section id="supportLinearIntake" class="supportLinearCard '+(t.status==='closed'||supportStage!=='unhandled'?'done':'active')+'">'+
               '<div class="supportLinearHead"><span class="supportLinearIndex">1</span><div><strong>受付内容を確認</strong><small>依頼内容・顧客・対象機器・写真を確認します。</small></div></div>'+
@@ -8829,7 +8835,15 @@
             '<div class="supportTicketFacts">'+
               '<div class="supportTicketFact"><span>問い合わせ内容</span><strong>'+esc((displayDescription||'内容なし').slice(0,140))+(String(displayDescription||'').length>140?'…':'')+'</strong></div>'+
               '<div class="supportTicketFact"><span>顧客 / 対象</span><strong>'+esc(cust?.name||'顧客未登録')+' / '+esc(asset?.asset_number||asset?.model_name||'機器未指定')+'</strong></div>'+
-            '</div>'+supportTopSummary
+            '</div>'+
+             '<div class="supportWorkspaceQuickContext">'+
+             '<div><span>顧客・連絡先</span><strong>'+esc(cust?.name||'顧客未登録')+'</strong><small>'+esc(primary?.phone||primary?.email||'連絡先未登録')+'</small></div>'+
+             '<div><span>対象機器</span><strong>'+esc(asset?.model_name||asset?.asset_number||'未指定')+'</strong><small>'+esc(asset?.serial_number||'シリアル未登録')+'</small></div>'+
+             '<div><span>契約</span><strong>'+esc(contract?.contract_number||'未指定')+'</strong><small>'+esc(contract?statusText(contract.status):'確認してください')+'</small></div>'+
+             '</div>'+
+             '<nav class="supportWorkspaceQuickNav" aria-label="作業画面内を移動">'+
+             [['customer','顧客・機器'],['intake','受付内容'],['knowledge','AI・ナレッジ'],['remote','TeamViewer'],['report','作業報告'],['reply','返信'],['history','履歴'],['files','添付'],['handoffs','引継ぎ']].map(([key,label])=>'<button type="button" class="supportWorkspaceJump" data-jump="'+key+'">'+label+'</button>').join('')+
+             '</nav>'+supportTopSummary
           : internal
             ? internalTopPanel
             : kpis([
@@ -8888,7 +8902,7 @@
                   : '<button class="primary" type="submit">メッセージを送信</button>')+
             '</div>'+
           '</form><div id="ticketMessageMsg" class="notice hidden"></div></section>'+
-        (!customer?'<section class="section"><h3>引き継ぎ履歴</h3>'+dataTable(internal?['状態','理由','次の対応','作成日','操作']:['状態','理由','次の対応','作成日'],handoffRows)+'</section>':'')+
+        (!customer?'<section id="ticketHandoffHistory" class="section"><h3>引き継ぎ履歴</h3>+dataTable(internal?['状態','理由','次の対応','作成日','操作']:['状態','理由','次の対応','作成日'],handoffRows)+'</section>':'')+
         (!customer?'<section id="ticketAiIncidentSection" class="section">'+
           '<div class="row between" style="gap:12px;align-items:flex-start;flex-wrap:wrap"><div><h3>AI障害解析</h3><p class="sectionDesc">案件情報・機器情報・通話・メッセージ・社内ナレッジと、添付された障害写真をまとめて解析します。</p></div><span class="pill '+(aiState==='connected'?'good':aiState==='manual'?'warn':'')+'">OpenAI '+esc(aiStateText)+'</span></div>'+
           '<div class="grid" style="margin-top:10px">'+
@@ -9372,6 +9386,15 @@
     }
 
     if(support){
+      document.querySelectorAll('.supportWorkspaceJump').forEach(btn=>btn.onclick=()=>{
+        const targetId=supportWorkspaceJumpTarget(btn.dataset.jump);
+        if(!targetId) return;
+        const target=document.getElementById(targetId);
+        if(!target) return;
+        target.scrollIntoView({behavior:'smooth',block:'start'});
+        if(!target.hasAttribute('tabindex')) target.setAttribute('tabindex','-1');
+        target.focus({preventScroll:true});
+      });
       const jump=(selector)=>{
         const el=$(selector);
         if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
