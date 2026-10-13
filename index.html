@@ -2544,7 +2544,6 @@
       const internalDueToday=internalDeadlineTickets.filter(t=>t.deadline_state==='due_today');
       const internalUnset=internalDeadlineTickets.filter(t=>t.deadline_state==='unset');
       const internalUrgent=internalSupportTickets.filter(t=>t.status!=='closed'&&t.priority==='urgent');
-      const internalHigh=internalSupportTickets.filter(t=>t.status!=='closed'&&t.priority==='high');
       const internalUnassigned=internalSupportTickets.filter(t=>t.status!=='closed'&&!t.assigned_internal_user_id);
       const internalFocusTickets=[...internalSupportTickets]
         .filter(t=>t.status!=='closed'&&(
@@ -2679,20 +2678,6 @@
           '<div class="row between"><div><h2>今日の優先対応</h2><p class="sectionDesc">期限超過 → 本日予定 → 承認・受注・発注 → 問い合わせの順で並びます。</p></div><span class="pill">表示 '+esc(actionRows.length)+'件</span></div>'+
           (actionRows.length?dataTable(['優先','対応内容','顧客','詳細','期限・状態','操作'],actionRows):'<div class="empty">現在、優先対応に表示する業務はありません。</div>')+
         '</section>'+
-        '<section id="internalRegularWork" tabindex="-1" class="card section"><div class="row between"><div><h2>通常業務</h2><p class="sectionDesc">見積・受注・発注・入荷・納品などの業務状況です。</p></div></div>'+
-          kpis([
-            ['承認待ち',ops.kpis?.approval_waiting],
-            ['受注化待ち',ops.kpis?.accepted_without_order],
-            ['発注未作成',ops.kpis?.orders_without_purchase_order],
-            ['入荷超過',ops.kpis?.receiving_overdue],
-            ['本日入荷',ops.kpis?.receiving_due_today],
-            ['本日納品',ops.kpis?.deliveries_today],
-            ['納品超過',ops.kpis?.deliveries_overdue],
-            ['高優先度案件',internalHigh.length],
-            ['自社担当未設定',internalUnassigned.length],
-            ['期限未設定',internalUnset.length]
-          ])+
-        '</section>'+
         ((unreadHandoffs?.items||[]).length
           ? '<section class="card section"><div class="row between"><div><h2>サポート会社からの新着引継ぎ</h2><p class="sectionDesc">まだあなたが確認していない引継ぎです。内容確認後、そのまま受理できます。</p></div><span class="hold">'+esc(unreadHandoffs.count||0)+'件未読</span></div>'+
             dataTable(
@@ -2714,6 +2699,17 @@
         '<section class="card section">'+
           '<div class="row between"><div><h2>サポート期限管理</h2><p class="sectionDesc">期限超過・本日期限・期限未設定をまとめて確認します。</p></div><div class="row"><span class="hold">超過 '+esc(internalOverdue.length)+'</span><span class="pill warn">本日 '+esc(internalDueToday.length)+'</span><span class="pill">未設定 '+esc(internalUnset.length)+'</span></div></div>'+
           dataTable(['期限状態','案件','種別','顧客','初動期限','完了目標','操作'],internalDeadlineRows)+
+        '</section>'+
+        '<section id="internalRegularWork" tabindex="-1" class="card section"><div class="row between"><div><h2>通常業務</h2><p class="sectionDesc">見積・受注・発注・入荷・納品などの業務状況です。</p></div></div>'+
+          kpis([
+            ['承認待ち',ops.kpis?.approval_waiting],
+            ['受注化待ち',ops.kpis?.accepted_without_order],
+            ['発注未作成',ops.kpis?.orders_without_purchase_order],
+            ['入荷超過',ops.kpis?.receiving_overdue],
+            ['本日入荷',ops.kpis?.receiving_due_today],
+            ['本日納品',ops.kpis?.deliveries_today],
+            ['納品超過',ops.kpis?.deliveries_overdue]
+          ])+
         '</section>'+
         '<details id="internalOperationsDetails" tabindex="-1" class="internalDashDetails section">'+
           '<summary><span>業務別の詳細一覧</span><small>入荷・納品・電話・問い合わせ・引き継ぎ</small></summary>'+
