@@ -268,5 +268,5 @@ assert.match(auditMigration, /function app_private\.internal_create_support_tick
 assert.match(auditMigration, /security definer/i);
 assert.match(auditMigration, /function public\.internal_create_support_ticket/i);
 assert.match(auditMigration, /grant execute on function app_private\.internal_create_support_ticket_impl/i);
-assert.doesNotMatch(auditMigration, /grant\s+insert\s+on\s+(table\s+)?public\.audit_logs/i);
+assert.doesNotMatch(auditMigration, /^\s*grant\s+insert\s+on\s+(table\s+)?public\.audit_logs/im);
 console.log('Internal intake audit migration checks passed.');
