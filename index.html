@@ -7923,7 +7923,7 @@
           '<button id="ticketWorkspaceBack" class="ghost" type="button">← 案件一覧へ戻る</button>'+
         '</div>'+
       '</section>'+
-      '<div id="ticketDetailHost"></div>';
+      '<div id="ticketDetailHost" aria-live="polite"><section class="card section"><p class="muted">案件カルテを読み込み中...</p></section></div>';
 
     $('#ticketWorkspaceBack').onclick=()=>go(backPage);
 
@@ -7953,7 +7953,30 @@
       }
     }
 
-    await renderTicketDetail(ticketId);
+    try{
+      await renderTicketDetail(ticketId);
+    }catch(err){
+      console.error('[ticket workspace load failed]',err);
+      activeTicketId=null;
+      const host=$('#ticketDetailHost');
+      if(!host){
+        toast('案件カルテの読み込みに失敗しました。案件一覧から再度開いてください。');
+        return;
+      }
+      host.innerHTML=
+        '<section class="card section" role="alert">'+
+          '<h3>案件カルテを読み込めませんでした</h3>'+
+          '<p class="sectionDesc">案件は既に登録されている可能性があります。新規登録を繰り返さず、再読み込みをお試しください。</p>'+
+          '<div class="notice warn">'+esc(err.message||String(err))+'</div>'+
+          '<div class="row" style="gap:12px;margin-top:12px;flex-wrap:wrap">'+
+            '<button id="ticketWorkspaceRetry" class="primary" type="button">再読み込み</button>'+
+            '<button id="ticketWorkspaceReturn" class="ghost" type="button">案件一覧へ戻る</button>'+
+          '</div>'+
+        '</section>';
+      $('#ticketWorkspaceRetry').onclick=()=>openTicketWorkspace(ticketId);
+      $('#ticketWorkspaceReturn').onclick=()=>go(backPage);
+      return;
+    }
 
     const closeBtn=$('#ticketDetailClose');
     if(closeBtn) closeBtn.onclick=()=>go(backPage);
@@ -8058,10 +8081,24 @@
     const contract=detail.contract||null;
     const cust=detail.customer||null;
     const primary=detail.primary_contact||null;
-    const [staffOptions,customerCtx]=internal?await Promise.all([
-      rpc('internal_staff_options'),
-      rpc('internal_customer_unified_workspace',{p_customer_id:t.customer_id})
+    const [staffOptionsRaw,customerCtxRaw]=internal?await Promise.all([
+      rpcOptional('internal_staff_options',{},null),
+      rpcOptional('internal_customer_unified_workspace',{p_customer_id:t.customer_id},null)
     ]):[[],null];
+    const staffOptions=Array.isArray(staffOptionsRaw)?[...staffOptionsRaw]:[];
+    if(internal&&t.assigned_internal_user_id&&!staffOptions.some(x=>x.user_id===t.assigned_internal_user_id)){
+      staffOptions.unshift({user_id:t.assigned_internal_user_id,display_name:'現在の担当者'});
+    }
+    const customerCtx=customerCtxRaw&&typeof customerCtxRaw==='object'?{...customerCtxRaw}:{};
+    customerCtx.contracts=Array.isArray(customerCtx.contracts)?[...customerCtx.contracts]:[];
+    customerCtx.assets=Array.isArray(customerCtx.assets)?[...customerCtx.assets]:[];
+    if(internal&&t.contract_id&&!customerCtx.contracts.some(x=>x.id===t.contract_id)){
+      customerCtx.contracts.unshift(contract?.id===t.contract_id?contract:{id:t.contract_id,contract_number:'現在の契約'});
+    }
+    if(internal&&t.asset_id&&!customerCtx.assets.some(x=>x.id===t.asset_id)){
+      customerCtx.assets.unshift(asset?.id===t.asset_id?asset:{id:t.asset_id,asset_number:'現在の機器'});
+    }
+    const contextLoadIncomplete=internal&&(staffOptionsRaw==null||customerCtxRaw==null);
 
     const rawDescription=String(t.description||'');
     const sourcePrefix='【受付経路】';
@@ -8740,6 +8777,9 @@
       : '';
 
     $('#ticketDetailHost').innerHTML=
+      (contextLoadIncomplete
+        ? '<div class="notice warn" role="status">担当者・契約・機器情報の一部を取得できませんでした。現在の選択値は保持しています。選択肢が不足している場合は再読み込みしてください。</div>'
+        : '')+
       '<section class="card section">'+
         '<div class="quoteDetailHead"><div><h2>サポート案件カルテ</h2><p class="sectionDesc">'+esc(t.ticket_number||'—')+' / '+supportRequestTypeLabel(t.request_type)+' / '+esc(t.subject||'')+'</p></div><button id="ticketDetailClose" class="ghost" type="button">閉じる</button></div>'+
         (support
