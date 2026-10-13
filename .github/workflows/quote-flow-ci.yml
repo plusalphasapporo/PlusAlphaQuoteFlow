@@ -29,3 +29,6 @@ jobs:
 
       - name: Test customer directory and profile
         run: node scripts/test-customer-ui.mjs
+
+      - name: Test asset ledger
+        run: node scripts/test-asset-ledger-ui.mjs
