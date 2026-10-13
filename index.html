@@ -7977,9 +7977,9 @@
     renderRows();
   }
 
-  async function openTicketWorkspace(ticketId){
+  async function openTicketWorkspace(ticketId,returnPage=null){
     const role=bootData?.context?.role;
-    const backPage=role==='support_staff'?'support_cases':'support';
+    const backPage=returnPage==='cases'&&['internal_admin','internal_staff'].includes(role)?'cases':role==='support_staff'?'support_cases':'support';
     currentPage=backPage;
     setActiveNav();
     $('#home').innerHTML=
@@ -13130,13 +13130,92 @@
     document.querySelectorAll('.contractWorkspaceOpen').forEach(btn=>btn.onclick=()=>renderContractDetail(btn.dataset.id));
   }
 
+  function caseDirectoryMatchesQuickFilter(ticket,filter){
+    const closed=ticket.status==='closed'||ticket.status==='resolved';
+    if(filter==='active') return !closed;
+    if(filter==='priority') return !closed&&['urgent','high'].includes(ticket.priority);
+    if(filter==='unassigned') return !closed&&(!String(ticket.assigned_name||'').trim()||ticket.assigned_name==='未割当'||ticket.assigned_name==='未設定');
+    if(filter==='handoff') return !closed&&!!ticket.handoff_state&&!['completed','closed','none'].includes(String(ticket.handoff_state));
+    return true;
+  }
+
   async function renderCasesWorkspace(){
     const data=await rpc('internal_case_directory');
-    const rows=(data||[]).map(x=>
-      '<tr><td>'+esc(x.ticket_number||'—')+'</td><td>'+esc(x.customer_name||'')+'</td><td><strong>'+esc(x.subject||'')+'</strong><br><span class="muted">'+esc(x.asset_name||'')+'</span></td><td>'+esc(statusText(x.status))+'</td><td>'+esc(x.priority||'normal')+'</td><td>'+esc(x.assigned_name||'未割当')+'</td><td>'+esc(x.handoff_state||'—')+'</td><td><button class="linkBtn caseOpenBtn" type="button" data-id="'+esc(x.id)+'">対応画面</button></td></tr>'
-    );
-    $('#home').innerHTML=pageIntro('案件管理','問い合わせを案件として横断管理します。')+'<div id="ticketDetailHost"></div><section class="card section">'+dataTable(['案件番号','顧客','内容/機器','状態','優先度','自社担当','引継ぎ','操作'],rows)+'</section>';
-    document.querySelectorAll('.caseOpenBtn').forEach(btn=>btn.onclick=async()=>{await renderTicketDetail(btn.dataset.id);});
+    const cases=data||[];
+    const counts=[
+      ['all','すべて',cases.length],
+      ['active','対応中',cases.filter(x=>caseDirectoryMatchesQuickFilter(x,'active')).length],
+      ['priority','緊急・高優先度',cases.filter(x=>caseDirectoryMatchesQuickFilter(x,'priority')).length],
+      ['unassigned','担当未設定',cases.filter(x=>caseDirectoryMatchesQuickFilter(x,'unassigned')).length],
+      ['handoff','引継ぎ確認',cases.filter(x=>caseDirectoryMatchesQuickFilter(x,'handoff')).length]
+    ];
+    let quickFilter='active';
+    $('#home').innerHTML=pageIntro('案件管理','現在対応が必要な案件を確認し、受付・対応・履歴へそのまま進めます。')+
+      '<section id="caseDirectory" class="card section">'+
+        '<div class="row between"><div><h2>案件一覧</h2><p class="sectionDesc">案件番号・顧客・件名・機器で検索できます。</p></div>'+
+          '<button id="caseDirectoryNew" class="primary" type="button">＋ 問い合わせを登録</button></div>'+
+        '<div class="caseDirectoryMetrics" aria-label="案件の状況">'+
+          counts.map(([key,label,count])=>'<button type="button" class="caseDirectoryMetric caseDirectoryQuickFilter" data-quick-filter="'+esc(key)+'" aria-pressed="'+(key===quickFilter?'true':'false')+'"><span>'+esc(label)+'</span><strong>'+esc(count)+'</strong></button>').join('')+
+        '</div>'+
+      '</section>'+
+      listToolbar('caseDirectory',cases,'status','案件番号・顧客・内容・機器・担当者',[
+        ['priority_desc','優先度が高い順'],
+        ['customer_asc','顧客名順'],
+        ['number_asc','案件番号順']
+      ])+
+      '<section class="section caseDirectoryResults"><div class="row between"><h3>検索結果</h3><p id="caseDirectoryResults" class="sectionDesc" role="status" aria-live="polite"></p></div>'+
+        '<div id="caseDirectoryListHost"></div></section>';
+    const priorityRank={urgent:0,high:1,normal:2,low:3};
+    const renderRows=()=>{
+      const state=listToolbarState('caseDirectory');
+      const filtered=cases.filter(x=>{
+        if(!caseDirectoryMatchesQuickFilter(x,quickFilter)) return false;
+        if(state.status!=='all'&&x.status!==state.status) return false;
+        return !state.query||[x.ticket_number,x.customer_name,x.subject,x.asset_name,x.assigned_name,x.handoff_state,x.priority,x.status]
+          .some(v=>String(v||'').toLowerCase().includes(state.query));
+      }).sort((a,b)=>{
+        if(state.sort==='customer_asc') return compareText(a.customer_name,b.customer_name);
+        if(state.sort==='number_asc') return compareText(a.ticket_number,b.ticket_number);
+        return (priorityRank[a.priority]??9)-(priorityRank[b.priority]??9);
+      });
+      updateListCount('caseDirectory',filtered.length,cases.length);
+      $('#caseDirectoryResults').textContent=filtered.length+'件表示 / 登録 '+cases.length+'件';
+      const rows=filtered.map(x=>
+        '<tr>'+
+          '<td><strong>'+esc(x.ticket_number||'—')+'</strong><br><span class="muted">'+esc(statusText(x.status))+'</span></td>'+
+          '<td><strong>'+esc(x.subject||'件名なし')+'</strong><br><span class="muted">'+esc(x.asset_name||'機器未指定')+'</span></td>'+
+          '<td>'+esc(x.customer_name||'顧客未設定')+(x.customer_id?'<br><button type="button" class="linkBtn caseDirectoryCustomerOpen" data-id="'+esc(x.customer_id)+'">顧客カルテ</button>':'')+'</td>'+
+          '<td>'+(x.priority==='urgent'?'<span class="hold">緊急</span>':x.priority==='high'?'<span class="pill warn">高</span>':esc(x.priority||'通常'))+'</td>'+
+          '<td>'+esc(x.assigned_name||'未割当')+'</td>'+
+          '<td>'+esc(x.handoff_state||'—')+'</td>'+
+          '<td><button type="button" class="primary caseDirectoryOpen" data-id="'+esc(x.id)+'">対応画面を開く</button></td>'+
+        '</tr>'
+      );
+      $('#caseDirectoryListHost').innerHTML=rows.length
+        ? dataTable(['案件番号・状態','件名・機器','顧客','優先度','自社担当','引継ぎ','操作'],rows)
+        : '<div class="empty">条件に一致する案件はありません。絞り込みや検索語を変更してください。</div>';
+      document.querySelectorAll('.caseDirectoryOpen').forEach(btn=>btn.onclick=async()=>{
+        btn.disabled=true;
+        try{await openTicketWorkspace(btn.dataset.id,'cases');}
+        catch(err){toast(err.message||String(err));}
+        finally{btn.disabled=false;}
+      });
+      document.querySelectorAll('.caseDirectoryCustomerOpen').forEach(btn=>btn.onclick=async()=>{
+        btn.disabled=true;
+        try{await go('customers');await renderCustomerDetail(btn.dataset.id);}
+        catch(err){toast(err.message||String(err));}
+        finally{btn.disabled=false;}
+      });
+    };
+    document.querySelectorAll('#caseDirectory .caseDirectoryQuickFilter').forEach(btn=>btn.onclick=()=>{
+      quickFilter=btn.dataset.quickFilter||'active';
+      document.querySelectorAll('#caseDirectory .caseDirectoryQuickFilter').forEach(item=>
+        item.setAttribute('aria-pressed',String(item.dataset.quickFilter===quickFilter)));
+      renderRows();
+    });
+    $('#caseDirectoryNew').onclick=()=>go('support');
+    bindListToolbar('caseDirectory',renderRows);
+    renderRows();
   }
 
   async function renderHandoffsWorkspace(){
