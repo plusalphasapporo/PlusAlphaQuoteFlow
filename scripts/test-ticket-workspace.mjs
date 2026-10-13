@@ -133,3 +133,128 @@ async function resolveOptionalContext(rpcOptional) {
 assert.match(html, /createdTicketForThisForm \|\| await rpc\('create_support_ticket'/);
 assert.match(html, /await openTicketWorkspace\(result.id\)/);
 console.log('Ticket workspace recovery tests passed (normal / failed / retry / back / optional context).');
+
+const intakeSource = extract(
+  '  async function renderSupportNew(){',
+  '\n  async function renderSupportCases(){'
+);
+
+function makeIntakeHarness({ failClaimOnce = false, deferredCreation = false } = {}) {
+  const events = { created: 0, claimed: 0, opened: [], pages: [], notices: [] };
+  const elements = new Map();
+  let releaseCreation = null;
+  const element = selector => {
+    if (!elements.has(selector)) {
+      elements.set(selector, {
+        value: '',
+        textContent: '',
+        innerHTML: '',
+        disabled: false,
+        selectedOptions: [{ textContent: 'TEST / Mock customer' }],
+        focus() {},
+        reset() {}
+      });
+    }
+    return elements.get(selector);
+  };
+
+  const context = {
+    pendingCallConnectIntake: null,
+    $: element,
+    esc: value => String(value ?? ''),
+    pageIntro: () => '<h2>New intake</h2>',
+    statusText: value => String(value ?? ''),
+    notice: (selector, message) => events.notices.push({ selector, message }),
+    toast() {},
+    setTimeout: () => 1,
+    go: async page => { events.pages.push(page); },
+    openTicketWorkspace: async id => { events.opened.push(id); },
+    console: { error() {} },
+    rpc: async (name, args) => {
+      if (name === 'support_customer_directory') {
+        return [{ id: 'customer-1', customer_code: 'TEST', name: 'Mock customer' }];
+      }
+      if (name === 'create_support_ticket') {
+        events.created += 1;
+        assert.equal(args.p_customer_id, 'customer-1');
+        if (deferredCreation) {
+          return new Promise(resolve => {
+            releaseCreation = () => resolve({ id: 'ticket-1', ticket_number: 'TKT-APP-00000021' });
+          });
+        }
+        return { id: 'ticket-1', ticket_number: 'TKT-APP-00000021' };
+      }
+      if (name === 'claim_support_ticket') {
+        events.claimed += 1;
+        assert.equal(args.p_ticket_id, 'ticket-1');
+        if (failClaimOnce && events.claimed === 1) throw new Error('Claim temporarily unavailable');
+        return { support_stage: 'in_progress' };
+      }
+      throw new Error('Unexpected mock RPC: ' + name);
+    }
+  };
+  vm.createContext(context);
+  vm.runInContext(intakeSource + '\nglobalThis.testIntake = renderSupportNew;', context);
+  const prepare = async () => {
+    await context.testIntake();
+    element('#supportNewCustomer').value = 'customer-1';
+    element('#supportNewSource').value = 'callconnect';
+    element('#supportNewPriority').value = 'normal';
+    element('#supportNewSubject').value = 'Printer issue';
+    element('#supportNewDescription').value = 'Printing fails';
+  };
+  return {
+    context,
+    element,
+    events,
+    prepare,
+    release: () => releaseCreation?.(),
+    submit: () => element('#supportNewForm').onsubmit({ preventDefault() {} })
+  };
+}
+
+{
+  const h = makeIntakeHarness();
+  await h.prepare();
+  await h.submit();
+  assert.equal(h.events.created, 1, 'An intake should create exactly one ticket');
+  assert.equal(h.events.claimed, 1, 'Start-now should claim the created ticket');
+  assert.equal(h.events.opened.join(','), 'ticket-1', 'It should open the existing ticket');
+}
+
+{
+  const h = makeIntakeHarness({ failClaimOnce: true });
+  await h.prepare();
+  await h.submit();
+  assert.equal(h.events.created, 1);
+  assert.equal(h.events.opened.length, 0);
+  assert.match(h.events.notices.at(-1).message, /受付は登録済みです/);
+  assert.match(h.element('#supportNewStartBtn').textContent, /登録済み案件の対応を再開/);
+  await h.submit();
+  assert.equal(h.events.created, 1, 'Retry must not duplicate an existing ticket');
+  assert.equal(h.events.claimed, 2, 'Retry must reclaim the same ticket');
+  assert.equal(h.events.opened.join(','), 'ticket-1');
+}
+
+{
+  const h = makeIntakeHarness();
+  await h.prepare();
+  await h.element('#supportNewSaveOnlyBtn').onclick();
+  assert.equal(h.events.created, 1);
+  assert.equal(h.events.claimed, 0);
+  assert.equal(h.events.pages.join(','), 'support_cases');
+}
+
+{
+  const h = makeIntakeHarness({ deferredCreation: true });
+  await h.prepare();
+  const first = h.submit();
+  const second = h.submit();
+  assert.equal(h.events.created, 1, 'Concurrent submissions must share one ticket');
+  h.release();
+  await Promise.all([first, second]);
+  assert.equal(h.events.opened.length, 1);
+}
+
+console.log('Ticket intake integration tests passed (create / claim / open / claim failure / retry / save-only / double-submit).');
+
