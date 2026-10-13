@@ -13438,7 +13438,7 @@
             });
             closeAppModal();
             toast('通話を既存案件に紐付けました');
-            await renderSupportCallConnect();
+            await openTicketWorkspace(ticket.id);
           }catch(err){
             notice('#callconnectAttachMsg','紐付けできませんでした: '+(err.message||String(err)));
             saveBtn.disabled=false;
@@ -13494,8 +13494,7 @@
         const result=await rpc('link_callconnect_customer',{p_call_id:btn.dataset.id,p_customer_id:sel.value});
         toast('顧客を確認しました');
         if(result?.ticket_id){
-          await go('support_cases');
-          await renderTicketDetail(result.ticket_id);
+          await openTicketWorkspace(result.ticket_id);
         }else if(bootData?.context?.role==='support_staff'){
           const call=calls.find(x=>x.id===btn.dataset.id)||{};
           pendingCallConnectIntake={
