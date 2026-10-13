@@ -8902,7 +8902,7 @@
                   : '<button class="primary" type="submit">メッセージを送信</button>')+
             '</div>'+
           '</form><div id="ticketMessageMsg" class="notice hidden"></div></section>'+
-        (!customer?'<section id="ticketHandoffHistory" class="section"><h3>引き継ぎ履歴</h3>+dataTable(internal?['状態','理由','次の対応','作成日','操作']:['状態','理由','次の対応','作成日'],handoffRows)+'</section>':'')+
+        (!customer?'<section id="ticketHandoffHistory" class="section"><h3>引き継ぎ履歴</h3>'+dataTable(internal?['状態','理由','次の対応','作成日','操作']:['状態','理由','次の対応','作成日'],handoffRows)+'</section>':'')+
         (!customer?'<section id="ticketAiIncidentSection" class="section">'+
           '<div class="row between" style="gap:12px;align-items:flex-start;flex-wrap:wrap"><div><h3>AI障害解析</h3><p class="sectionDesc">案件情報・機器情報・通話・メッセージ・社内ナレッジと、添付された障害写真をまとめて解析します。</p></div><span class="pill '+(aiState==='connected'?'good':aiState==='manual'?'warn':'')+'">OpenAI '+esc(aiStateText)+'</span></div>'+
           '<div class="grid" style="margin-top:10px">'+
