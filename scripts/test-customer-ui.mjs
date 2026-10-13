@@ -44,7 +44,7 @@ for(const tab of ['overview','contacts','assets','tickets','files','transactions
   assert.ok(profileHelper.includes("['"+tab+"'"),'Customer profile shortcut missing: '+tab);
 }
 assert.ok(profileHelper.includes('customerProfileJumpBtn'),'Customer profile shortcut class missing');
-assert.ok(profileHelper.includes('customerListHost'),'Close must return to customer directory');
+assert.ok(profileHelper.includes('customerDirectory'),'Close must return to customer directory');
 
 const detailEnd=html.indexOf('  async function ',profileEnd+40);
 const detail=html.slice(profileEnd,detailEnd>profileEnd?detailEnd:undefined);
