@@ -13383,8 +13383,7 @@
 
     document.querySelectorAll('.callconnectTicketOpen').forEach(btn=>btn.onclick=async()=>{
       const role=bootData?.context?.role;
-      await go(role==='support_staff'?'support_cases':'support');
-      await renderTicketDetail(btn.dataset.id);
+      await openTicketWorkspace(btn.dataset.id);
     });
     // CallConnect calls are never linked to an unrelated ticket automatically.
     // Staff selects an existing ticket from the already-authorized customer context.
