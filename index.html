@@ -7979,7 +7979,7 @@
 
   async function openTicketWorkspace(ticketId,returnPage=null){
     const role=bootData?.context?.role;
-    const backPage=returnPage==='cases'&&['internal_admin','internal_staff'].includes(role)?'cases':role==='support_staff'?'support_cases':'support';
+    const backPage=(returnPage==='cases'||returnPage==='handoffs')&&['internal_admin','internal_staff'].includes(role)?returnPage:role==='support_staff'?'support_cases':'support';
     currentPage=backPage;
     setActiveNav();
     $('#home').innerHTML=
@@ -13230,72 +13230,92 @@
     renderRows();
   }
 
+  function internalHandoffMatchesFilter(h,filter,query){
+    if(filter!=='all'&&h.state!==filter) return false;
+    if(!query) return true;
+    return [h.ticket_number,h.customer_name,h.subject,h.reason,h.next_action,h.requested_by_name,h.requested_by_role]
+      .some(v=>String(v||'').toLowerCase().includes(query.toLowerCase()));
+  }
+
+  function internalHandoffStateOrder(state){
+    return {pending:0,accepted:1,completed:2}[state]??3;
+  }
+
   async function renderHandoffsWorkspace(){
     const data=await rpc('internal_handoff_history');
     const handoffs=data||[];
-    const pending=handoffs.filter(h=>h.state==='pending');
-    const accepted=handoffs.filter(h=>h.state==='accepted');
-    const completed=handoffs.filter(h=>h.state==='completed');
-
-    const cards=handoffs.map(h=>
-      '<article class="supportCaseCard '+(h.state==='pending'?'urgent':'')+'">'+
-        '<div class="supportCaseCardHead">'+
-          '<div>'+
-            '<div class="supportCaseCardNo">'+esc(h.ticket_number||'—')+'</div>'+
-            '<div class="supportCaseCardTitle">'+esc(h.subject||'件名なし')+'</div>'+
-            '<div class="supportCaseCardCustomer">'+esc(h.customer_name||'顧客未登録')+'</div>'+
-            '<div class="supportCaseBadges">'+
-              '<span class="pill '+(h.state==='pending'?'warn':h.state==='accepted'?'good':'')+'">'+esc(h.state==='pending'?'受理待ち':h.state==='accepted'?'自社対応中':'対応完了')+'</span>'+
-            '</div>'+
-          '</div>'+
-          '<span class="muted">'+esc(dateTimeText(h.created_at))+'</span>'+
-        '</div>'+
-        '<div class="supportCaseFacts">'+
-          '<div class="supportCaseFact"><span>引継ぎ理由</span><strong>'+esc(h.reason||'—')+'</strong></div>'+
-          '<div class="supportCaseFact"><span>次に行うこと</span><strong>'+esc(h.next_action||'—')+'</strong></div>'+
-          '<div class="supportCaseFact"><span>依頼者</span><strong>'+esc(h.requested_by_name||h.requested_by_role||'—')+'</strong></div>'+
-          '<div class="supportCaseFact"><span>案件</span><strong>'+esc(h.ticket_number||'—')+'</strong></div>'+
-        '</div>'+
-        '<div class="supportCaseCardActions">'+
-          (h.ticket_id?'<button class="ghost internalHandoffOpen" type="button" data-ticket-id="'+esc(h.ticket_id)+'">案件カルテ確認</button>':'')+
-          (h.state==='pending'?'<button class="primary internalHandoffAccept" type="button" data-id="'+esc(h.id)+'" data-ticket-id="'+esc(h.ticket_id||'')+'">受理して対応開始</button>':'')+
-          (h.state==='accepted'?'<button class="primary internalHandoffOpen" type="button" data-ticket-id="'+esc(h.ticket_id||'')+'">案件カルテで対応を続ける</button>':'')+
-        '</div>'+
-      '</article>'
-    ).join('');
-
+    const filters=[
+      ['pending','受理待ち',handoffs.filter(h=>h.state==='pending').length],
+      ['accepted','自社対応中',handoffs.filter(h=>h.state==='accepted').length],
+      ['completed','完了',handoffs.filter(h=>h.state==='completed').length],
+      ['all','すべて',handoffs.length]
+    ];
+    let selectedFilter='pending';
     $('#home').innerHTML=
-      pageIntro('引継ぎ管理','サポート会社から届いた内容を確認し、同じ案件カルテのまま自社対応を続けます。')+
-      '<div class="supportTodayGrid">'+
-        '<div class="supportTodayTile danger"><span>受理待ち</span><strong>'+esc(pending.length)+'</strong><em>最優先で確認</em></div>'+
-        '<div class="supportTodayTile"><span>自社対応中</span><strong>'+esc(accepted.length)+'</strong><em>現在対応している案件</em></div>'+
-        '<div class="supportTodayTile"><span>完了</span><strong>'+esc(completed.length)+'</strong><em>サポート会社へ返却済み</em></div>'+
-      '</div>'+
-      '<div id="ticketDetailHost"></div>'+
+      pageIntro('引継ぎ管理','サポート会社から届いた引継ぎを、受理待ち・自社対応中・完了に分けて確認します。')+
       '<section class="card section">'+
-        '<div class="row between"><div><h2>引継ぎ案件</h2><p class="sectionDesc">理由と次対応を確認して、受理後は案件カルテでそのまま作業します。</p></div></div>'+
-        (cards?'<div class="supportCaseCards">'+cards+'</div>':'<div class="empty">引継ぎ案件はありません。</div>')+
+        '<div class="row between"><div><h2>引継ぎ状況</h2><p class="sectionDesc">引継ぎ理由と次の対応を確認し、同じ案件カルテで作業を続けます。</p></div></div>'+
+        '<div id="handoffStateFilters" class="handoffStateFilters" aria-label="引継ぎの状態">'+
+          filters.map(([key,label,count])=>'<button type="button" class="handoffStateButton" data-state="'+esc(key)+'" aria-pressed="'+(key===selectedFilter?'true':'false')+'"><span>'+esc(label)+'</span><strong>'+esc(count)+'</strong></button>').join('')+
+        '</div>'+
+      '</section>'+
+      '<section class="card section">'+
+        '<div class="row between"><div><h2>引継ぎ案件</h2><p class="sectionDesc">案件番号・顧客名・理由・次の対応を検索できます。</p></div><span id="handoffListCount" class="pill" role="status" aria-live="polite"></span></div>'+
+        '<div class="field"><label for="handoffSearch">案件を検索</label><input id="handoffSearch" type="search" placeholder="案件番号・顧客・内容・理由・次の対応"></div>'+
+        '<div id="handoffCardsHost"></div>'+
       '</section>';
-
-    document.querySelectorAll('.internalHandoffOpen').forEach(btn=>btn.onclick=async()=>{
-      btn.disabled=true;
-      try{await renderTicketDetail(btn.dataset.ticketId);}
-      catch(err){toast(err.message||String(err));}
-      finally{btn.disabled=false;}
+    const renderHandoffCards=()=>{
+      const query=($('#handoffSearch')?.value||'').trim().toLowerCase();
+      const filtered=handoffs.filter(h=>internalHandoffMatchesFilter(h,selectedFilter,query))
+        .sort((a,b)=>internalHandoffStateOrder(a.state)-internalHandoffStateOrder(b.state)||timeValue(b.created_at)-timeValue(a.created_at));
+      $('#handoffListCount').textContent=filtered.length+'件表示 / 全'+handoffs.length+'件';
+      $('#handoffCardsHost').innerHTML=filtered.length
+        ? '<div class="supportCaseCards">'+filtered.map(h=>{
+          let openButton='';
+          if(h.ticket_id) openButton='<button class="ghost internalHandoffOpen" type="button" data-ticket-id="'+esc(h.ticket_id)+'">案件カルテを開く</button>';
+          return '<article class="supportCaseCard '+(h.state==='pending'?'urgent':'')+'">'+
+            '<div class="supportCaseCardHead"><div>'+
+              '<div class="supportCaseCardNo">'+esc(h.ticket_number||'番号未設定')+'</div>'+
+              '<div class="supportCaseCardTitle">'+esc(h.subject||'件名なし')+'</div>'+
+              '<div class="supportCaseCardCustomer">'+esc(h.customer_name||'顧客未登録')+'</div>'+
+              '<span class="pill '+(h.state==='pending'?'warn':h.state==='accepted'?'good':'')+'">'+
+                esc(h.state==='pending'?'受理待ち':h.state==='accepted'?'自社対応中':h.state==='completed'?'完了':String(h.state||'状態不明'))+'</span>'+
+            '</div><span class="muted">'+esc(dateTimeText(h.created_at))+'</span></div>'+
+            '<div class="handoffDecisionGrid">'+
+              '<div class="handoffReason"><span>引継ぎ理由</span><strong>'+esc(h.reason||'未記入')+'</strong></div>'+
+              '<div class="handoffNextAction"><span>次に行うこと</span><strong>'+esc(h.next_action||'未記入')+'</strong></div>'+
+            '</div>'+
+            '<div class="supportCaseFacts"><div class="supportCaseFact"><span>依頼者</span><strong>'+esc(h.requested_by_name||h.requested_by_role||'不明')+'</strong></div></div>'+
+            '<div class="supportCaseCardActions">'+
+              openButton+
+              (h.state==='pending'?'<button class="primary internalHandoffAccept" type="button" data-id="'+esc(h.id)+'" data-ticket-id="'+esc(h.ticket_id||'')+'">'+(h.ticket_id?'受理して対応開始':'受理する')+'</button>':'')+
+            '</div>'+
+          '</article>';
+        }).join('')+'</div>'
+        : '<div class="empty">該当する引継ぎ案件はありません。検索条件を変更してください。</div>';
+      document.querySelectorAll('.internalHandoffOpen').forEach(btn=>btn.onclick=async()=>{
+        btn.disabled=true;
+        try{await openTicketWorkspace(btn.dataset.ticketId,'handoffs');}
+        catch(err){toast(err.message||String(err));btn.disabled=false;}
+      });
+      document.querySelectorAll('.internalHandoffAccept').forEach(btn=>btn.onclick=async()=>{
+        btn.disabled=true;
+        try{
+          await rpc('accept_ticket_handoff',{p_handoff_id:btn.dataset.id});
+          toast('引継ぎを受理しました');
+          if(btn.dataset.ticketId) await openTicketWorkspace(btn.dataset.ticketId,'handoffs');
+          else await renderHandoffsWorkspace();
+        }catch(err){toast(err.message||String(err));btn.disabled=false;}
+      });
+    };
+    document.querySelectorAll('#handoffStateFilters .handoffStateButton').forEach(btn=>btn.onclick=()=>{
+      selectedFilter=btn.dataset.state||'pending';
+      document.querySelectorAll('#handoffStateFilters .handoffStateButton').forEach(item=>
+        item.setAttribute('aria-pressed',String(item.dataset.state===selectedFilter)));
+      renderHandoffCards();
     });
-
-    document.querySelectorAll('.internalHandoffAccept').forEach(btn=>btn.onclick=async()=>{
-      btn.disabled=true;
-      try{
-        await rpc('accept_ticket_handoff',{p_handoff_id:btn.dataset.id});
-        toast('引継ぎを受理しました。案件カルテを開きます');
-        if(btn.dataset.ticketId) await renderTicketDetail(btn.dataset.ticketId);
-        else await renderHandoffsWorkspace();
-      }catch(err){toast(err.message||String(err));}
-      finally{btn.disabled=false;}
-    });
-
-    document.querySelectorAll('.internalHandoffComplete').forEach(btn=>btn.remove());
+    $('#handoffSearch').oninput=renderHandoffCards;
+    renderHandoffCards();
   }
 
   async function renderAnalysis(){
