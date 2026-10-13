@@ -269,6 +269,16 @@ Deno.serve(async(req:Request)=>{
     if(!["resolved","continue","escalate"].includes(outcome)) return json(400,{error:"invalid_outcome"});
     if(!workNote) return json(400,{error:"work_note_required"});
 
+    // Once a result has been recorded, never overwrite the original staff
+    // decision or notes. A byte-for-byte equivalent retry is read-only.
+    if(latest.completed_at){
+      if(latest.outcome===outcome && textv(latest.work_note,4000)===workNote){
+        return json(200,{ok:true,already_recorded:true,session:safeSession(latest)});
+      }
+      return json(409,{ok:false,error:"teamviewer_result_already_recorded"});
+    }
+    if(ticket.status==="closed") return json(409,{ok:false,error:"ticket_closed"});
+
     const now=new Date().toISOString();
     const {data:updated,error:updateError}=await admin.from("teamviewer_sessions")
       .update({
@@ -279,9 +289,11 @@ Deno.serve(async(req:Request)=>{
         updated_at:now,
       })
       .eq("id",latest.id)
+      .is("completed_at",null)
       .select("id,session_code,state,end_customer_link,supporter_link,valid_until,end_customer_name,end_customer_email,closed_at,outcome,work_note,completed_at,created_at")
-      .single();
+      .maybeSingle();
     if(updateError) return json(500,{ok:false,error:"teamviewer_result_save_failed"});
+    if(!updated) return json(409,{ok:false,error:"teamviewer_result_already_recorded"});
 
     await admin.from("audit_logs").insert({
       actor_user_id:userData.user.id,
