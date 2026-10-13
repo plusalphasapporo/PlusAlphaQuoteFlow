@@ -1793,7 +1793,7 @@
               p_call_id:item.call_id,
               p_customer_id:item.matched_customer_id,
               p_ticket_id:ticketId
-            }).catch(()=>{});
+            }).catch(err=>{console.error('CallConnect ticket attachment failed',err);toast('案件は作成されましたが、通話の紐付けに失敗しました。通話履歴から既存案件に紐付けてください。');});
           }
           await close();
           toast((type==='incident'?'障害':'設定依頼')+'を登録しました'+(result?.ticket_number?' '+result.ticket_number:''));
@@ -1827,7 +1827,7 @@
               p_call_id:item.call_id,
               p_customer_id:item.matched_customer_id,
               p_ticket_id:result.id
-            }).catch(()=>{});
+            }).catch(err=>{console.error('CallConnect ticket attachment failed',err);toast('案件は作成されましたが、通話の紐付けに失敗しました。通話履歴から既存案件に紐付けてください。');});
           }
 
           await rpc('claim_support_ticket',{p_ticket_id:result.id});
@@ -13592,6 +13592,7 @@
       $('#supportNewDescription').focus();
     }
 
+    let createdTicketForThisForm=null;
     const createAndContinue=async(startNow)=>{
       const startBtn=$('#supportNewStartBtn');
       const saveBtn=$('#supportNewSaveOnlyBtn');
@@ -13606,7 +13607,7 @@
           const firstLine=body.split(/\r?\n/).map(x=>x.trim()).find(Boolean)||'';
           subject=firstLine?firstLine.slice(0,70):sourceLabel+'：'+customerText.split(' / ').pop();
         }
-        const result=await rpc('create_support_ticket',{
+        const result=createdTicketForThisForm || await rpc('create_support_ticket',{
           p_customer_id:$('#supportNewCustomer').value,
           p_asset_id:$('#supportNewAsset').value||null,
           p_contract_id:$('#supportNewContract').value||null,
@@ -13615,13 +13616,14 @@
           p_priority:$('#supportNewPriority').value
         });
         if(!result?.id) throw new Error('登録した案件IDを取得できませんでした。');
+        createdTicketForThisForm=result; // Subsequent retry must not create a duplicate ticket.
 
         if(pendingIntake?.call_id){
           await rpc('attach_callconnect_ticket',{
             p_call_id:pendingIntake.call_id,
             p_customer_id:$('#supportNewCustomer').value,
             p_ticket_id:result.id
-          }).catch(()=>{});
+          }).catch(err=>{console.error('CallConnect ticket attachment failed',err);toast('案件は作成されましたが、通話の紐付けに失敗しました。通話履歴から既存案件に紐付けてください。');});
         }
 
         if(startNow){
