@@ -38,3 +38,6 @@ jobs:
 
       - name: Test internal handoff workflow
         run: node scripts/test-handoff-workflow-ui.mjs
+
+      - name: Test support operations workspace
+        run: node scripts/test-support-workspace-ui.mjs
