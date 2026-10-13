@@ -11128,12 +11128,12 @@
           returnSupport.disabled=true;
           $('#internalHandoffCloseTicket')?.setAttribute('disabled','disabled');
           try{
-            await rpc('post_ticket_message',{
-              p_ticket_id:t.id,
-              p_visibility:'support',
-              p_body:report.body
+            await rpc('finish_internal_handoff_work',{
+              p_handoff_id:returnSupport.dataset.id,
+              p_result:report.result,
+              p_support_note:report.supportNote,
+              p_close_ticket:false
             });
-            await rpc('complete_ticket_handoff',{p_handoff_id:returnSupport.dataset.id});
             clearSupportDraft(t.id,'internal_handoff_work');
             toast('自社対応結果を保存し、サポート会社へ戻しました');
             await renderTicketDetail(t.id);
@@ -11152,21 +11152,11 @@
           closeFromInternal.disabled=true;
           $('#internalHandoffReturnSupport')?.setAttribute('disabled','disabled');
           try{
-            await rpc('post_ticket_message',{
-              p_ticket_id:t.id,
-              p_visibility:'support',
-              p_body:report.body
-            });
-            await rpc('complete_ticket_handoff',{p_handoff_id:closeFromInternal.dataset.id});
-            const finalReport=[
-              '【作業報告】',
-              '結果: 解決',
-              '対応内容: '+report.result,
-              report.supportNote?'共有事項: '+report.supportNote:''
-            ].filter(Boolean).join('\n');
-            await rpc('complete_support_ticket_with_report',{
-              p_ticket_id:t.id,
-              p_report_body:finalReport
+            await rpc('finish_internal_handoff_work',{
+              p_handoff_id:closeFromInternal.dataset.id,
+              p_result:report.result,
+              p_support_note:report.supportNote,
+              p_close_ticket:true
             });
             clearSupportDraft(t.id,'internal_handoff_work');
             toast('自社対応結果を保存し、案件を完了しました');
