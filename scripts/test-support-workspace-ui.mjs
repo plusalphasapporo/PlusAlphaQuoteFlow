@@ -36,8 +36,11 @@ const detailStart=html.indexOf('  async function renderTicketDetail(');
 const detailEnd=html.indexOf('  async function renderSupport(){',detailStart);
 assert.ok(detailStart>=0&&detailEnd>detailStart,'Ticket details must stay accessible');
 const detail=html.slice(detailStart,detailEnd);
-for(const key of ['intake','knowledge','remote','report','customer','reply','history','files']){
-  assert.ok(detail.includes('data-jump="'+key+'"'),'Missing shortcut: '+key);
+for(const key of ['intake','knowledge','remote','report']){
+  assert.ok(detail.includes('data-jump="'+key+'"'),'Missing workflow step: '+key);
+}
+for(const key of ['customer','reply','history','files']){
+  assert.ok(detail.includes("['"+key+"'"),'Missing shortcut specification: '+key);
 }
 assert.ok(detail.includes('class="supportStep supportWorkspaceJump '),
   'The four-step progress display must be keyboard-accessible buttons');
