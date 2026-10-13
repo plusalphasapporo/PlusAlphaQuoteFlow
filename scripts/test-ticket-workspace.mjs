@@ -258,3 +258,15 @@ function makeIntakeHarness({ failClaimOnce = false, deferredCreation = false } =
 
 console.log('Ticket intake integration tests passed (create / claim / open / claim failure / retry / save-only / double-submit).');
 
+
+
+const auditMigration = fs.readFileSync(
+  'supabase/migrations/20261013035658_fix_internal_ticket_creation_audit_permissions.sql',
+  'utf8'
+);
+assert.match(auditMigration, /function app_private\.internal_create_support_ticket_impl/i);
+assert.match(auditMigration, /security definer/i);
+assert.match(auditMigration, /function public\.internal_create_support_ticket/i);
+assert.match(auditMigration, /grant execute on function app_private\.internal_create_support_ticket_impl/i);
+assert.doesNotMatch(auditMigration, /grant\s+insert\s+on\s+(table\s+)?public\.audit_logs/i);
+console.log('Internal intake audit migration checks passed.');
