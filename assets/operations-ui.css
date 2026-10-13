@@ -153,3 +153,19 @@ body[data-role="support_staff"] .globalSearch,body[data-role="customer_user"] .g
 .handoffNextAction{background:#eff6ff;border-color:#cfe2fb}
 @media(max-width:800px){.handoffStateFilters{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:620px){.handoffDecisionGrid{grid-template-columns:1fr}.handoffStateButton{min-height:72px}.handoffStateButton strong{font-size:22px}}
+
+/* Support workspace: quick context and safe step navigation. */
+.supportWorkspaceQuickContext{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:10px 0}
+.supportWorkspaceQuickContext>div{background:#f6f9fd;border:1px solid #dce6f2;padding:11px 13px;border-radius:9px;min-width:0}
+.supportWorkspaceQuickContext span{display:block;color:#5c7088;font-size:11px;font-weight:750}
+.supportWorkspaceQuickContext strong{display:block;color:#173252;font-size:14px;margin:5px 0;overflow-wrap:anywhere}
+.supportWorkspaceQuickContext small{display:block;color:#65748b;overflow-wrap:anywhere}
+.supportWorkspaceQuickNav{display:flex;flex-wrap:wrap;gap:7px;margin:10px 0 14px;padding:9px;background:#f7f9fc;border:1px solid #dce5ee;border-radius:10px}
+.supportWorkspaceQuickNav .supportWorkspaceJump{background:#fff;border:1px solid #d4e0ed;color:#284466;border-radius:7px;min-height:35px;padding:7px 10px;font-size:12px;font-weight:800}
+.supportWorkspaceJump{cursor:pointer;text-align:left;font-family:inherit}
+.supportWorkspaceJump:hover{border-color:#75a8e5}
+.supportWorkspaceJump:focus-visible{outline:3px solid #7fb4ff;outline-offset:2px}
+.supportFlowHint{margin-top:14px;color:#586d83;font-size:12px}
+.supportLinearCard,.formSection,#supportTicketCustomerContext,#ticketMessageForm,#ticketHandoffHistory{scroll-margin-top:150px}
+@media(max-width:900px){.supportWorkspaceQuickContext{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:620px){.supportWorkspaceQuickContext{grid-template-columns:1fr}.supportWorkspaceQuickNav{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}.supportWorkspaceQuickNav .supportWorkspaceJump{font-size:11px;padding:8px 6px}.supportFlow.supportLinearProgress{grid-template-columns:repeat(2,minmax(0,1fr))}}
