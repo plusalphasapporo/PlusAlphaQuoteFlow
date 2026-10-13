@@ -50,3 +50,29 @@ body[data-role="customer_user"] .headerLogout{color:#fff;border-color:rgba(255,2
 body[data-role="support_staff"] .globalSearch,body[data-role="customer_user"] .globalSearch{background:#fff;color:#334155}
 @media(max-width:980px){.side{max-height:none;overflow:visible}}
 @media(max-width:780px){.globalSearch{width:100%;min-width:0}#navMenu{scrollbar-width:thin}}
+
+/* Internal dashboard: information hierarchy before routine operations. */
+.internalDashNav{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:12px 0 4px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff}
+.internalDashNavLabel{font-size:12px;font-weight:750;color:#52637a;margin-right:4px}
+.internalDashNav .dashboardJump{border:1px solid #d7e1ed;border-radius:7px;background:#f6f9fd;color:#294260;padding:8px 12px;min-height:36px;font-size:12px;font-weight:750}
+.internalDashNav .dashboardJump:hover{background:#eaf2fc;border-color:#91b8e7;color:#174b8d}
+.internalDashNav .dashboardJump:focus-visible,.internalDashDetails>summary:focus-visible{outline:3px solid #7fb4ff;outline-offset:2px}
+#internalPriority,#internalTodayWork,#internalRegularWork,#internalOperationsDetails{scroll-margin-top:24px}
+.internalCommandCenter{border:1px solid #dce7f4;background:#fff;box-shadow:var(--shadow)}
+.internalCommandCenter .supportTodayGrid{grid-template-columns:repeat(3,minmax(0,1fr))}
+.internalCommandCenter .supportTodayTile{min-width:0;min-height:90px;padding:13px 14px;border-radius:9px}
+.internalCommandCenter .supportTodayTile strong{font-size:26px;margin-top:8px}
+.internalCommandCenter .supportTodayTile em{margin-top:6px}
+.internalTodayWork{border-left:3px solid var(--blue)}
+.internalTodayWork .empty{margin-top:8px}
+.internalDashDetails{border:1px solid var(--line);border-radius:10px;background:#fff;overflow:hidden;box-shadow:var(--shadow)}
+.internalDashDetails>summary{display:flex;gap:10px;align-items:center;flex-wrap:wrap;cursor:pointer;padding:15px 17px;font-weight:800;color:#1c3553}
+.internalDashDetails>summary:hover{background:#f6f9fd}
+.internalDashDetails>summary::after{content:"詳細を開く";margin-left:auto;font-size:12px;color:#1769cf}
+.internalDashDetails[open]>summary::after{content:"閉じる"}
+.internalDashDetails>summary small{color:#64748b;font-size:12px;font-weight:500}
+.internalDashDetailsBody{padding:0 14px 16px}
+.internalDashDetailsBody>.section:first-child{margin-top:0}
+.internalDashDetailsBody>.card{box-shadow:none;border-color:#e7edf5}
+@media(max-width:900px){.internalCommandCenter .supportTodayGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:620px){.internalDashNav{padding:8px;gap:6px}.internalDashNavLabel{flex-basis:100%;margin-bottom:2px}.internalDashNav .dashboardJump{flex:1 1 calc(50% - 8px)}.internalDashDetails>summary{align-items:flex-start}.internalDashDetails>summary small{flex-basis:100%}.internalDashDetailsBody{padding:0 9px 10px}}
