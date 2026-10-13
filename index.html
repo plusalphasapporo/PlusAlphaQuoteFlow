@@ -819,6 +819,7 @@
       teamviewer_session_refresh_failed:'TeamViewerの接続状態を取得できませんでした。',
       teamviewer_session_update_failed:'TeamViewerの接続状態を保存できませんでした。',
       teamviewer_result_save_failed:'TeamViewerの対応結果を保存できませんでした。既存の記録を確認してください。',
+      teamviewer_result_already_recorded:'TeamViewerの対応結果は既に保存されています。履歴を確認してください。変更が必要な場合は管理者へ連絡してください。',
       ticket_closed:'この案件は完了済みです。案件を再開してから操作してください。'
     };
     let message=messages[code];
@@ -10713,6 +10714,11 @@
             if(data?.error) throw await edgeFunctionError(new Error(String(data.error)),{write:true});
             if(!data?.ok) throw new Error('TeamViewer対応結果を保存できませんでした。');
             remoteResultSaved=true;
+            if(data?.already_recorded){
+              toast('TeamViewerの対応結果は既に保存済みです。二重登録は行いません。');
+              await renderTicketDetail(t.id);
+              return;
+            }
 
             const resultLabel={resolved:'解決',continue:'継続対応',escalate:'自社引継ぎ'}[outcome]||outcome;
             try{
