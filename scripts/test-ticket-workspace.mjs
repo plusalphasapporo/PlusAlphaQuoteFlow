@@ -273,7 +273,7 @@ console.log('Internal intake audit migration checks passed.');
 
 
 const nullGateMigration = fs.readFileSync(
-  'supabase/migrations/20261013060032_reject_unverified_internal_ticket_creation.sql',
+  'supabase/migrations/20261013060746_reject_unverified_internal_ticket_creation.sql',
   'utf8'
 );
 assert.match(nullGateMigration, /if coalesce\(v_role,'\s*'\) not in \('internal_admin','internal_staff'\) then/i);
