@@ -48,3 +48,6 @@ jobs:
         run: node scripts/test-ticket-number-migration.mjs
       - name: Test CallConnect audit handling
         run: node scripts/test-callconnect-audit.mjs
+
+      - name: Validate staging preview build and production blocking
+        run: node scripts/test-preview-build.mjs
