@@ -12579,6 +12579,7 @@
         '<div class="quoteDetailHead">'+
           '<div><h2>機器カルテ</h2><p class="sectionDesc">'+esc(a.asset_number||'未採番')+' / '+esc(c.name||'')+'</p></div>'+
           '<div class="row">'+
+            '<button id="assetOpenCustomer" class="ghost" type="button">顧客カルテ</button>'+
             '<button id="assetNewTicketBtn" class="primary" type="button">＋ この機器で問い合わせ</button>'+
             '<button id="assetDetailCloseBtn" class="ghost" type="button">閉じる</button>'+
           '</div>'+
@@ -12644,6 +12645,10 @@
       '</section>';
 
     $('#assetDetailCloseBtn').onclick=()=>{$('#assetDetailHost').innerHTML='';};
+    $('#assetOpenCustomer').onclick=async()=>{
+      await go('customers');
+      await renderCustomerDetail(a.customer_id);
+    };
 
     if(a.installed_at){
       const dt=new Date(a.installed_at);
@@ -12731,6 +12736,24 @@
     $('#assetDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
   }
 
+  function assetLedgerWarrantyDays(asset,asOf=new Date()){
+    if(!asset.warranty_until) return null;
+    const date=new Date(String(asset.warranty_until).slice(0,10)+'T12:00:00');
+    if(!Number.isFinite(date.getTime())) return null;
+    const today=new Date(asOf.getFullYear(),asOf.getMonth(),asOf.getDate(),12);
+    const end=new Date(date.getFullYear(),date.getMonth(),date.getDate(),12);
+    return Math.round((end.getTime()-today.getTime())/86400000);
+  }
+
+  function assetLedgerMatchesQuickFilter(asset,filter,asOf=new Date()){
+    if(filter==='open_tickets') return Number(asset.open_ticket_count||0)>0;
+    if(filter==='contract_unlinked') return !asset.contract_id&&!asset.contract_number;
+    const days=assetLedgerWarrantyDays(asset,asOf);
+    if(filter==='warranty_expired') return days!==null&&days<0;
+    if(filter==='warranty_soon') return days!==null&&days>=0&&days<=60;
+    return true;
+  }
+
   async function renderAssetLedger(){
     const role=bootData?.context?.role;
     if(role==='customer_user'){
@@ -12740,27 +12763,93 @@
       return;
     }
 
-    const [assets,customers]=await Promise.all([rpc('internal_assets_list'),rpc('internal_customers_list')]);
-    const options=(customers||[]).map(c=>'<option value="'+esc(c.id)+'">'+esc(c.customer_code||'—')+' / '+esc(c.name)+'</option>').join('');
-    const rows=(assets||[]).map(a=>
-      '<tr>'+
-        '<td><strong>'+esc(a.asset_number||'未採番')+'</strong></td>'+
-        '<td>'+esc(a.customer?.name||'—')+'</td>'+
-        '<td>'+esc(a.model_name||'—')+'</td>'+
-        '<td>'+esc(a.serial_number||'—')+'</td>'+
-        '<td>'+esc(dateText(a.warranty_until))+'</td>'+
-        '<td>'+(a.contract_number?esc(a.contract_number)+'<br><span class="muted">'+esc(statusText(a.contract_status))+'</span>':'未紐づけ')+'</td>'+
-        '<td>'+esc(a.installation_location||'—')+'</td>'+
-        '<td>'+esc(statusText(a.status))+'</td>'+
-        '<td>'+(Number(a.open_ticket_count||0)>0?'<span class="hold">'+esc(a.open_ticket_count)+'</span>':esc(a.open_ticket_count||0))+'</td>'+
-        '<td><button class="linkBtn assetLedgerOpen" type="button" data-id="'+esc(a.id)+'">カルテ</button></td>'+
-      '</tr>'
-    );
-    $('#home').innerHTML=
-      pageIntro('機器台帳','機器番号・シリアル・保証期限・契約・設置場所・対応状況を一元管理します。')+
-      '<section class="card section"><div class="unifiedToolbar"><div><h2>機器一覧</h2><p class="sectionDesc">納品から自動登録された機器と手動登録した機器を同じ台帳で管理します。</p></div><button id="assetLedgerCreateBtn" class="primary" type="button">＋機器登録</button></div>'+
-      '<div id="assetDetailHost"></div>'+dataTable(['機器番号','顧客','機種','シリアル','保証期限','契約','設置場所','状態','対応中','操作'],rows)+'</section>';
 
+    const [assets,customers]=await Promise.all([rpc('internal_assets_list'),rpc('internal_customers_list')]);
+    const allAssets=assets||[];
+    const options=(customers||[]).map(c=>'<option value="'+esc(c.id)+'">'+esc(c.customer_code||'—')+' / '+esc(c.name)+'</option>').join('');
+    const filters=[
+      ['all','すべて',allAssets.length],
+      ['open_tickets','対応中あり',allAssets.filter(a=>assetLedgerMatchesQuickFilter(a,'open_tickets')).length],
+      ['warranty_expired','保証期限切れ',allAssets.filter(a=>assetLedgerMatchesQuickFilter(a,'warranty_expired')).length],
+      ['warranty_soon','保証60日以内',allAssets.filter(a=>assetLedgerMatchesQuickFilter(a,'warranty_soon')).length],
+      ['contract_unlinked','契約未紐づけ',allAssets.filter(a=>assetLedgerMatchesQuickFilter(a,'contract_unlinked')).length]
+    ];
+    let quickFilter='all';
+    $('#home').innerHTML=
+      pageIntro('機器台帳','機器を検索し、保証・契約・問い合わせ状況から必要なカルテを開きます。')+
+      '<section id="assetLedgerDirectory" class="card section assetLedgerDirectory">'+
+        '<div class="row between"><div><h2>OA機器台帳</h2><p class="sectionDesc">納品からの自動登録と手動登録をまとめて管理します。</p></div>'+
+        '<button id="assetLedgerCreateBtn" class="primary" type="button">＋ 機器登録</button></div>'+
+        '<div class="assetLedgerMetrics" aria-label="機器台帳の状況">'+
+          filters.map(([key,label,count])=>'<button class="assetLedgerMetric assetLedgerQuickFilter" type="button" data-quick-filter="'+esc(key)+'" aria-pressed="'+(key==='all'?'true':'false')+'"><span>'+esc(label)+'</span><strong>'+esc(count)+'</strong></button>').join('')+
+        '</div>'+
+      '</section>'+
+      listToolbar('assetLedger',allAssets,'status','機器番号・顧客名・型番・シリアル・設置場所',[
+        ['updated_desc','更新が新しい順'],
+        ['customer_asc','顧客名順'],
+        ['asset_asc','機器番号順'],
+        ['warranty_asc','保証期限が近い順'],
+        ['open_tickets_desc','対応中の多い順']
+      ])+
+      '<div id="assetLedgerDetailHost"><div id="assetDetailHost"></div></div>'+
+      '<section class="section assetLedgerResultTable"><div class="row between"><h3>機器検索結果</h3><p id="assetLedgerResults" class="sectionDesc" role="status" aria-live="polite"></p></div><div id="assetListHost"></div></section>';
+
+    const renderAssetRows=()=>{
+      const state=listToolbarState('assetLedger');
+      let filtered=allAssets.filter(a=>{
+        if(!assetLedgerMatchesQuickFilter(a,quickFilter)) return false;
+        if(state.status!=='all'&&a.status!==state.status) return false;
+        return !state.query||[
+          a.asset_number,a.customer?.name,a.customer?.customer_code,
+          a.model_name,a.serial_number,a.installation_location,
+          a.product_code,a.source_delivery_number,a.contract_number
+        ].some(v=>String(v||'').toLowerCase().includes(state.query));
+      });
+      filtered=[...filtered].sort((a,b)=>{
+        if(state.sort==='customer_asc') return compareText(a.customer?.name,b.customer?.name);
+        if(state.sort==='asset_asc') return compareText(a.asset_number,b.asset_number);
+        if(state.sort==='warranty_asc') return (timeValue(a.warranty_until)||Number.MAX_SAFE_INTEGER)-(timeValue(b.warranty_until)||Number.MAX_SAFE_INTEGER);
+        if(state.sort==='open_tickets_desc') return Number(b.open_ticket_count||0)-Number(a.open_ticket_count||0)||timeValue(b.updated_at)-timeValue(a.updated_at);
+        return timeValue(b.updated_at)-timeValue(a.updated_at);
+      });
+      updateListCount('assetLedger',filtered.length,allAssets.length);
+      $('#assetLedgerResults').textContent=filtered.length+'件表示 / 登録 '+allAssets.length+'件';
+      const rows=filtered.map(a=>{
+        const days=assetLedgerWarrantyDays(a);
+        const warranty=days===null?'<span class="muted">未設定</span>':days<0?'<span class="hold">期限切れ '+esc(dateText(a.warranty_until))+'</span>':days<=60?'<span class="pill warn">残り '+esc(days)+'日</span>':'<span>'+esc(dateText(a.warranty_until))+'</span>';
+        return '<tr>'+
+          '<td><strong>'+esc(a.asset_number||'未採番')+'</strong><br><span class="muted">'+esc(a.model_name||'機種未設定')+'</span></td>'+
+          '<td>'+esc(a.customer?.name||'顧客未設定')+(a.customer_id?'<br><button class="linkBtn assetLedgerCustomerOpen" type="button" data-id="'+esc(a.customer_id)+'">顧客カルテ</button>':'')+'</td>'+
+          '<td>'+esc(a.serial_number||'未登録')+'</td>'+
+          '<td>'+warranty+'</td>'+
+          '<td>'+(a.contract_number?esc(a.contract_number):'<span class="muted">未紐づけ</span>')+'</td>'+
+          '<td>'+esc(a.installation_location||'未設定')+'</td>'+
+          '<td>'+esc(statusText(a.status))+'</td>'+
+          '<td>'+(Number(a.open_ticket_count||0)>0?'<span class="hold">'+esc(a.open_ticket_count)+'件</span>':'0件')+'</td>'+
+          '<td><button class="primary assetLedgerOpen" type="button" data-id="'+esc(a.id)+'">機器カルテ</button></td>'+
+        '</tr>';
+      });
+      $('#assetListHost').innerHTML=rows.length
+        ? dataTable(['機器番号・機種','顧客','シリアル','保証期限','契約','設置場所','状態','対応中','操作'],rows)
+        : '<div class="empty">条件に一致する機器はありません。検索語や絞り込みを変更してください。</div>';
+      document.querySelectorAll('.assetLedgerOpen').forEach(btn=>btn.onclick=async()=>{
+        btn.disabled=true;
+        try{await renderAssetDetail(btn.dataset.id);}
+        catch(err){toast(err.message||String(err));}
+        finally{btn.disabled=false;}
+      });
+      document.querySelectorAll('.assetLedgerCustomerOpen').forEach(btn=>btn.onclick=async()=>{
+        btn.disabled=true;
+        try{await go('customers');await renderCustomerDetail(btn.dataset.id);}
+        catch(err){toast(err.message||String(err));}
+        finally{btn.disabled=false;}
+      });
+    };
+    document.querySelectorAll('#assetLedgerDirectory .assetLedgerQuickFilter').forEach(btn=>btn.onclick=()=>{
+      quickFilter=btn.dataset.quickFilter||'all';
+      document.querySelectorAll('#assetLedgerDirectory .assetLedgerQuickFilter').forEach(item=>item.setAttribute('aria-pressed',String(item.dataset.quickFilter===quickFilter)));
+      renderAssetRows();
+    });
     $('#assetLedgerCreateBtn').onclick=()=>openModal({
       title:'機器を登録',description:'手動でOA機器台帳へ追加します。納品フローからも自動登録されます。',
       body:
@@ -12773,7 +12862,9 @@
         closeModal();toast('機器を登録しました');await go('assets');
       }
     });
-    document.querySelectorAll('.assetLedgerOpen').forEach(btn=>btn.onclick=()=>renderAssetDetail(btn.dataset.id));
+
+    bindListToolbar('assetLedger',renderAssetRows);
+    renderAssetRows();
   }
 
   async function renderContractDetail(contractId){
