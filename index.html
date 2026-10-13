@@ -11558,6 +11558,12 @@
 
     $('#home').innerHTML=
       pageIntro(internal?'問い合わせ管理':'サポート',internal?'自社受付からサポート会社対応・自社引継ぎ・完了まで、案件の現在地を確認します。':'顧客・契約・機器・担当者・優先度・対応履歴を案件単位で管理します。')+
+      '<div class="supportQuickBar">'+
+        (support?'<button id="supportFastIntake" class="primary" type="button">＋ 新規受付・対応開始</button>'+
+                 '<button id="supportQuickHandoffs" class="ghost" type="button">引継ぎ状況</button>':
+          internal?'<button id="internalSupportFastIntake" class="primary" type="button">＋ 新規受付</button>'+
+                 '<button id="internalSupportCases" class="ghost" type="button">案件管理一覧</button>':'')+
+      '</div>'+
       kpis([
         ['未対応',summary.open||0],
         ['対応中',summary.in_progress||0],
@@ -12007,6 +12013,12 @@
         $('#supportCaseListHost')?.scrollIntoView({behavior:'smooth',block:'start'});
       });
     }
+    $('#supportFastIntake')?.addEventListener('click',()=>go('support_new'));
+    $('#supportQuickHandoffs')?.addEventListener('click',()=>go('support_handoffs'));
+    $('#internalSupportFastIntake')?.addEventListener('click',()=>{
+      $('#supportCaseCreateToggle')?.click();
+    });
+    $('#internalSupportCases')?.addEventListener('click',()=>go('cases'));
     bindListToolbar('supportCaseList',renderRows);
     renderRows();
 
