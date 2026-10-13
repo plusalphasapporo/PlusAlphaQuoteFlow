@@ -4554,6 +4554,35 @@
     }
   }
 
+  function customerIdentityHeader(c,tab,overview=false){
+    const shortcuts=[['overview','概要'],['contacts','担当者'],['assets','OA機器'],['tickets','問い合わせ'],['files','情報フォルダ'],['transactions','取引・契約']];
+    return '<div class="customerIdentityHeader">'+
+      '<div class="customerIdentityTop"><div><span class="customerIdentityEyebrow">顧客カルテ / '+esc(c.customer_code||'コード未設定')+'</span>'+
+      '<h2>'+esc(c.name||'顧客名未登録')+'</h2>'+
+      (c.trade_name?'<p class="sectionDesc">'+esc(c.trade_name)+'</p>':'')+
+      (c.manual_hold?'<span class="hold">手動ホールド中</span>':'')+
+      '</div><button id="customerDetailClose" class="ghost" type="button">一覧へ戻る</button></div>'+
+      '<nav class="customerProfileJump" aria-label="顧客カルテの主要項目">'+
+      shortcuts.map(([key,label])=>'<button class="customerProfileJumpBtn" type="button" data-tab="'+esc(key)+'" aria-current="'+(key===tab?'page':'false')+'">'+esc(label)+'</button>').join('')+
+      '</nav></div>';
+  }
+
+  function bindCustomerIdentityNavigation(customerId,host){
+    const close=host.querySelector('#customerDetailClose');
+    if(close) close.onclick=()=>{
+      host.innerHTML='';
+      document.querySelector('#customerDirectory')?.scrollIntoView({behavior:'smooth',block:'start'});
+      document.querySelector('#customerListSearch')?.focus({preventScroll:true});
+    };
+    host.querySelectorAll('.customerProfileJumpBtn').forEach(btn=>btn.onclick=async()=>{
+      if(btn.dataset.tab==='') return;
+      btn.disabled=true;
+      try{await renderCustomerDetail(customerId,btn.dataset.tab);}
+      catch(err){toast(err.message||String(err));}
+      finally{btn.disabled=false;}
+    });
+  }
+
   async function renderCustomerDetail(customerId,tab='overview'){
     const host=$('#customerDetailHost');
     const tabs=[
@@ -4708,27 +4737,20 @@
 
       host.innerHTML=
         '<section class="card section">'+
-          '<div class="quoteDetailHead">'+
-            '<div><h2>顧客カルテ</h2><p class="sectionDesc">'+esc(c.customer_code||'—')+' / '+esc(c.name||'')+(c.trade_name?' / '+esc(c.trade_name):'')+'</p></div>'+
-            '<div class="row">'+
-              '<button id="customerOverviewNewQuote" class="primary" type="button">＋ この顧客で見積作成</button>'+
-              '<button id="customerOverviewCallConnectSync" class="ghost" type="button">CallConnectへ同期</button>'+
-              '<button id="customerOverviewEditToggle" class="ghost" type="button">基本情報を編集</button>'+
-              '<button id="customerDetailClose" class="ghost" type="button">閉じる</button>'+
-            '</div>'+
+          customerIdentityHeader(c,tab,true)+
+          '<div class="customerIdentityActions">'+
+            '<button id="customerOverviewNewQuote" class="primary" type="button">＋ この顧客で見積作成</button>'+
+            '<button id="customerOverviewCallConnectSync" class="ghost" type="button">CallConnectへ同期</button>'+
+            '<button id="customerOverviewEditToggle" class="ghost" type="button">基本情報を編集</button>'+
           '</div>'+
           unifiedTabs(tabs,tab,'customer')+
           '<div id="customerUnifiedTabBody">'+
             (c.manual_hold?'<div class="notice error"><strong>手動ホールド中</strong><br>新規取引を進める前にホールド理由・解除可否を確認してください。</div>':'')+
             kpis([
-              ['対応中',openSupportTickets.length],
-              ['障害',openIncidentCount],
-              ['設定依頼',openSettingCount],
-              ['問い合わせ',openInquiryCount],
-              ['有効契約',activeContracts.length],
-              ['稼働機器',activeAssets.length],
               ['要確認',attention.length],
-              ['直近案件',recentSupportTickets.length]
+              ['対応中',openSupportTickets.length],
+              ['稼働機器',activeAssets.length],
+              ['有効契約',activeContracts.length]
             ])+
             '<section class="customerSupportSnapshot">'+
               '<div class="customerSupportSnapshotHead"><div><h3>顧客サポート概要</h3><p>この顧客の契約・機器・問い合わせ状況を、ここだけで確認できます。</p></div><span class="pill">'+esc(openSupportTickets.length)+'件対応中</span></div>'+
@@ -4813,7 +4835,7 @@
           '</div>'+
         '</section>';
 
-      $('#customerDetailClose').onclick=()=>{host.innerHTML='';};
+      bindCustomerIdentityNavigation(customerId,host);
       $('#customerOverviewNewQuote').onclick=()=>renderCustomerQuoteCreate(customerId);
       $('#customerOverviewTransactions').onclick=()=>renderCustomerDetail(customerId,'transactions');
       $('#customerOverviewHistory').onclick=()=>renderCustomerDetail(customerId,'history');
@@ -5065,11 +5087,11 @@
 
     host.innerHTML=
       '<section class="card section">'+
-        '<div class="quoteDetailHead"><div><h2>顧客カルテ</h2><p class="sectionDesc">'+esc(c.customer_code||'—')+' / '+esc(c.name||'')+'</p></div><button id="customerDetailClose" class="ghost" type="button">閉じる</button></div>'+
+        customerIdentityHeader(c,tab,false)+
         unifiedTabs(tabs,tab,'customer')+
         '<div id="customerUnifiedTabBody">'+content+'</div>'+
       '</section>';
-    $('#customerDetailClose').onclick=()=>{host.innerHTML='';};
+    bindCustomerIdentityNavigation(customerId,host);
     bindUnifiedTabs(t=>renderCustomerDetail(customerId,t));
 
     if(tab==='files'){
