@@ -10658,13 +10658,10 @@
                 }).catch(()=>{});
               }
 
-              await rpc('close_support_ticket',{p_ticket_id:t.id});
-              toast(internal?'遠隔対応の結果を保存し、ナレッジ候補を作成して案件を完了しました':'遠隔対応の結果を保存し、ナレッジ候補を共有して案件を完了しました');
-              if(support){
-                supportQueueView='immediate';
-                await go('support_cases');
-                return;
-              }
+              toast('TeamViewerの解決結果を保存しました。作業報告を確認してから案件を完了してください。');
+              await renderTicketDetail(t.id);
+              $('#ticketCloseBtn')?.click();
+              return;
             }else if(outcome==='continue'){
               await rpc('set_support_workflow_stage',{p_ticket_id:t.id,p_stage:'in_progress'}).catch(()=>{});
               toast('遠隔対応の結果を保存し、継続対応に戻しました');
