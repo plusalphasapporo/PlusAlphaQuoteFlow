@@ -35,6 +35,15 @@ for(const id of ['internalPriority','internalTodayWork','internalRegularWork','i
 }
 assert.ok(internalHome.indexOf('id="internalPriority"')<internalHome.indexOf('id="internalTodayWork"'),"Priority cases must appear before today's work");
 assert.ok(internalHome.indexOf('id="internalTodayWork"')<internalHome.indexOf('id="internalRegularWork"'),"Today's work must appear before routine KPIs");
+assert.ok(
+  internalHome.indexOf('<h2>サポート期限管理</h2>')<internalHome.indexOf('id="internalRegularWork"'),
+  'Support deadlines must appear before routine KPIs'
+);
+assert.ok(
+  internalHome.indexOf('<h2>サポート会社からの新着引継ぎ</h2>')<internalHome.indexOf('<h2>サポート期限管理</h2>'),
+  'Unread handoffs must appear before deadline tables'
+);
+
 assert.ok(internalHome.includes('class="internalDashNav"'),'Dashboard section shortcuts must exist');
 assert.ok(internalHome.includes("target.tagName==='DETAILS'"),'Dashboard navigation must expand collapsed detail lists');
 assert.ok(internalHome.includes('data-focus="unassigned"'),'Unassigned support cases must be directly accessible');
