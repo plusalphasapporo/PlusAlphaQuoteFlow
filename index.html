@@ -13753,7 +13753,16 @@
           await go('support_cases');
         }
       }catch(err){
-        notice('#supportNewMsg',err.message||String(err));
+        const errorText=err.message||String(err);
+        if(createdTicketForThisForm){
+          if(startBtn) startBtn.textContent='登録済み案件の対応を再開 →';
+          if(saveBtn) saveBtn.textContent='案件一覧へ戻る';
+          notice('#supportNewMsg',
+            '受付は登録済みです（'+(createdTicketForThisForm.ticket_number||createdTicketForThisForm.id)+
+            '）。再登録せず、対応を再開するか案件一覧から開いてください。原因：'+errorText);
+        }else{
+          notice('#supportNewMsg',errorText);
+        }
       }finally{
         supportNewSaving=false;
         if(startBtn) startBtn.disabled=false;
