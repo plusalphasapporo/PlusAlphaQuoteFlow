@@ -32,3 +32,6 @@ jobs:
 
       - name: Test asset ledger
         run: node scripts/test-asset-ledger-ui.mjs
+
+      - name: Test case management and support navigation
+        run: node scripts/test-case-workflow-ui.mjs
