@@ -26,3 +26,6 @@ jobs:
 
       - name: Test operations UI stylesheet
         run: node scripts/test-operations-ui.mjs
+
+      - name: Test customer directory and profile
+        run: node scripts/test-customer-ui.mjs
