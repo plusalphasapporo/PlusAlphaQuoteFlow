@@ -76,3 +76,31 @@ body[data-role="support_staff"] .globalSearch,body[data-role="customer_user"] .g
 .internalDashDetailsBody>.card{box-shadow:none;border-color:#e7edf5}
 @media(max-width:900px){.internalCommandCenter .supportTodayGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:620px){.internalDashNav{padding:8px;gap:6px}.internalDashNavLabel{flex-basis:100%;margin-bottom:2px}.internalDashNav .dashboardJump{flex:1 1 calc(50% - 8px)}.internalDashDetails>summary{align-items:flex-start}.internalDashDetails>summary small{flex-basis:100%}.internalDashDetailsBody{padding:0 9px 10px}}
+
+/* Customer directory and profile navigation. */
+.customerDirectoryHead{border-color:#dce7f4}
+.customerDirectoryHead h2{font-size:19px;margin:0}
+.customerDirectoryMetrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:18px}
+.customerDirectoryMetric{min-height:78px;text-align:left;display:flex;flex-direction:column;gap:6px;background:#f8fafc;border:1px solid #dfe6ef;border-radius:9px;padding:11px 14px;color:#334155}
+.customerDirectoryMetric span{font-size:12px;font-weight:700}
+.customerDirectoryMetric strong{font-size:24px;line-height:1.15;color:#1e3a5f;font-variant-numeric:tabular-nums}
+.customerDirectoryMetric[aria-pressed="true"]{background:#eaf2fc;border-color:#76a9e8;box-shadow:inset 0 0 0 1px #76a9e8}
+.customerDirectoryMetric:hover{border-color:#76a9e8}
+.customerDirectoryMetric:focus-visible,.customerProfileJumpBtn:focus-visible{outline:3px solid #7fb4ff;outline-offset:2px}
+.customerDirectoryResults{min-width:0}
+.customerDirectoryResults h3{font-size:17px}
+.customerDirectoryResults .tableWrap td:first-child strong{color:#17283f}
+.customerDirectoryResults .customerDetail{white-space:nowrap}
+#customerDetailHost:empty{display:none}
+#customerDetailHost:not(:empty){scroll-margin-top:20px}
+.customerIdentityHeader{padding-bottom:12px;border-bottom:1px solid #e3e9f1;margin-bottom:12px}
+.customerIdentityTop{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap}
+.customerIdentityTop h2{font-size:23px;letter-spacing:-.02em;margin:5px 0}
+.customerIdentityEyebrow{font-weight:800;font-size:12px;color:#64748b}
+.customerProfileJump{display:flex;gap:6px;overflow-x:auto;padding:12px 0 2px;scrollbar-width:thin}
+.customerProfileJumpBtn{flex:0 0 auto;white-space:nowrap;padding:8px 12px;border:1px solid #dce5f0;border-radius:7px;background:#f6f9fd;color:#34465c;font-size:12px;font-weight:800}
+.customerProfileJumpBtn[aria-current="page"]{background:#1769cf;color:#fff;border-color:#1769cf}
+.customerProfileJumpBtn:hover:not([aria-current="page"]){background:#eaf2fc}
+.customerIdentityActions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+@media(max-width:900px){.customerDirectoryMetrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:620px){.customerDirectoryMetrics{gap:8px}.customerDirectoryMetric{padding:10px;min-height:67px}.customerDirectoryMetric strong{font-size:21px}.customerIdentityTop h2{font-size:20px}.customerIdentityActions button{flex:1 1 auto}.customerProfileJump{margin-right:-10px}}
