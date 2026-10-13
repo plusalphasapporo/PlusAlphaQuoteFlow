@@ -1806,13 +1806,14 @@
       };
     }
 
+    let quickStartCreatedTicket=null;
     const quickStartBtn=$('#callIncomingQuickStart');
     if(quickStartBtn){
       quickStartBtn.onclick=async()=>{
         quickStartBtn.disabled=true;
         try{
           const autoSubject='CallConnect 入電：'+(item.matched_customer_name||item.contact_company||item.contact_name||item.contact_number||'問い合わせ');
-          const result=await rpc('create_support_ticket',{
+          const result=quickStartCreatedTicket || await rpc('create_support_ticket',{
             p_customer_id:item.matched_customer_id,
             p_asset_id:null,
             p_contract_id:null,
@@ -1821,13 +1822,14 @@
             p_priority:'normal'
           });
           if(!result?.id) throw new Error('受付案件を作成できませんでした。');
+          quickStartCreatedTicket=result;
 
-          if(item.call_id){
+          if(item.call_id && !quickStartCreatedTicket.callAttached){
             await rpc('attach_callconnect_ticket',{
               p_call_id:item.call_id,
               p_customer_id:item.matched_customer_id,
               p_ticket_id:result.id
-            }).catch(err=>{console.error('CallConnect ticket attachment failed',err);toast('案件は作成されましたが、通話の紐付けに失敗しました。通話履歴から既存案件に紐付けてください。');});
+            }).then(()=>{quickStartCreatedTicket.callAttached=true;}).catch(err=>{console.error('CallConnect ticket attachment failed',err);toast('通話を紐付けできませんでした。通話履歴から既存案件に紐付けてください。');});
           }
 
           await rpc('claim_support_ticket',{p_ticket_id:result.id});
@@ -13593,7 +13595,10 @@
     }
 
     let createdTicketForThisForm=null;
+    let supportNewSaving=false;
     const createAndContinue=async(startNow)=>{
+      if(supportNewSaving) return;
+      supportNewSaving=true;
       const startBtn=$('#supportNewStartBtn');
       const saveBtn=$('#supportNewSaveOnlyBtn');
       if(startBtn) startBtn.disabled=true;
@@ -13618,12 +13623,12 @@
         if(!result?.id) throw new Error('登録した案件IDを取得できませんでした。');
         createdTicketForThisForm=result; // Subsequent retry must not create a duplicate ticket.
 
-        if(pendingIntake?.call_id){
+        if(pendingIntake?.call_id && !createdTicketForThisForm.callAttached){
           await rpc('attach_callconnect_ticket',{
             p_call_id:pendingIntake.call_id,
             p_customer_id:$('#supportNewCustomer').value,
             p_ticket_id:result.id
-          }).catch(err=>{console.error('CallConnect ticket attachment failed',err);toast('案件は作成されましたが、通話の紐付けに失敗しました。通話履歴から既存案件に紐付けてください。');});
+          }).then(()=>{createdTicketForThisForm.callAttached=true;}).catch(err=>{console.error('CallConnect ticket attachment failed',err);notice('#supportNewMsg','案件は登録済みですが通話の紐付けに失敗しました。通話履歴から既存案件に紐付けてください。');});
         }
 
         if(startNow){
@@ -13640,6 +13645,7 @@
       }catch(err){
         notice('#supportNewMsg',err.message||String(err));
       }finally{
+        supportNewSaving=false;
         if(startBtn) startBtn.disabled=false;
         if(saveBtn) saveBtn.disabled=false;
       }
