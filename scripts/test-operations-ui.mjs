@@ -33,8 +33,8 @@ const internalHome=html.slice(homeStart,supportStart);
 for(const id of ['internalPriority','internalTodayWork','internalRegularWork','internalOperationsDetails']){
   assert.equal(internalHome.split('id="'+id+'"').length-1,1,'Dashboard section missing or duplicated: '+id);
 }
-assert.ok(internalHome.indexOf('id="internalPriority"')<internalHome.indexOf('id="internalTodayWork"'),'Priority cases must appear before today's work');
-assert.ok(internalHome.indexOf('id="internalTodayWork"')<internalHome.indexOf('id="internalRegularWork"'),'Today's work must appear before routine KPIs');
+assert.ok(internalHome.indexOf('id="internalPriority"')<internalHome.indexOf('id="internalTodayWork"'),"Priority cases must appear before today's work");
+assert.ok(internalHome.indexOf('id="internalTodayWork"')<internalHome.indexOf('id="internalRegularWork"'),"Today's work must appear before routine KPIs");
 assert.ok(internalHome.includes('class="internalDashNav"'),'Dashboard section shortcuts must exist');
 assert.ok(internalHome.includes("target.tagName==='DETAILS'"),'Dashboard navigation must expand collapsed detail lists');
 assert.ok(internalHome.includes('data-focus="unassigned"'),'Unassigned support cases must be directly accessible');
