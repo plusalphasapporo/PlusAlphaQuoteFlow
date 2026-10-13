@@ -775,6 +775,70 @@
     return m;
   }
 
+
+  // Edge Function errors carry a JSON code in FunctionsHttpError.context.
+  // Show actionable Japanese text, not raw upstream error details.
+  async function edgeFunctionError(err,{write=false}={}){
+    let payload=null;
+    const response=err?.context;
+    if(response && typeof response.clone==='function'){
+      try{payload=await response.clone().json();}catch(_){}
+    }
+    const status=Number(response?.status||err?.status||err?.statusCode||0);
+    const code=String(payload?.error||err?.code||err?.message||'').trim().toLowerCase();
+    const messages={
+      missing_session:'ログイン状態を確認できません。ログインし直してください。',
+      invalid_session:'ログインの有効期限が切れました。ログインし直してください。',
+      unauthenticated:'ログインし直してください。',
+      mfa_aal2_required:'MFA認証が未完了です。Authenticatorで認証してから再操作してください。',
+      active_user_required:'アカウントが無効です。管理者へ連絡してください。',
+      active_company_required:'会社の利用設定が無効です。管理者へ連絡してください。',
+      account_disabled_or_missing:'アカウントを利用できません。管理者へ連絡してください。',
+      unsupported_role:'この操作を行う権限がありません。',
+      internal_admin_required:'この操作は自社管理者のみ実行できます。',
+      support_or_internal_role_required:'この操作は担当スタッフのみ実行できます。',
+      ai_role_not_allowed:'AI機能を利用する権限がありません。',
+      ai_not_configured:'AIのAPIキーが設定されていません。管理者が連携設定を確認してください。',
+      ai_temporarily_unavailable:'AIサービスが一時的に利用できません。少し時間をおいて再試行してください。',
+      ai_request_failed:'AIサービスの呼び出しに失敗しました。モデル設定とAPIキーを確認してください。',
+      ai_empty_response:'AIから回答を取得できませんでした。再度お試しください。',
+      ai_invalid_structured_response:'AIの回答形式が正しくありません。再度お試しください。',
+      attachment_context_unavailable:'添付ファイルを取得できません。閲覧権限と通信状態を確認してください。',
+      customer_context_unavailable:'顧客情報を取得できません。管理者へ連絡してください。',
+      ticket_not_found_or_forbidden:'案件が見つからないか、閲覧する権限がありません。',
+      ticket_not_found:'案件が見つかりません。',
+      ticket_not_accessible:'この案件を操作する権限がありません。',
+      teamviewer_token_not_configured:'TeamViewerのAPIトークンが未設定です。管理者が設定を確認してください。',
+      teamviewer_credentials_unavailable:'TeamViewerの認証情報を取得できません。管理者へ連絡してください。',
+      teamviewer_api_url_invalid:'TeamViewerの接続先設定が正しくありません。',
+      teamviewer_api_url_not_allowed:'TeamViewerの接続先が許可されていません。',
+      teamviewer_api_error:'TeamViewerのAPIでエラーが発生しました。連携設定を確認してください。',
+      teamviewer_api_unreachable:'TeamViewerに接続できません。ネットワークとAPI設定を確認してください。',
+      teamviewer_session_not_found:'TeamViewerセッションがありません。遠隔対応履歴を確認してください。',
+      teamviewer_session_close_failed:'TeamViewerセッションを終了できませんでした。接続状態を確認してください。',
+      teamviewer_session_refresh_failed:'TeamViewerの接続状態を取得できませんでした。',
+      teamviewer_session_update_failed:'TeamViewerの接続状態を保存できませんでした。',
+      teamviewer_result_save_failed:'TeamViewerの対応結果を保存できませんでした。既存の記録を確認してください。',
+      ticket_closed:'この案件は完了済みです。案件を再開してから操作してください。'
+    };
+    let message=messages[code];
+    if(!message){
+      if(isOfflineError(err)) message=friendlyError(err,{write});
+      else if(status===401) message='ログインの有効期限が切れました。ログインし直してください。';
+      else if(status===403) message='MFA認証と操作権限を確認してください。';
+      else if(status===429) message='接続先へのリクエストが集中しています。少し時間をおいてください。';
+      else if(status===404) message='接続先または案件が見つかりません。設定を確認してください。';
+      else if(status>=500) message='外部サービスでエラーが発生しました。設定と通信状態を確認してください。';
+      else message='外部サービスへの接続または処理に失敗しました。';
+    }
+    // A write may have committed before a timeout. Do not automatically retry.
+    if(write && (isOfflineError(err)||status===408||status===502||status===503||
+      status===504||code.includes('unreachable')||code.includes('temporarily_unavailable'))){
+      message+=' 操作が保存されている可能性があります。履歴を確認してから再操作してください。';
+    }
+    return new Error(message);
+  }
+
   function setConnectionState(state,message){
     const bar=$('#connectionBanner');
     if(!bar) return;
@@ -6675,7 +6739,8 @@
         try{
           notice('#teamviewerApiMsg','TeamViewer APIへ接続確認しています...',true);
           const {data,error}=await supabase.functions.invoke('teamviewer-api',{body:{action:'test'}});
-          if(error) throw error;
+          if(error) throw await edgeFunctionError(error,{write:false});
+          if(data?.error) throw await edgeFunctionError(new Error(String(data.error)),{write:false});
           if(!data?.ok) throw new Error('TeamViewer API接続に失敗しました。');
           notice('#teamviewerApiMsg','TeamViewer API接続に成功しました。',true);
           toast('TeamViewer API接続確認に成功しました');
@@ -8787,8 +8852,8 @@
         try{
           if(host){host.classList.remove('hidden');host.classList.remove('error');host.textContent='通話内容を整理しています...';}
           const {data,error}=await supabase.functions.invoke('ai-assistant',{body:{ticketId:t.id,action:'call_summary'}});
-          if(error) throw error;
-          if(data?.error) throw new Error(data.error);
+          if(error) throw await edgeFunctionError(error,{write:false});
+          if(data?.error) throw await edgeFunctionError(new Error(String(data.error)),{write:false});
           if(host){host.classList.remove('hidden');host.textContent=data?.text||'整理結果を取得できませんでした。';}
         }catch(err){
           if(host){host.classList.remove('hidden');host.classList.add('error');host.textContent='AI整理に失敗しました。原文はそのまま確認できます。\n'+String(err.message||err);}
@@ -8804,8 +8869,8 @@
         try{
           if(host){host.classList.remove('hidden');host.innerHTML='<div class="notice">分類候補を作成しています...</div>';}
           const {data,error}=await supabase.functions.invoke('ai-assistant',{body:{ticketId:t.id,action:'call_classify'}});
-          if(error) throw error;
-          if(data?.error) throw new Error(data.error);
+          if(error) throw await edgeFunctionError(error,{write:false});
+          if(data?.error) throw await edgeFunctionError(new Error(String(data.error)),{write:false});
           const x=data?.candidate||{};
           const typeLabel=x.request_type==='incident'?'障害':x.request_type==='setting_request'?'設定依頼':'問い合わせ';
           if(host){
@@ -8888,8 +8953,8 @@
           const {data,error}=await supabase.functions.invoke('ai-assistant',{
             body:{ticketId:t.id,action:'incident_diagnose',additionalContext}
           });
-          if(error) throw error;
-          if(data?.error) throw new Error(data.error);
+          if(error) throw await edgeFunctionError(error,{write:false});
+          if(data?.error) throw await edgeFunctionError(new Error(String(data.error)),{write:false});
           const x=data?.result||{};
           const confidenceLabel=v=>v==='high'?'高':v==='medium'?'中':'低';
           const confidenceClass=v=>v==='high'?'good':v==='medium'?'warn':'';
@@ -9674,7 +9739,8 @@
             const {data,error}=await supabase.functions.invoke('teamviewer-api',{
               body:{action:'create_session',ticket_id:t.id,action_text:'顧客から遠隔サポート開始'}
             });
-            if(error) throw error;
+            if(error) throw await edgeFunctionError(error,{write:true});
+            if(data?.error) throw await edgeFunctionError(new Error(String(data.error)),{write:true});
             if(!data?.ok||!data?.session?.end_customer_link) throw new Error('遠隔サポートを開始できませんでした。');
             toast('遠隔サポートを開始しました');
             window.open(data.session.end_customer_link,'_blank','noopener,noreferrer');
@@ -10495,7 +10561,8 @@
             const {data,error}=await supabase.functions.invoke('teamviewer-api',{
               body:{action:'create_session',ticket_id:t.id,action_text:action}
             });
-            if(error) throw error;
+            if(error) throw await edgeFunctionError(error,{write:true});
+            if(data?.error) throw await edgeFunctionError(new Error(String(data.error)),{write:true});
             if(!data?.ok||!data?.session?.session_code) throw new Error('TeamViewerセッションを発行できませんでした。');
             await rpc('set_support_workflow_stage',{p_ticket_id:t.id,p_stage:'teamviewer_waiting'}).catch(()=>{});
             await rpc('post_ticket_message',{
@@ -10534,7 +10601,8 @@
           const {data,error}=await supabase.functions.invoke('teamviewer-api',{
             body:{action:'refresh_session',ticket_id:t.id}
           });
-          if(error) throw error;
+          if(error) throw await edgeFunctionError(error,{write:false});
+          if(data?.error) throw await edgeFunctionError(new Error(String(data.error)),{write:false});
           if(showToast) toast('TeamViewer接続状態を更新しました');
           return data?.session||null;
         }catch(err){
@@ -10559,7 +10627,8 @@
           const {data,error}=await supabase.functions.invoke('teamviewer-api',{
             body:{action:'finish_session',ticket_id:t.id}
           });
-          if(error) throw error;
+          if(error) throw await edgeFunctionError(error,{write:true});
+          if(data?.error) throw await edgeFunctionError(new Error(String(data.error)),{write:true});
           if(!data?.ok) throw new Error('TeamViewerセッションを終了できませんでした。');
           toast('TeamViewer遠隔対応を終了しました');
           await renderTicketDetail(t.id);
@@ -10618,7 +10687,8 @@
             const {data,error}=await supabase.functions.invoke('teamviewer-api',{
               body:{action:'record_result',ticket_id:t.id,outcome,work_note:note}
             });
-            if(error) throw error;
+            if(error) throw await edgeFunctionError(error,{write:true});
+            if(data?.error) throw await edgeFunctionError(new Error(String(data.error)),{write:true});
             if(!data?.ok) throw new Error('TeamViewer対応結果を保存できませんでした。');
 
             const resultLabel={resolved:'解決',continue:'継続対応',escalate:'自社引継ぎ'}[outcome]||outcome;
@@ -13665,10 +13735,15 @@
         let remoteHtml='';
         if(d.ticket?.status!=='closed'){
           let remoteStatus=null;
+          let remoteStatusError='';
           try{
             const {data,error}=await supabase.functions.invoke('teamviewer-api',{body:{action:'status',ticket_id:d.ticket?.id}});
-            if(!error) remoteStatus=data;
-          }catch(_){}
+            if(error) throw await edgeFunctionError(error);
+            if(data?.error) throw await edgeFunctionError(new Error(String(data.error)));
+            remoteStatus=data;
+          }catch(err){
+            remoteStatusError=String(err?.message||'遠隔サポートの状態を確認できませんでした。');
+          }
           if(remoteStatus?.session?.end_customer_link){
             remoteHtml=
               '<section class="card section" style="box-shadow:none;border:1px solid var(--line)">'+
@@ -13685,6 +13760,11 @@
                 '<button id="customerRemoteStart" class="primary" type="button">遠隔サポートを開始</button>'+
                 '<div id="customerRemoteMsg" class="notice hidden"></div>'+
               '</section>';
+          }else if(remoteStatusError){
+            remoteHtml=
+              '<section class="card section" style="box-shadow:none;border:1px solid var(--line)">'+
+                '<h3>遠隔サポート</h3><div class="notice warn">'+esc(remoteStatusError)+'</div>'+
+              '</section>';
           }
           setTimeout(()=>{
             const openBtn=$('#customerRemoteOpen');
@@ -13700,7 +13780,8 @@
                   const {data,error}=await supabase.functions.invoke('teamviewer-api',{
                     body:{action:'create_session',ticket_id:d.ticket?.id,action_text:'顧客から遠隔サポート開始'}
                   });
-                  if(error) throw error;
+                  if(error) throw await edgeFunctionError(error,{write:true});
+                  if(data?.error) throw await edgeFunctionError(new Error(String(data.error)),{write:true});
                   if(!data?.ok||!data?.session?.end_customer_link) throw new Error('遠隔サポートを開始できませんでした。');
                   toast('遠隔サポートを開始しました');
                   window.open(data.session.end_customer_link,'_blank','noopener,noreferrer');
