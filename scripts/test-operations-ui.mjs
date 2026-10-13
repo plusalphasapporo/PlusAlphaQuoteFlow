@@ -26,4 +26,21 @@ for(const role of ['support_staff','customer_user']){
   }
 }
 
+const homeStart=html.indexOf('  async function renderHome(){');
+const supportStart=html.indexOf("    if(role==='support_staff'){",homeStart);
+assert.ok(homeStart>=0&&supportStart>homeStart,'Internal dashboard block must be present');
+const internalHome=html.slice(homeStart,supportStart);
+for(const id of ['internalPriority','internalTodayWork','internalRegularWork','internalOperationsDetails']){
+  assert.equal(internalHome.split('id="'+id+'"').length-1,1,'Dashboard section missing or duplicated: '+id);
+}
+assert.ok(internalHome.indexOf('id="internalPriority"')<internalHome.indexOf('id="internalTodayWork"'),'Priority cases must appear before today's work');
+assert.ok(internalHome.indexOf('id="internalTodayWork"')<internalHome.indexOf('id="internalRegularWork"'),'Today's work must appear before routine KPIs');
+assert.ok(internalHome.includes('class="internalDashNav"'),'Dashboard section shortcuts must exist');
+assert.ok(internalHome.includes("target.tagName==='DETAILS'"),'Dashboard navigation must expand collapsed detail lists');
+assert.ok(internalHome.includes('data-focus="unassigned"'),'Unassigned support cases must be directly accessible');
+assert.ok(internalHome.includes("rpcOptional('callconnect_dashboard'"),'CallConnect failures must not block the whole dashboard');
+for(const selector of ['.internalDashNav','.internalDashDetails','.internalCommandCenter .supportTodayGrid']){
+  assert.ok(css.includes(selector),'Dashboard responsive styling missing: '+selector);
+}
+
 console.log('Operations UI stylesheet integration checks passed.');
