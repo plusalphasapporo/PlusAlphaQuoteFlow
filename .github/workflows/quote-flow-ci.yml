@@ -23,3 +23,5 @@ jobs:
 
       - name: Validate production HTML
         run: node scripts/validate-static.mjs
+      - name: Test CallConnect audit handling
+        run: node scripts/test-callconnect-audit.mjs
