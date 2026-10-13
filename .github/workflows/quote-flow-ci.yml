@@ -35,3 +35,6 @@ jobs:
 
       - name: Test case management and support navigation
         run: node scripts/test-case-workflow-ui.mjs
+
+      - name: Test internal handoff workflow
+        run: node scripts/test-handoff-workflow-ui.mjs
