@@ -10564,14 +10564,34 @@
             if(error) throw await edgeFunctionError(error,{write:true});
             if(data?.error) throw await edgeFunctionError(new Error(String(data.error)),{write:true});
             if(!data?.ok||!data?.session?.session_code) throw new Error('TeamViewerセッションを発行できませんでした。');
-            await rpc('set_support_workflow_stage',{p_ticket_id:t.id,p_stage:'teamviewer_waiting'}).catch(()=>{});
-            await rpc('post_ticket_message',{
-              p_ticket_id:t.id,
-              p_visibility:'support',
-              p_body:'【TeamViewerセッション発行】\nセッションコード: '+data.session.session_code+'\n対応予定: '+action
-            }).catch(()=>{});
-            toast('TeamViewerセッションを発行しました');
+            // The external session is already created. Do not call create_session
+            // again if the workflow stage or timeline write fails.
+            const syncFailures=[];
+            try{
+              await rpc('set_support_workflow_stage',{p_ticket_id:t.id,p_stage:'teamviewer_waiting'});
+            }catch(err){
+              console.warn('[TeamViewer workflow stage sync failed]',err);
+              syncFailures.push('対応工程');
+            }
+            try{
+              await rpc('post_ticket_message',{
+                p_ticket_id:t.id,
+                p_visibility:'support',
+                p_body:'【TeamViewerセッション発行】\nセッションコード: '+data.session.session_code+'\n対応予定: '+action
+              });
+            }catch(err){
+              console.warn('[TeamViewer issuance history sync failed]',err);
+              syncFailures.push('セッション発行履歴');
+            }
             await renderTicketDetail(t.id);
+            if(syncFailures.length){
+              const warning='TeamViewerセッションは発行済みですが、'+syncFailures.join('・')+
+                'を案件に保存できませんでした。セッションを再発行せず、既存の遠隔接続と対応履歴を確認してください。';
+              notice('#ticketRemoteMsg',warning);
+              toast('TeamViewerは発行済みです。案件記録を確認してください。');
+            }else{
+              toast('TeamViewerセッションを発行し、案件カルテへ記録しました');
+            }
           }catch(err){notice('#ticketRemoteMsg',err.message||String(err));}
           finally{createTeamViewerSession.disabled=false;}
         };
@@ -10683,6 +10703,8 @@
           const note=($('#ticketRemoteResultNote')?.value||'').trim();
           if(!note) return notice('#ticketRemoteMsg','対応内容・結果を入力してください。');
           document.querySelectorAll('.ticketRemoteOutcome').forEach(x=>x.disabled=true);
+          let remoteResultSaved=false;
+          let timelineFailed=false;
           try{
             const {data,error}=await supabase.functions.invoke('teamviewer-api',{
               body:{action:'record_result',ticket_id:t.id,outcome,work_note:note}
@@ -10690,13 +10712,19 @@
             if(error) throw await edgeFunctionError(error,{write:true});
             if(data?.error) throw await edgeFunctionError(new Error(String(data.error)),{write:true});
             if(!data?.ok) throw new Error('TeamViewer対応結果を保存できませんでした。');
+            remoteResultSaved=true;
 
             const resultLabel={resolved:'解決',continue:'継続対応',escalate:'自社引継ぎ'}[outcome]||outcome;
-            await rpc('post_ticket_message',{
-              p_ticket_id:t.id,
-              p_visibility:'support',
-              p_body:'【TeamViewer遠隔対応】\n結果: '+resultLabel+'\n対応時間（概算）: '+teamviewerDurationText+'\n対応内容: '+note
-            }).catch(()=>{});
+            try{
+              await rpc('post_ticket_message',{
+                p_ticket_id:t.id,
+                p_visibility:'support',
+                p_body:'【TeamViewer遠隔対応】\n結果: '+resultLabel+'\n対応時間（概算）: '+teamviewerDurationText+'\n対応内容: '+note
+              });
+            }catch(err){
+              console.warn('[TeamViewer outcome history sync failed]',err);
+              timelineFailed=true;
+            }
 
             if(outcome==='resolved'){
               const knowledgeBody=[
@@ -10712,9 +10740,14 @@
 
               // ナレッジ化は作業報告の最終確認画面で担当者が選択する。
 
-              toast('TeamViewerの解決結果を保存しました。作業報告を確認してから案件を完了してください。');
+              toast(timelineFailed
+                ? 'TeamViewer結果は保存済みですが、案件の対応履歴を確認してください。'
+                : 'TeamViewerの解決結果を保存しました。作業報告を確認してから案件を完了してください。');
               await renderTicketDetail(t.id);
               $('#ticketCloseBtn')?.click();
+              if(timelineFailed){
+                notice('#workReportMsg','TeamViewer結果は保存済みですが、対応履歴への転記に失敗しました。作業報告に内容が反映されているか確認してください。');
+              }
               return;
             }else if(outcome==='continue'){
               await rpc('set_support_workflow_stage',{p_ticket_id:t.id,p_stage:'in_progress'}).catch(()=>{});
@@ -10728,7 +10761,14 @@
               toast('遠隔対応の結果を保存し、自社へ引き継ぎました');
             }
             await renderTicketDetail(t.id);
-          }catch(err){notice('#ticketRemoteMsg',err.message||String(err));}
+            if(timelineFailed){
+              notice('#ticketRemoteMsg','TeamViewer結果は保存済みですが、案件の対応履歴への転記ができませんでした。既存の結果を確認し、必要に応じて対応履歴に記載してください。');
+            }
+          }catch(err){
+            notice('#ticketRemoteMsg',remoteResultSaved
+              ? 'TeamViewerの対応結果は保存済みですが、後続の案件処理に失敗しました。履歴を確認してから再操作してください。 '+(err.message||String(err))
+              : (err.message||String(err)));
+          }
           finally{document.querySelectorAll('.ticketRemoteOutcome').forEach(x=>x.disabled=false);}
         };
       });
