@@ -10640,23 +10640,7 @@
                 '確認結果: 解決'+(teamviewerDurationText&&teamviewerDurationText!=='—'?' / 対応時間（概算）: '+teamviewerDurationText:'')
               ].join('\n\n');
 
-              if(internal){
-                await rpc('save_knowledge_article',{
-                  p_id:null,
-                  p_title:(t.subject||'TeamViewer対応')+' - 解決手順',
-                  p_category:supportRequestTypeLabel(t.request_type),
-                  p_body:knowledgeBody,
-                  p_audience:'support',
-                  p_tags:[supportRequestTypeLabel(t.request_type),'TeamViewer','解決','候補'],
-                  p_is_active:false
-                }).catch(()=>{});
-              }else{
-                await rpc('post_ticket_message',{
-                  p_ticket_id:t.id,
-                  p_visibility:'internal',
-                  p_body:'【ナレッジ候補】\n'+knowledgeBody
-                }).catch(()=>{});
-              }
+              // ナレッジ化は作業報告の最終確認画面で担当者が選択する。
 
               toast('TeamViewerの解決結果を保存しました。作業報告を確認してから案件を完了してください。');
               await renderTicketDetail(t.id);
