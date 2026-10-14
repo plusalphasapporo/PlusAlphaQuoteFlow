@@ -13262,6 +13262,8 @@
     const data=await rpc('internal_knowledge_articles');
     const audienceText=a=>({internal:'自社のみ',support:'サポート会社',customer:'顧客会社',all:'全社'}[a]||a);
     const isRejected=k=>(k.tags||[]).includes('却下');
+    const isCustomerWebDraft=k=>k.category==='Web詳細調査'||(k.tags||[]).some(t=>/^(customer:|web-cache:)/i.test(String(t)));
+
     const candidates=(data||[]).filter(k=>k.is_active===false&&!isRejected(k));
     const published=(data||[]).filter(k=>k.is_active!==false);
     const rejected=(data||[]).filter(k=>k.is_active===false&&isRejected(k));
@@ -13350,7 +13352,7 @@
             : '';
         })()+
         '<div class="supportQuickActions" style="margin-top:10px">'+
-          '<button class="green knowledgeCandidatePublish" type="button" data-id="'+esc(k.id)+'">新規として公開</button>'+
+          (isCustomerWebDraft(k)?'<span class="pill warn">顧客別調査は直接公開不可（一般向けの新規ナレッジとして作成）</span>':'<button class="green knowledgeCandidatePublish" type="button" data-id="'+esc(k.id)+'">新規として公開</button>')+
           '<button class="primary knowledgeAdminEdit" type="button" data-id="'+esc(k.id)+'">修正</button>'+
           '<button class="ghost knowledgeCandidateReject" type="button" data-id="'+esc(k.id)+'">却下</button>'+
         '</div>'+
@@ -13397,6 +13399,7 @@
           if(!symptom) throw new Error('症状・依頼を入力してください。');
           if(!procedure) throw new Error('対応手順を入力してください。');
           const tags=$('#kaTags').value.split(',').map(x=>x.trim()).filter(Boolean).filter(x=>x!=='却下');
+          if(k.id&&isCustomerWebDraft(k)&&$('#kaActive').checked) throw new Error('顧客別Web調査は直接公開できません。顧客情報を除いた新しいナレッジとして登録してください。');
           await rpc('save_knowledge_article',{
             p_id:k.id||null,
             p_title:title,
