@@ -8901,6 +8901,56 @@
 
     $('#ticketDetailClose').onclick=()=>{activeTicketId=null;$('#ticketDetailHost').innerHTML='';};
     $('#ticketDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
+
+    // The customer context stays in a modal: preserve the current ticket,
+    // unsent text and current workflow/scroll position.
+    const openTicketCustomerPanel=()=>{
+      mountAppModal(
+        '<div class="appModalHead"><div><h2>顧客・機器情報</h2><p>'+esc(t.ticket_number||'案件')+' / '+esc(cust?.name||'顧客未登録')+'</p></div><button id="ticketCustomerPanelClose" class="ghost" type="button">× 閉じる</button></div>'+
+        '<div class="appModalBody">'+
+          '<div class="modalGrid2">'+
+            '<div class="item"><strong>顧客</strong><p>'+esc(cust?.customer_code||'—')+' / '+esc(cust?.name||'未登録')+'</p></div>'+
+            '<div class="item"><strong>担当者・連絡先</strong><p>'+esc(primary?.name||'未登録')+' / '+esc(primary?.phone||primary?.email||'連絡先未登録')+'</p></div>'+
+            '<div class="item"><strong>対象機器</strong><p>'+(asset?esc(asset.asset_number||'—')+' / '+esc(asset.model_name||'')+' / '+esc(asset.serial_number||''):'未指定')+'</p></div>'+
+            '<div class="item"><strong>契約</strong><p>'+esc(contract?.contract_number||'未指定')+'</p></div>'+
+          '</div>'+
+          '<section class="item" style="margin-top:12px"><div class="row between" style="gap:10px;flex-wrap:wrap"><strong>顧客情報フォルダ（Microsoft 365）</strong><span class="pill">別タブで開く</span></div>'+
+            '<p class="muted">案件は開いたままです。アクセス可能な顧客フォルダだけを表示します。</p>'+
+            '<div id="ticketCustomerFolderStatus" class="notice">情報フォルダを確認中...</div>'+
+            '<div id="ticketCustomerFolderLink"></div>'+
+          '</section>'+
+        '</div>'+
+        '<div class="appModalFoot"><button id="ticketCustomerPanelDone" class="primary" type="button">案件に戻る</button></div>',
+        true
+      );
+      $('#ticketCustomerPanelClose').onclick=closeAppModal;
+      $('#ticketCustomerPanelDone').onclick=closeAppModal;
+      const folderStatus=$('#ticketCustomerFolderStatus');
+      const folderHost=$('#ticketCustomerFolderLink');
+      const customerId=String(t.customer_id||'');
+      if(!customerId){
+        folderStatus.textContent='顧客が登録されていないため、情報フォルダを確認できません。';
+        return;
+      }
+      customerM365Invoke({action:'get_quick_link',customerId,ticketId:t.id})
+        .then(data=>{
+          if(!folderHost?.isConnected || !folderStatus?.isConnected) return;
+          let url='';
+          try{
+            const parsed=new URL(String(data?.webUrl||''));
+            if(parsed.protocol==='https:' && parsed.hostname.toLowerCase().endsWith('.sharepoint.com')) url=parsed.href;
+          }catch(_){}
+          if(data?.linked && url){
+            folderStatus.textContent='対象顧客のフォルダが確認できました。';
+            folderHost.innerHTML='<a class="primary" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;justify-content:center;text-decoration:none;padding:12px 16px;border-radius:10px">情報フォルダを開く ↗</a>';
+          }else{
+            folderStatus.textContent='情報フォルダの紐付けを確認できません。自社管理者が顧客カルテの「情報フォルダ」で紐付けしてください。';
+          }
+        })
+        .catch(err=>{
+          if(folderStatus?.isConnected) folderStatus.textContent='情報フォルダを表示できません。'+String(err.message||err);
+        });
+    };
     const ticketCallAiSummary=$('#ticketCallAiSummary');
     if(ticketCallAiSummary){
       ticketCallAiSummary.onclick=async()=>{
@@ -9459,14 +9509,7 @@
         return internalJump('#supportTicketCustomerContext');
       };
       const customerBtn=$('#internalTicketCustomer');
-      if(customerBtn) customerBtn.onclick=async()=>{
-        customerBtn.disabled=true;
-        try{
-          await go('customers');
-          await renderCustomerDetail(t.customer_id);
-        }catch(err){toast(err.message||String(err));}
-        finally{customerBtn.disabled=false;}
-      };
+      if(customerBtn) customerBtn.onclick=openTicketCustomerPanel;
       const messageBtn=$('#internalTicketMessage');
       if(messageBtn) messageBtn.onclick=()=>{
         const form=$('#ticketMessageForm');
@@ -9504,7 +9547,7 @@
       if(topPrimaryAction) topPrimaryAction.onclick=()=>$('#supportPrimaryNext')?.click();
       const topCustomer=$('#supportTopCustomer');
       const topAttachments=$('#supportTopAttachments');
-      if(topCustomer) topCustomer.onclick=()=>jump('#supportTicketCustomerContext');
+      if(topCustomer) topCustomer.onclick=openTicketCustomerPanel;
       if(topAttachments) topAttachments.onclick=()=>jump('#ticketAttachmentGallery');
       document.querySelectorAll('.supportTopAttachmentJump').forEach(btn=>btn.onclick=()=>jump('#ticketAttachmentGallery'));
       const contentJump=$('#supportTicketContentJump');
@@ -9519,7 +9562,7 @@
       const linearCustomer=$('#ticketLinearCustomer');
       const linearAttachments=$('#ticketLinearAttachments');
       if(contentJump) contentJump.onclick=()=>jump('#ticketAttachmentGallery');
-      if(customerJump) customerJump.onclick=()=>jump('#supportTicketCustomerContext');
+      if(customerJump) customerJump.onclick=openTicketCustomerPanel;
       const aiJump=$('#supportTicketAiJump');
       if(aiJump) aiJump.onclick=()=>{
         jump('#supportKnowledgeWorkspace');
@@ -9863,11 +9906,8 @@
         jump('#supportRemoteWorkspace');
         setTimeout(()=>($('#ticketRemoteAction')||$('#ticketTeamViewerCreate'))?.focus(),250);
       };
-      if(actionCustomer) actionCustomer.onclick=()=>{
-        jump('#supportTicketCustomerContext');
-        setTimeout(()=>$('#supportTicketCustomerContext button, #supportTicketCustomerContext input, #supportTicketCustomerContext select, #supportTicketCustomerContext textarea')?.focus(),250);
-      };
-      if(linearCustomer) linearCustomer.onclick=()=>jump('#supportTicketCustomerContext');
+      if(actionCustomer) actionCustomer.onclick=openTicketCustomerPanel;
+      if(linearCustomer) linearCustomer.onclick=openTicketCustomerPanel;
       if(linearAttachments) linearAttachments.onclick=()=>jump('#ticketAttachmentGallery');
 
       const openClassification=(type)=>{
