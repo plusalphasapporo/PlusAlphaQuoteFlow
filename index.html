@@ -3608,7 +3608,9 @@
     const parentOptions=(options?.parents||[]).map(x=>
       '<option value="'+esc(x.id)+'">'+esc(x.customer_code||'—')+' / '+esc(x.name||'')+'</option>'
     ).join('');
-    const supportOptions=(options?.support_companies||[]).map(x=>
+    const supportCompanies=Array.isArray(options?.support_companies)?options.support_companies:[];
+    const defaultSupportCompanyId=supportCompanies.length===1?String(supportCompanies[0].id||''):'';
+    const supportOptions=supportCompanies.map(x=>
       '<option value="'+esc(x.id)+'">'+esc(x.name||'')+'</option>'
     ).join('');
     const salesOwnerOptions=(options?.sales_owners||[]).map(x=>
@@ -3680,7 +3682,7 @@
               '<div class="field"><label>自社営業担当</label><select id="customerSalesOwner"><option value="">未設定</option>'+salesOwnerOptions+'</select></div>'+
               '<div class="field"><label>取引開始日</label><input id="customerRelationshipStarted" type="date"></div>'+
               '<div class="field"><label>流入経路・紹介元</label><input id="customerLeadSource" placeholder="例：既存顧客紹介"></div>'+
-              '<div class="field"><label>サポート会社</label><select id="customerSupportCompany"><option value="">指定なし</option>'+supportOptions+'</select></div>'+
+              '<div class="field"><label>サポート会社（全顧客対応・必須）</label><select id="customerSupportCompany" required><option value="">選択してください</option>'+supportOptions+'</select><small>サポート会社は全顧客を担当します。新規顧客の障害・問い合わせ・設定依頼も通知対象となります。</small></div>'+
               '<label class="row" style="align-self:end;margin-bottom:10px"><input id="customerManualHold" type="checkbox"> 新規取引を手動ホールド</label>'+
             '</div>'+
           '</section>'+
@@ -3709,6 +3711,14 @@
     updateBranch();
     $('#customerCreateClose').onclick=closeAppModal;
     $('#customerCreateCancel').onclick=closeAppModal;
+    // Currently one support company covers all customers. Keep explicit
+    // support_assignments in place for authorization; never expand RLS to
+    // unassigned companies. A new customer must select a support partner.
+    const ensureSupportCompany=()=>{
+      const select=$('#customerSupportCompany');
+      if(select && !select.value && defaultSupportCompanyId) select.value=defaultSupportCompanyId;
+    };
+    ensureSupportCompany();
 
     const draftKey='quoteflow.customerDraft.'+(bootData?.context?.user_id||'current');
     const draftFieldIds=[
@@ -3750,6 +3760,7 @@
         else el.value=data[id];
       });
       updateBranch();
+      ensureSupportCompany();
       const n=$('#customerDraftNotice');
       if(n){
         n.classList.remove('hidden');
@@ -3762,6 +3773,7 @@
       localStorage.removeItem(draftKey);
       $('#customerCreateForm').reset();
       updateBranch();
+      ensureSupportCompany();
       duplicateState={exact_corporate_number:[],similar_name:[]};
       $('#customerDuplicateWarning').classList.add('hidden');
       $('#customerDraftNotice').classList.add('hidden');
@@ -3772,6 +3784,7 @@
       const missing=[];
       if(!$('#customerName').value.trim()) missing.push('会社名');
       if($('#customerBranchType').value==='branch'&&!$('#customerParent').value) missing.push('親顧客');
+      if(!$('#customerSupportCompany').value) missing.push('サポート会社');
       const st=$('#customerRequiredStatus');
       if(st) st.textContent=missing.length?'未入力：'+missing.join('・'):'必須項目は入力済みです。';
     };
@@ -3855,6 +3868,7 @@
         const corporateNumber=$('#customerCorporateNumber').value.trim();
         if(!$('#customerName').value.trim()) throw new Error('会社名・法人名は必須です。');
         if($('#customerBranchType').value==='branch'&&!$('#customerParent').value) throw new Error('支店・営業所・店舗の場合は親顧客を選択してください。');
+        if(!$('#customerSupportCompany').value) throw new Error('全顧客を担当するサポート会社を選択してください。');
         if(corporateNumber && !/^\d{13}$/.test(corporateNumber)) throw new Error('法人番号は13桁の数字で入力してください。');
 
         await checkDuplicate();
