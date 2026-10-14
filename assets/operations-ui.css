@@ -37,3 +37,135 @@ body[data-role="support_staff"] .headerLogout{color:#fff;border-color:rgba(255,2
 @media(max-width:1050px){header{grid-template-columns:220px 1fr auto}}
 @media(max-width:980px){.wrap{padding:14px}.appShell{grid-template-columns:1fr;gap:12px}.side{position:static;padding:8px}#navMenu{display:flex;gap:5px;overflow-x:auto}.navBtn{flex:none;width:auto;white-space:nowrap}}
 @media(max-width:780px){header{grid-template-columns:minmax(0,1fr) auto;height:auto;min-height:64px;gap:8px;padding:10px 12px}.brand{font-size:17px}.globalSearch{grid-column:1/-1;grid-row:2}.headerActions{grid-column:2;grid-row:1}.workspaceHead{padding:5px 0 14px}.workspaceHead h1{font-size:22px}.card{padding:14px}.kpi{padding:13px}.kpi .value{font-size:25px}th,td{padding:10px 11px}}
+
+/* Consistent accessible actions and role-specific header contrast. */
+button:focus-visible,a:focus-visible,[tabindex]:focus-visible{outline:3px solid #7fb4ff;outline-offset:2px}
+.navBtn:focus-visible,.workspaceTab:focus-visible{outline:3px solid #b7d8ff;outline-offset:2px}
+body[data-role="customer_user"] header{background:#14532d;border-color:#14532d;color:#fff}
+body[data-role="customer_user"] .brand{color:#fff}
+body[data-role="customer_user"] .brandBlock .sub{color:#dcfce7}
+body[data-role="customer_user"] .headerActions{color:#fff}
+body[data-role="customer_user"] .headerPill,body[data-role="customer_user"] .headerIconBtn{color:#fff;background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.22)}
+body[data-role="customer_user"] .headerLogout{color:#fff;border-color:rgba(255,255,255,.22)}
+body[data-role="support_staff"] .globalSearch,body[data-role="customer_user"] .globalSearch{background:#fff;color:#334155}
+@media(max-width:980px){.side{max-height:none;overflow:visible}}
+@media(max-width:780px){.globalSearch{width:100%;min-width:0}#navMenu{scrollbar-width:thin}}
+
+/* Internal dashboard: information hierarchy before routine operations. */
+.internalDashNav{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:12px 0 4px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff}
+.internalDashNavLabel{font-size:12px;font-weight:750;color:#52637a;margin-right:4px}
+.internalDashNav .dashboardJump{border:1px solid #d7e1ed;border-radius:7px;background:#f6f9fd;color:#294260;padding:8px 12px;min-height:36px;font-size:12px;font-weight:750}
+.internalDashNav .dashboardJump:hover{background:#eaf2fc;border-color:#91b8e7;color:#174b8d}
+.internalDashNav .dashboardJump:focus-visible,.internalDashDetails>summary:focus-visible{outline:3px solid #7fb4ff;outline-offset:2px}
+#internalPriority,#internalTodayWork,#internalRegularWork,#internalOperationsDetails{scroll-margin-top:24px}
+.internalCommandCenter{border:1px solid #dce7f4;background:#fff;box-shadow:var(--shadow)}
+.internalCommandCenter .supportTodayGrid{grid-template-columns:repeat(3,minmax(0,1fr))}
+.internalCommandCenter .supportTodayTile{min-width:0;min-height:90px;padding:13px 14px;border-radius:9px}
+.internalCommandCenter .supportTodayTile strong{font-size:26px;margin-top:8px}
+.internalCommandCenter .supportTodayTile em{margin-top:6px}
+.internalTodayWork{border-left:3px solid var(--blue)}
+.internalTodayWork .empty{margin-top:8px}
+.internalDashDetails{border:1px solid var(--line);border-radius:10px;background:#fff;overflow:hidden;box-shadow:var(--shadow)}
+.internalDashDetails>summary{display:flex;gap:10px;align-items:center;flex-wrap:wrap;cursor:pointer;padding:15px 17px;font-weight:800;color:#1c3553}
+.internalDashDetails>summary:hover{background:#f6f9fd}
+.internalDashDetails>summary::after{content:"詳細を開く";margin-left:auto;font-size:12px;color:#1769cf}
+.internalDashDetails[open]>summary::after{content:"閉じる"}
+.internalDashDetails>summary small{color:#64748b;font-size:12px;font-weight:500}
+.internalDashDetailsBody{padding:0 14px 16px}
+.internalDashDetailsBody>.section:first-child{margin-top:0}
+.internalDashDetailsBody>.card{box-shadow:none;border-color:#e7edf5}
+@media(max-width:900px){.internalCommandCenter .supportTodayGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:620px){.internalDashNav{padding:8px;gap:6px}.internalDashNavLabel{flex-basis:100%;margin-bottom:2px}.internalDashNav .dashboardJump{flex:1 1 calc(50% - 8px)}.internalDashDetails>summary{align-items:flex-start}.internalDashDetails>summary small{flex-basis:100%}.internalDashDetailsBody{padding:0 9px 10px}}
+
+/* Customer directory and profile navigation. */
+.customerDirectoryHead{border-color:#dce7f4}
+.customerDirectoryHead h2{font-size:19px;margin:0}
+.customerDirectoryMetrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:18px}
+.customerDirectoryMetric{min-height:78px;text-align:left;display:flex;flex-direction:column;gap:6px;background:#f8fafc;border:1px solid #dfe6ef;border-radius:9px;padding:11px 14px;color:#334155}
+.customerDirectoryMetric span{font-size:12px;font-weight:700}
+.customerDirectoryMetric strong{font-size:24px;line-height:1.15;color:#1e3a5f;font-variant-numeric:tabular-nums}
+.customerDirectoryMetric[aria-pressed="true"]{background:#eaf2fc;border-color:#76a9e8;box-shadow:inset 0 0 0 1px #76a9e8}
+.customerDirectoryMetric:hover{border-color:#76a9e8}
+.customerDirectoryMetric:focus-visible,.customerProfileJumpBtn:focus-visible{outline:3px solid #7fb4ff;outline-offset:2px}
+.customerDirectoryResults{min-width:0}
+.customerDirectoryResults h3{font-size:17px}
+.customerDirectoryResults .tableWrap td:first-child strong{color:#17283f}
+.customerDirectoryResults .customerDetail{white-space:nowrap}
+#customerDetailHost:empty{display:none}
+#customerDetailHost:not(:empty){scroll-margin-top:20px}
+.customerIdentityHeader{padding-bottom:12px;border-bottom:1px solid #e3e9f1;margin-bottom:12px}
+.customerIdentityTop{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap}
+.customerIdentityTop h2{font-size:23px;letter-spacing:-.02em;margin:5px 0}
+.customerIdentityEyebrow{font-weight:800;font-size:12px;color:#64748b}
+.customerProfileJump{display:flex;gap:6px;overflow-x:auto;padding:12px 0 2px;scrollbar-width:thin}
+.customerProfileJumpBtn{flex:0 0 auto;white-space:nowrap;padding:8px 12px;border:1px solid #dce5f0;border-radius:7px;background:#f6f9fd;color:#34465c;font-size:12px;font-weight:800}
+.customerProfileJumpBtn[aria-current="page"]{background:#1769cf;color:#fff;border-color:#1769cf}
+.customerProfileJumpBtn:hover:not([aria-current="page"]){background:#eaf2fc}
+.customerIdentityActions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+@media(max-width:900px){.customerDirectoryMetrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:620px){.customerDirectoryMetrics{gap:8px}.customerDirectoryMetric{padding:10px;min-height:67px}.customerDirectoryMetric strong{font-size:21px}.customerIdentityTop h2{font-size:20px}.customerIdentityActions button{flex:1 1 auto}.customerProfileJump{margin-right:-10px}}
+
+/* Asset ledger: quick triage, readable records and responsive access. */
+.assetLedgerDirectory h2{font-size:19px;margin:0}
+.assetLedgerMetrics{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:9px;margin-top:16px}
+.assetLedgerMetric{display:flex;flex-direction:column;align-items:flex-start;gap:6px;min-height:78px;padding:11px 12px;background:#f8fafc;color:#334155;border:1px solid #dfe6ef;border-radius:9px;text-align:left}
+.assetLedgerMetric span{font-size:12px;font-weight:700}
+.assetLedgerMetric strong{font-size:24px;line-height:1.15;color:#1e3a5f;font-variant-numeric:tabular-nums}
+.assetLedgerMetric[aria-pressed="true"]{background:#eaf2fc;border-color:#76a9e8;box-shadow:inset 0 0 0 1px #76a9e8}
+.assetLedgerMetric:hover{border-color:#76a9e8}
+.assetLedgerMetric:focus-visible{outline:3px solid #7fb4ff;outline-offset:2px}
+.assetLedgerResultTable{min-width:0}
+.assetLedgerResultTable h3{font-size:17px;margin:0}
+.assetLedgerResultTable .tableWrap td:first-child strong{color:#17283f}
+.assetLedgerResultTable .assetLedgerOpen{white-space:nowrap}
+#assetLedgerDetailHost:empty{display:none}
+#assetDetailHost:not(:empty){scroll-margin-top:22px}
+@media(max-width:1100px){.assetLedgerMetrics{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:620px){.assetLedgerMetrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.assetLedgerMetric{min-height:68px;padding:10px}.assetLedgerMetric strong{font-size:21px}}
+
+/* Case management directory / priority-based support navigation. */
+.caseDirectoryMetrics{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:9px;margin-top:16px}
+.caseDirectoryMetric{display:flex;flex-direction:column;align-items:flex-start;gap:7px;background:#f8fafc;border:1px solid #dfe6ef;border-radius:9px;padding:12px;color:#334155;text-align:left;min-height:80px}
+.caseDirectoryMetric span{font-size:12px;font-weight:700}
+.caseDirectoryMetric strong{color:#1e3a5f;font-size:24px;line-height:1.2;font-variant-numeric:tabular-nums}
+.caseDirectoryMetric[aria-pressed="true"]{background:#eaf2fc;border-color:#76a9e8;box-shadow:inset 0 0 0 1px #76a9e8}
+.caseDirectoryMetric:hover{border-color:#76a9e8}
+.caseDirectoryMetric:focus-visible{outline:3px solid #7fb4ff;outline-offset:2px}
+.caseDirectoryResults{min-width:0}
+.caseDirectoryResults h3{margin:0;font-size:18px}
+.caseDirectoryResults .caseDirectoryOpen{white-space:nowrap}
+.supportQuickBar{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin:12px 0 16px}
+.supportQuickBar button{min-height:40px}
+@media(max-width:1100px){.caseDirectoryMetrics{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:620px){.caseDirectoryMetrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.caseDirectoryMetric{min-height:67px;padding:10px}.caseDirectoryMetric strong{font-size:21px}.supportQuickBar button{flex:1 1 auto}}
+
+/* Handoff workspace: fast triage and clear reason / next action. */
+.handoffStateFilters{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:16px}
+.handoffStateButton{display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:12px 14px;min-height:86px;text-align:left;background:#f8fafc;border:1px solid #dfe6ef;border-radius:9px;color:#334155}
+.handoffStateButton span{font-size:12px;font-weight:750}
+.handoffStateButton strong{font-size:26px;font-variant-numeric:tabular-nums;color:#1e3a5f}
+.handoffStateButton[aria-pressed="true"]{background:#eaf2fc;border-color:#76a9e8;box-shadow:inset 0 0 0 1px #76a9e8}
+.handoffStateButton:focus-visible{outline:3px solid #7fb4ff;outline-offset:2px}
+.handoffDecisionGrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;margin-top:12px}
+.handoffReason,.handoffNextAction{padding:13px;border:1px solid #e0e8f3;border-radius:9px;background:#f8fafc;min-width:0}
+.handoffReason span,.handoffNextAction span{display:block;font-size:12px;font-weight:750;color:#52637a;margin-bottom:7px}
+.handoffReason strong,.handoffNextAction strong{display:block;overflow-wrap:anywhere;white-space:pre-wrap;font-size:14px;line-height:1.6}
+.handoffNextAction{background:#eff6ff;border-color:#cfe2fb}
+@media(max-width:800px){.handoffStateFilters{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:620px){.handoffDecisionGrid{grid-template-columns:1fr}.handoffStateButton{min-height:72px}.handoffStateButton strong{font-size:22px}}
+
+/* Support workspace: quick context and safe step navigation. */
+.supportWorkspaceQuickContext{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:10px 0}
+.supportWorkspaceQuickContext>div{background:#f6f9fd;border:1px solid #dce6f2;padding:11px 13px;border-radius:9px;min-width:0}
+.supportWorkspaceQuickContext span{display:block;color:#5c7088;font-size:11px;font-weight:750}
+.supportWorkspaceQuickContext strong{display:block;color:#173252;font-size:14px;margin:5px 0;overflow-wrap:anywhere}
+.supportWorkspaceQuickContext small{display:block;color:#65748b;overflow-wrap:anywhere}
+.supportWorkspaceQuickNav{display:flex;flex-wrap:wrap;gap:7px;margin:10px 0 14px;padding:9px;background:#f7f9fc;border:1px solid #dce5ee;border-radius:10px}
+.supportWorkspaceQuickNav .supportWorkspaceJump{background:#fff;border:1px solid #d4e0ed;color:#284466;border-radius:7px;min-height:35px;padding:7px 10px;font-size:12px;font-weight:800}
+.supportWorkspaceJump{cursor:pointer;text-align:left;font-family:inherit}
+.supportWorkspaceJump:hover{border-color:#75a8e5}
+.supportWorkspaceJump:focus-visible{outline:3px solid #7fb4ff;outline-offset:2px}
+.supportFlowHint{margin-top:14px;color:#586d83;font-size:12px}
+.supportLinearCard,.formSection,#supportTicketCustomerContext,#ticketMessageForm,#ticketHandoffHistory{scroll-margin-top:150px}
+@media(max-width:900px){.supportWorkspaceQuickContext{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:620px){.supportWorkspaceQuickContext{grid-template-columns:1fr}.supportWorkspaceQuickNav{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}.supportWorkspaceQuickNav .supportWorkspaceJump{font-size:11px;padding:8px 6px}.supportFlow.supportLinearProgress{grid-template-columns:repeat(2,minmax(0,1fr))}}
