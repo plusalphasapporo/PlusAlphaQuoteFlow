@@ -148,7 +148,7 @@ export default {
         method: 'POST',
         headers: { Authorization: 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'gpt-5.5',
+          model: String(creds?.analysis_model || 'gpt-5.5'),
           store: false,
           tools: [{ type: 'web_search', search_context_size: 'medium' }],
           tool_choice: 'required',
