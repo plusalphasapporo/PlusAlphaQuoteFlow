@@ -111,6 +111,24 @@ async function fixture(role,pages,html) {
   assert.equal(get(doc,'.qf-ticket-pane[data-qf-view="customer"]').contains(get(doc,'#nativeCustomer')),true);
   assert.equal(get(doc,'.qf-ticket-pane[data-qf-view="history"]').contains(get(doc,'#nativeTimeline')),true);
   assert.equal(get(doc,'.qf-ticket-pane[data-qf-view="details"]').contains(get(doc,'#nativeAttachment')),true);
+  // Native top actions must reveal destination panes before their own handlers run.
+  const topCustomer=get(doc,'#supportTopPrimaryAction');
+  const extra=doc.createElement('button');
+  extra.id='supportTopCustomer'; extra.type='button'; extra.textContent='顧客を見る';
+  topCustomer.parentNode.append(extra);
+  extra.click();
+  assert.equal(get(doc,'.qf-ticket-pane[data-qf-view="customer"]').hidden,false,'Top customer shortcut must expose the customer pane');
+  const aiJump=doc.createElement('button');
+  aiJump.id='ticketActionAi';aiJump.type='button';
+  get(doc,'#supportAssistWorkspace').append(aiJump);
+  aiJump.click();
+  assert.equal(get(doc,'.qf-ticket-pane[data-qf-view="work"]').hidden,false,'AI shortcut reveals work pane');
+  assert.equal(get(doc,'#supportKnowledgeWorkspace').classList.contains('qf-step-collapsed'),false,'AI shortcut expands knowledge step');
+  const replyJump=doc.createElement('button');
+  replyJump.id='ticketAssistReplyCustomer'; replyJump.type='button';
+  get(doc,'#supportAssistWorkspace').append(replyJump);
+  replyJump.click();
+  assert.equal(get(doc,'.qf-ticket-pane[data-qf-view="messages"]').hidden,false,'AI reply must expose message editor');
   get(doc,'.qf-ticket-tabs [data-view="messages"]').click();
   get(doc,'#nativeMessage').click();
   assert.equal(messageSends,1,'Native message action must remain wired');
