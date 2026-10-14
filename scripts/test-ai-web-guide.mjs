@@ -35,6 +35,7 @@ const state = {
 function selectBuilder(table) {
   let checks = [];
   let inserted = null;
+  let sortField = null, sortAscending = true;
   const api = {
     select() { return api; },
     eq(field, value) { checks.push(row => row[field] === value); return api; },
@@ -42,9 +43,14 @@ function selectBuilder(table) {
       checks.push(row => values.every(value => (row[field] || []).includes(value)));
       return api;
     },
-    order() { return api; },
+    order(field, opts={}) { sortField=field; sortAscending=opts.ascending !== false; return api; },
     async limit(max) {
-      return { data: state[table].filter(row => checks.every(fn => fn(row))).slice(0, max), error: null };
+      let rows=state[table].filter(row => checks.every(fn => fn(row)));
+      if(sortField) rows=rows.slice().sort((a,b)=>{
+        const result=String(a[sortField]||'').localeCompare(String(b[sortField]||''));
+        return sortAscending?result:-result;
+      });
+      return { data: rows.slice(0,max), error: null };
     },
     async single() {
       if (inserted) return { data: { id: inserted.id }, error: null };
@@ -71,7 +77,7 @@ function selectBuilder(table) {
         };
       }
       inserted = { ...row, id: 'aaaaaaaa-aaaa-4aaa-8aaa-' + String(state.knowledge_articles.length + 1).padStart(12, '0'),
-        created_at: new Date().toISOString() };
+        created_at: new Date(Date.now() + state.knowledge_articles.length * 1000).toISOString() };
       state[table].push(inserted);
       return api;
     }
