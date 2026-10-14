@@ -122,8 +122,12 @@ async function fixture(role,pages,html) {
   assert.equal(get(doc,'#supportRemoteWorkspace').classList.contains('qf-step-collapsed'),false,'Primary action opens remote step');
   get(doc,'#supportRemoteWorkspace .nativeStep').click();
   assert.equal(remoteCalls,1,'Native remote action must remain wired');
-  get(doc,'.qf-step-toggle').click();
-  assert.equal(get(doc,'#supportLinearIntake').classList.contains('qf-step-collapsed'),false,'Accordion toggle opens the original contents');
+  const knowledgeStep=get(doc,'#supportKnowledgeWorkspace');
+  assert.equal(knowledgeStep.classList.contains('qf-step-collapsed'),true,'Knowledge step starts collapsed');
+  get(doc,'#supportKnowledgeWorkspace .qf-step-toggle').click();
+  assert.equal(knowledgeStep.classList.contains('qf-step-collapsed'),false,'Accordion toggle opens the original contents');
+  get(doc,'#supportKnowledgeWorkspace .qf-step-toggle').click();
+  assert.equal(knowledgeStep.classList.contains('qf-step-collapsed'),true,'Accordion toggle closes the original contents');
   get(doc,'.qf-ticket-tabs [data-view="messages"]').click();
   get(doc,'#home').innerHTML=supportTicket('TKT-002');
   await pause();
