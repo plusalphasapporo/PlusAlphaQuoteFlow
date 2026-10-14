@@ -23,6 +23,14 @@ assert.match(migration, /t\.description,''\) ilike '【受付経路】CallConnec
 assert.match(migration, /from public\.callconnect_calls cc/);
 assert.match(migration, /r\.user_id=v_user/);
 assert.match(migration, /app_private\.is_internal\(\)/);
+const supportLabelMigration=fs.readFileSync(
+  'supabase/migrations/20261014223500_correct_support_callconnect_notification_labels.sql','utf8'
+);
+const callconnectCase=supportLabelMigration.indexOf("when coalesce(lower(t.request_details->>'source')");
+const creatorCase=supportLabelMigration.indexOf("when creator.role='customer_user'");
+assert.ok(callconnectCase>=0&&creatorCase>callconnectCase,
+  'CallConnect label must take precedence over the ticket creator role');
+assert.match(supportLabelMigration,/from public\.callconnect_calls cc/);
 
 const esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
   .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
@@ -49,7 +57,10 @@ function build(role, responses={}){
     closeAppModal:()=>doc.querySelector('#appModalLayer')?.remove(),
     toast:message=>alerts.push(message),
     go:async page=>navigation.push({page}),
-    openTicketWorkspace:async ticketId=>navigation.push({ticketId}),
+    openTicketWorkspace:async ticketId=>{
+      navigation.push({ticketId});
+      return 'test_open_ticket_result' in responses?responses.test_open_ticket_result:true;
+    },
     refreshSupportUnreadBadge:async()=>({count:0}),
     refreshInternalUnreadHandoffBadge:async()=>({count:0}),
     rpc:async(name,args={})=>{
@@ -147,6 +158,40 @@ function build(role, responses={}){
   assert.equal(h.labels().length,1,'The same CallConnect ticket must not appear twice');
   await h.click('CallConnect受付案件');
   assert.deepEqual(h.navigation.at(-1),{ticketId:id1});
+  assert.ok(h.rpcCalls.some(x=>x.name==='mark_callconnect_notification_read'
+    &&x.args.p_notification_id==='call-duplicate'),
+    'Opening the linked ticket should clear its hidden CallConnect unread record');
+  h.dom.window.close();
+}
+{
+  const h=build('support_staff',{
+    test_open_ticket_result:false,
+    support_unread_notifications:{count:1,items:[
+      {id:id1,subject:'ネットワーク障害',priority:'high',created_at:'2026-10-14T08:00:00Z'}
+    ]},
+    callconnect_unread_notifications:{count:1,items:[
+      {id:'call-should-stay-unread',support_ticket_id:id1,
+       contact_name:'デモ顧客',created_at:'2026-10-14T08:01:00Z'}
+    ]}
+  });
+  await h.ctx.openCenter();
+  await h.click('ネットワーク障害');
+  assert.ok(h.alerts.some(x=>x.includes('開けませんでした')));
+  assert.ok(!h.rpcCalls.some(x=>x.name==='mark_callconnect_notification_read'),
+    'Failed navigation must preserve unread notifications');
+  h.dom.window.close();
+}
+{
+  const h=build('internal_admin',{
+    test_open_ticket_result:false,
+    internal_unread_handoff_notifications:{ticket_count:0,ticket_items:[],count:1,items:[
+      {handoff_id:'handoff-error',ticket_id:id2,subject:'引き継ぎ未読の維持'}
+    ]}
+  });
+  await h.ctx.openCenter();
+  await h.click('引き継ぎ未読の維持');
+  assert.ok(!h.rpcCalls.some(x=>x.name==='mark_internal_handoff_read'),
+    'Failed ticket navigation cannot acknowledge the internal handoff');
   h.dom.window.close();
 }
 {
@@ -155,4 +200,4 @@ function build(role, responses={}){
   assert.deepEqual(h.navigation,[{page:'customer_status'}],'Customer users are not shown internal notifications');
   h.dom.window.close();
 }
-console.log('Unified notification center regression tests passed: role isolation, CallConnect suppression for internal, all-customer support, links, read receipts, HTML escape, deduplication.');
+console.log('Unified notification center regression tests passed: role isolation, correct CallConnect labels, internal suppression, direct links, read receipt ordering, deduplication and failed navigation safety.');
