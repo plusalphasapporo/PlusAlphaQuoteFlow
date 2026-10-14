@@ -289,7 +289,30 @@ export default {
         }),
         signal: controller.signal,
       })
-      if (!upstream.ok) return reply({ error: 'WEB_RESEARCH_FAILED', httpStatus: upstream.status }, 502)
+      if (!upstream.ok) {
+        // 429 is ambiguous: rate-limited and depleted API credit can share it.
+        // Classify only the documented allowlisted error codes; never expose
+        // the provider response body, credentials, or user search text in errors.
+        if (upstream.status === 429) {
+          const providerError = await upstream.json().catch(() => null)
+          const code = String(providerError?.error?.code || providerError?.error?.type || '').toLowerCase()
+          const quotaCodes = new Set([
+            'insufficient_quota', 'credit_balance_exhausted',
+            'organization_spend_limit_exceeded', 'project_spend_limit_exceeded',
+            'organization_usage_limit_exceeded',
+          ])
+          const reason = quotaCodes.has(code) ? 'WEB_QUOTA_EXCEEDED'
+            : code === 'rate_limit_exceeded' ? 'WEB_RATE_LIMITED'
+            : 'WEB_PROVIDER_LIMITED'
+          return reply({ error: reason }, 429)
+        }
+        if (upstream.status === 401 || upstream.status === 403) {
+          return reply({ error: 'WEB_PROVIDER_AUTH_ERROR' }, 503)
+        }
+        if (upstream.status === 404) return reply({ error: 'WEB_MODEL_UNAVAILABLE' }, 503)
+        if (upstream.status >= 500) return reply({ error: 'WEB_PROVIDER_UNAVAILABLE' }, 503)
+        return reply({ error: 'WEB_RESEARCH_FAILED' }, 502)
+      }
       const response = await upstream.json()
       const text = outputText(response).slice(0, 14000)
       const sources = responseSources(response)
