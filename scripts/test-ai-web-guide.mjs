@@ -303,7 +303,7 @@ state.providerCode = null;
 
 state.upstreamOk = false;
 res = await request({ ticketId: ticketA, query: 'Windows 11 コントロールパネル印刷設定' });
-assert.equal(res.status, 502);
-assert.equal(res.body.error, 'WEB_RESEARCH_FAILED');
+assert.equal(res.status, 503);
+assert.equal(res.body.error, 'WEB_PROVIDER_UNAVAILABLE');
 
 console.log('AI Web Guide mocked E2E passed: authorization, web research, private draft save, cached reuse, secure history and reopen, outage fallback, refresh, tenant separation, redaction, error handling.');
