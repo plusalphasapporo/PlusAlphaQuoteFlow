@@ -116,16 +116,58 @@ export default {
       const knowledgeReady = results[0].status === 'fulfilled' && !results[0].value.error
       const aiConfigured = results[1].status === 'fulfilled' &&
         !results[1].value.error && !!String(results[1].value.data?.api_key || '').trim()
+      // Optional, non-generating access check against OpenAI's GET /models/{model}.
+      // It cannot verify billing credit, rate-limit availability or successful
+      // Responses/web_search requests. No API key or raw provider body is returned.
+      const checkProvider = body.checkProvider === true
+      let modelAccessible: boolean | null = null
+      let modelStatus = checkProvider ? 'not_configured' : 'not_checked'
+      if (checkProvider && aiConfigured) {
+        const creds = results[1].status === 'fulfilled' ? results[1].value.data : null
+        const model = String(creds?.analysis_model || '').trim()
+        if (!/^[a-zA-Z0-9_.:-]{1,100}$/.test(model)) {
+          modelAccessible = false
+          modelStatus = 'invalid_model_setting'
+        } else {
+          const controller = new AbortController()
+          const timeout = setTimeout(() => controller.abort(), 9000)
+          try {
+            const upstream = await fetch('https://api.openai.com/v1/models/' + encodeURIComponent(model), {
+              method: 'GET',
+              headers: { Authorization: 'Bearer ' + String(creds?.api_key || '') },
+              cache: 'no-store',
+              signal: controller.signal,
+            })
+            modelAccessible = upstream.ok
+            modelStatus = upstream.ok ? 'ok' : upstream.status === 401 ? 'invalid_api_key'
+              : upstream.status === 403 ? 'model_forbidden'
+              : upstream.status === 404 ? 'model_not_found'
+              : upstream.status === 429 ? 'provider_limited'
+              : upstream.status >= 500 ? 'provider_unavailable'
+              : 'provider_error'
+          } catch (_err) {
+            modelAccessible = false
+            modelStatus = 'connection_failed'
+          } finally {
+            clearTimeout(timeout)
+          }
+        }
+      }
       return reply({
         diagnostics: true,
-        ready: knowledgeReady && aiConfigured,
+        ready: knowledgeReady && aiConfigured && (!checkProvider || modelAccessible === true),
         checkedAt: new Date().toISOString(),
         checks: {
           authentication: true,
           ticketAccess: true,
           knowledgeRead: knowledgeReady,
           aiConfigured,
+          modelAccessible,
+          modelStatus,
         },
+        // Explicitly do not imply that model lookup proves billing or generation.
+        billingVerified: false,
+        generationVerified: false,
       })
     }
 
