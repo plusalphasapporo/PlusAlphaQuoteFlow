@@ -3,7 +3,7 @@ import fs from 'node:fs';
 const migration=fs.readFileSync('supabase/migrations/20261014034300_redact_private_knowledge_tags_from_role_rpc.sql','utf8');
 const html=fs.readFileSync('index.html','utf8');
 assert.match(migration,/create or replace function app_private\.role_knowledge_articles_impl\(\)/i);
-assert.match(migration,/where tag !~\* '\^\(customer:\|web-cache:\\)/);
+assert.ok(migration.includes("where tag !~* '^(customer:|web-cache:)'"));
 assert.match(migration,/app_private\.is_active_user\(\)/);
 assert.match(migration,/app_private\.current_role\(\)/);
 assert.match(migration,/security definer/i);
