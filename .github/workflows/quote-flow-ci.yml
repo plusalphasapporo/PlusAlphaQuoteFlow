@@ -29,6 +29,8 @@ jobs:
         run: npm install --no-save --package-lock=false jsdom@26.1.0
       - name: Test UI DOM integration
         run: node scripts/test-ui-redesign-dom.mjs
+      - name: Test customer web publication boundary
+        run: node scripts/test-web-publication-boundary.mjs
       - name: Test knowledge publication safety
         run: node scripts/test-knowledge-publication-safety.mjs
       - name: Test AI rate limit classification
