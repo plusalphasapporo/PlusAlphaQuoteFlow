@@ -29,6 +29,8 @@ jobs:
         run: npm install --no-save --package-lock=false jsdom@26.1.0
       - name: Test UI DOM integration
         run: node scripts/test-ui-redesign-dom.mjs
+      - name: Test AI Web Guide mocked end-to-end
+        run: node scripts/test-ai-web-guide.mjs
       - name: Test ticket workspace recovery
         run: node scripts/test-ticket-workspace.mjs
       - name: Validate ticket numbering migrations
