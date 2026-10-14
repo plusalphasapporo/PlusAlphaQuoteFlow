@@ -350,8 +350,16 @@ export default {
         return webUrl
           ? json({ ok: true, linked: true, webUrl, source: 'unique_exact_match' })
           : json({ ok: true, linked: false, reason: 'missing_folder_url' })
-      } catch (_error) {
-        return json({ ok: true, linked: false, reason: 'folder_lookup_unavailable' })
+      } catch (error) {
+        // Distinguish missing Microsoft 365 credentials from a missing customer
+        // folder. Never expose tokens, provider response bodies or file contents.
+        const detail = String((error as Error)?.message || '')
+        const reason = detail === 'MICROSOFT_GRAPH_NOT_CONFIGURED'
+          ? 'integration_not_configured'
+          : detail === 'MICROSOFT_GRAPH_TOKEN_FAILED'
+            ? 'integration_auth_failed'
+            : 'folder_lookup_unavailable'
+        return json({ ok: true, linked: false, reason })
       }
     }
 
