@@ -9087,7 +9087,7 @@
         notice('#ticketAiWebMessage','認証・案件参照・AI設定を確認しています。検索や保存は行いません...',true);
         try{
           const {data,error}=await supabase.functions.invoke('ai-web-guide',{
-            body:{ticketId:t.id,diagnostics:true}
+            body:{ticketId:t.id,diagnostics:true,checkProvider:true}
           });
           if(error) throw await edgeFunctionError(error,{write:false});
           if(data?.error) throw new Error(String(data.error));
@@ -9097,13 +9097,14 @@
             ['ログイン認証',checks.authentication],
             ['案件参照権限',checks.ticketAccess],
             ['ナレッジ参照',checks.knowledgeRead],
-            ['AI設定',checks.aiConfigured]
+            ['AI設定',checks.aiConfigured],
+            ['AIモデル利用権限',checks.modelAccessible]
           ];
           const host=$('#ticketAiWebResult');
           if(host){
             host.classList.remove('hidden');
             host.innerHTML='<div class="item" style="margin-top:12px"><strong>接続診断（読み取り専用）</strong>'+
-              '<p class="muted">外部AI検索・データ保存は実行していません。</p>'+
+              '<p class="muted">AI生成と保存は実行していません。モデル照会は行いますが、残高・利用上限や生成成功は判定できません。</p>'+
               '<ul>'+items.map(x=>'<li>'+esc(x[0])+'：'+(x[1]===true?'正常':'要確認')+'</li>').join('')+'</ul>'+
               '<p class="muted">確認：'+esc(String(data.checkedAt||'').slice(0,19).replace('T',' '))+'</p></div>';
           }
