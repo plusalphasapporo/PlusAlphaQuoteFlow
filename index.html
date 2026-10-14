@@ -8944,7 +8944,16 @@
             folderStatus.textContent='対象顧客のフォルダが確認できました。';
             folderHost.innerHTML='<a class="primary" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;justify-content:center;text-decoration:none;padding:12px 16px;border-radius:10px">情報フォルダを開く ↗</a>';
           }else{
-            folderStatus.textContent='情報フォルダの紐付けを確認できません。自社管理者が顧客カルテの「情報フォルダ」で紐付けしてください。';
+            const why=String(data?.reason||'');
+            const messages={
+              integration_not_configured:'Microsoft 365連携の認証情報が未設定です。管理者がSupabase Edge Function Secretsの MICROSOFT_TENANT_ID / MICROSOFT_CLIENT_ID / MICROSOFT_CLIENT_SECRET を設定してください。',
+              integration_auth_failed:'Microsoft 365の接続認証に失敗しました。管理者がEntraアプリの資格情報とMicrosoft Graphの許可を確認してください。',
+              root_not_configured:'顧客フォルダの参照元が未設定です。管理者に確認してください。',
+              needs_manual_link:'この顧客に一致するフォルダを特定できません。管理者が顧客カルテから紐付けしてください。',
+              invalid_stored_url:'登録済みフォルダURLが正しくありません。管理者が紐付けを更新してください。',
+              folder_lookup_unavailable:'Microsoft 365のフォルダを取得できませんでした。管理者が連携設定または通信状態を確認してください。'
+            };
+            folderStatus.textContent=messages[why]||'情報フォルダが未登録です。管理者が顧客カルテから紐付けしてください。';
           }
         })
         .catch(err=>{
