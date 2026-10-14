@@ -9074,7 +9074,7 @@
           host.innerHTML='<div class="item" style="margin-top:12px">'+
             '<div class="row between" style="gap:10px;flex-wrap:wrap"><strong>詳細な操作手順</strong><span class="pill '+(data.fromCache?'good':'')+'">'+(data.fromCache?'保存済みから再利用':'Web調査結果')+'</span></div>'+
             (data.needsRefresh?'<div class="notice warn">前回の調査から30日以上経過しています。「公式資料を再確認」を選択してください。</div>':'')+
-            '<p class="muted">Web情報確認日: '+esc(checkedAt?checkedAt.slice(0,10):'確認できません')+' / '+(data.verifiedByStaff?'担当者確認済み':'実機検証は未実施')+'</p>'+
+            '<p class="muted">Web情報確認日: '+esc(checkedAt?checkedAt.slice(0,10):'確認できません')+' / '+(data.verifiedByStaff?'社内公開済み（実機検証は別途必要）':'実機検証は未実施')+'</p>'+
             '<div style="white-space:pre-wrap;line-height:1.8;max-height:420px;overflow:auto">'+esc(data.text||'確認できません')+'</div>'+
             (sourced?'<details style="margin-top:12px"><summary>調査に使用した出典（'+sources.length+'件）</summary><ul>'+sourced+'</ul></details>':'')+
             '<p class="muted" style="margin-top:10px">保存状態: '+(data.saved?'確認待ちナレッジへ保存済み':'保存できませんでした。再調査になる可能性があります。')+'</p>'+
@@ -9094,7 +9094,7 @@
         host.classList.remove('hidden');
         host.innerHTML='<div class="item" style="margin-top:12px"><strong>保存済みの操作手順</strong>'+
           (data?.needsRefresh?'<p class="notice warn">前回確認から30日以上経過しています。使用前に公式資料を再確認してください。</p>':'')+
-          '<p class="muted">調査日 '+esc(String(data?.checkedAt||'').slice(0,10))+' / '+(data?.verifiedByStaff?'担当者確認済み':'実機検証は未実施')+'</p>'+
+          '<p class="muted">調査日 '+esc(String(data?.checkedAt||'').slice(0,10))+' / '+(data?.verifiedByStaff?'社内公開済み（実機検証は別途必要）':'実機検証は未実施')+'</p>'+
           '<div style="white-space:pre-wrap;line-height:1.8">'+esc(String(data?.text||''))+'</div>'+
           (sources.length?'<details><summary>参考資料（'+sources.length+'件）</summary><ul>'+
             sources.filter(x=>/^https:\/\//.test(String(x.url||''))).map(x=>
