@@ -8881,7 +8881,7 @@
             '<section class="item" style="margin-top:14px;border-color:#bfdbfe">'+
               '<div class="row between" style="align-items:flex-start;gap:10px;flex-wrap:wrap"><div><strong>Webで詳しい操作手順を調査</strong><div class="muted" style="margin-top:4px">保存済みの調査結果を先に検索。情報がない場合だけ、公式資料などを調べて仮保存します。</div></div><span class="pill">出典・確認日付き</span></div>'+
               '<div class="field" style="margin-top:10px"><label>技術的な症状・型番・エラーコード（顧客名・ID・パスワードは入力しない）</label><input id="ticketAiWebQuery" maxlength="300" placeholder="例：Windows 11 Canon MF印刷キュー停止"></div>'+
-              '<div class="supportQuickActions"><button id="ticketAiWebSearch" class="primary" type="button">保存済み検索・Web調査</button><button id="ticketAiWebRefresh" class="ghost" type="button">公式資料を再確認</button></div>'+
+              '<div class="supportQuickActions"><button id="ticketAiWebSearch" class="primary" type="button">保存済み検索・Web調査</button><button id="ticketAiWebRefresh" class="ghost" type="button">公式資料を再確認</button><button id="ticketAiWebDiagnostics" class="ghost" type="button">接続診断（読取のみ）</button></div>'+
               '<div id="ticketAiWebMessage" class="notice hidden"></div><div id="ticketAiWebResult" class="hidden"></div>'+
             '</section>'+
 
@@ -9078,6 +9078,36 @@
           if(button)button.disabled=false;
           if(refreshBtn)refreshBtn.disabled=false;
         }
+      };
+      const diagnosticButton=$('#ticketAiWebDiagnostics');
+      if(diagnosticButton) diagnosticButton.onclick=async()=>{
+        diagnosticButton.disabled=true;
+        notice('#ticketAiWebMessage','認証・案件参照・AI設定を確認しています。検索や保存は行いません...',true);
+        try{
+          const {data,error}=await supabase.functions.invoke('ai-web-guide',{
+            body:{ticketId:t.id,diagnostics:true}
+          });
+          if(error) throw await edgeFunctionError(error,{write:false});
+          if(data?.error) throw new Error(String(data.error));
+          if(data?.diagnostics!==true) throw new Error('接続診断に対応していません');
+          const checks=data.checks||{};
+          const items=[
+            ['ログイン認証',checks.authentication],
+            ['案件参照権限',checks.ticketAccess],
+            ['ナレッジ参照',checks.knowledgeRead],
+            ['AI設定',checks.aiConfigured]
+          ];
+          const host=$('#ticketAiWebResult');
+          if(host){
+            host.classList.remove('hidden');
+            host.innerHTML='<div class="item" style="margin-top:12px"><strong>接続診断（読み取り専用）</strong>'+
+              '<p class="muted">外部AI検索・データ保存は実行していません。</p>'+
+              '<ul>'+items.map(x=>'<li>'+esc(x[0])+'：'+(x[1]===true?'正常':'要確認')+'</li>').join('')+'</ul>'+
+              '<p class="muted">確認：'+esc(String(data.checkedAt||'').slice(0,19).replace('T',' '))+'</p></div>';
+          }
+          notice('#ticketAiWebMessage',data.ready?'基本接続は正常です。実際の検索・保存は未検証です。':'接続に問題があります。診断結果を確認してください。',!!data.ready);
+        }catch(err){notice('#ticketAiWebMessage','接続診断ができませんでした。'+String(err.message||err));}
+        finally{diagnosticButton.disabled=false;}
       };
       $('#ticketAiWebSearch').onclick=()=>runWebGuide(false);
       $('#ticketAiWebRefresh').onclick=()=>runWebGuide(true);
