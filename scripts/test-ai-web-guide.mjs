@@ -29,6 +29,8 @@ const state = {
   webCalls: [],
   allowTicket: true,
   upstreamOk: true,
+  providerStatus: 200,
+  providerCode: null,
   persistOk: true
 };
 
@@ -110,6 +112,7 @@ async function fakeFetch(url, init) {
   assert.equal(request.store, false);
   const technicalInput = request.input.find(item => item.role === 'user').content[0].text;
   state.webCalls.push(technicalInput);
+  if (state.providerStatus !== 200) return Response.json({ error: { code: state.providerCode, message: 'Synthetic provider condition' } }, { status: state.providerStatus });
   if (!state.upstreamOk) return Response.json({ error: { message: 'Synthetic provider failure' } }, { status: 503 });
   return Response.json({
     output: [
@@ -279,6 +282,24 @@ assert.equal(res.status, 200);
 assert.equal(res.body.saved, false);
 assert.equal(res.body.saveError, 'DRAFT_SAVE_FAILED');
 state.persistOk = true;
+
+// Provider error codes are reported distinctly, with no provider body leakage.
+state.providerStatus = 429;
+state.providerCode = 'insufficient_quota';
+res = await request({ ticketId: ticketA, query: 'Windows 11 ポート設定の確認' });
+assert.equal(res.status, 429);
+assert.equal(res.body.error, 'WEB_QUOTA_EXCEEDED');
+assert.equal(state.knowledge_articles.filter(x=>x.title.includes('ポート設定')).length, 0);
+state.providerCode = 'rate_limit_exceeded';
+res = await request({ ticketId: ticketA, query: 'Windows 11 USBプリンターの確認' });
+assert.equal(res.status, 429);
+assert.equal(res.body.error, 'WEB_RATE_LIMITED');
+state.providerCode = null;
+res = await request({ ticketId: ticketA, query: 'Windows 11 ネットワーク印刷確認' });
+assert.equal(res.status, 429);
+assert.equal(res.body.error, 'WEB_PROVIDER_LIMITED');
+state.providerStatus = 200;
+state.providerCode = null;
 
 state.upstreamOk = false;
 res = await request({ ticketId: ticketA, query: 'Windows 11 コントロールパネル印刷設定' });
