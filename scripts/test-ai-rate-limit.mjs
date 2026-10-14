@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+const edge=fs.readFileSync('supabase/functions/ai-assistant/index.ts','utf8');
+const ui=fs.readFileSync('index.html','utf8');
+assert.match(edge,/if\(response\.status===429\)/);
+assert.match(edge,/quotaCodes\.has\(providerCode\)/);
+assert.match(edge,/AI_QUOTA_EXCEEDED/);
+assert.match(edge,/AI_RATE_LIMITED/);
+assert.match(edge,/retryAfterSeconds/);
+assert.match(edge,/if\(response\.status>=500\)/);
+assert.match(ui,/ai_rate_limited:/);
+assert.match(ui,/ai_quota_exceeded:/);
+assert.doesNotMatch(edge,/error_message:.*upstreamBody/);
+console.log('AI 429 classification source and UI error mapping checks passed.');
