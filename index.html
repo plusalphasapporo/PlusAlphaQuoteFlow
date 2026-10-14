@@ -8918,6 +8918,7 @@
             '<p class="muted">案件は開いたままです。アクセス可能な顧客フォルダだけを表示します。</p>'+
             '<div id="ticketCustomerFolderStatus" class="notice">情報フォルダを確認中...</div>'+
             '<div id="ticketCustomerFolderLink"></div>'+
+            (internal&&bootData.context?.role==='internal_admin'?'<div class="field" style="margin-top:12px"><label>情報フォルダのURL（管理者のみ編集）</label><input id="ticketCustomerDirectUrl" type="url" placeholder="https://会社名.sharepoint.com/..." maxlength="4096"></div><div class="row" style="gap:8px"><button id="ticketCustomerDirectSave" class="ghost" type="button">フォルダURLを登録・更新</button><button id="ticketCustomerDirectRemove" class="ghost" type="button">登録URLを削除</button></div><small class="muted">URLの登録はMicrosoft Graph連携なしで利用できます。リンク先の閲覧にはMicrosoft 365の権限が必要です。</small>':'')+
           '</section>'+
         '</div>'+
         '<div class="appModalFoot"><button id="ticketCustomerPanelDone" class="primary" type="button">案件に戻る</button></div>',
@@ -8932,6 +8933,31 @@
         folderStatus.textContent='顧客が登録されていないため、情報フォルダを確認できません。';
         return;
       }
+      const directSave=$('#ticketCustomerDirectSave'),directRemove=$('#ticketCustomerDirectRemove');
+      const saveDirect=async remove=>{
+        const btn=remove?directRemove:directSave;
+        const url=$('#ticketCustomerDirectUrl')?.value.trim()||'';
+        if(!remove && !/^https:\/\/[^\s]+\.sharepoint\.com(?:[:/]|$)/i.test(url)){
+          folderStatus.textContent='SharePointまたはOneDriveの有効なフォルダURLを入力してください。';return;
+        }
+        if(remove && !confirm('この顧客の直接フォルダURLを削除しますか？')) return;
+        if(btn) btn.disabled=true;
+        try{
+          const data=await customerM365Invoke({action:remove?'remove_direct_link':'set_direct_link',customerId,folderUrl:url});
+          folderStatus.textContent=remove?'直接リンクを削除しました。':'情報フォルダURLを保存しました。';
+          if(folderHost?.isConnected) folderHost.innerHTML='';
+          if(!remove && data?.webUrl && folderHost?.isConnected){
+            const parsed=new URL(data.webUrl);
+            if(parsed.protocol==='https:' && parsed.hostname.toLowerCase().endsWith('.sharepoint.com')){
+              folderHost.innerHTML='<a class="primary" href="'+esc(parsed.href)+'" target="_blank" rel="noopener noreferrer">情報フォルダを開く ↗</a>';
+            }
+          }
+          if(remove){const input=$('#ticketCustomerDirectUrl');if(input) input.value='';}
+        }catch(err){folderStatus.textContent='保存に失敗しました。'+String(err.message||err);}
+        finally{if(btn) btn.disabled=false;}
+      };
+      if(directSave) directSave.onclick=()=>saveDirect(false);
+      if(directRemove) directRemove.onclick=()=>saveDirect(true);
       customerM365Invoke({action:'get_quick_link',customerId,ticketId:t.id})
         .then(data=>{
           if(!folderHost?.isConnected || !folderStatus?.isConnected) return;
@@ -8941,6 +8967,7 @@
             if(parsed.protocol==='https:' && parsed.hostname.toLowerCase().endsWith('.sharepoint.com')) url=parsed.href;
           }catch(_){}
           if(data?.linked && url){
+            const directInput=$('#ticketCustomerDirectUrl');if(directInput && data?.source==='direct') directInput.value=url;
             folderStatus.textContent='対象顧客のフォルダが確認できました。';
             folderHost.innerHTML='<a class="primary" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;justify-content:center;text-decoration:none;padding:12px 16px;border-radius:10px">情報フォルダを開く ↗</a>';
           }else{
