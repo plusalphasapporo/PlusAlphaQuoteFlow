@@ -25,6 +25,10 @@ jobs:
         run: node scripts/validate-static.mjs
       - name: Validate UI redesign compatibility
         run: node scripts/test-ui-redesign.mjs
+      - name: Install DOM test dependency
+        run: npm install --no-save --package-lock=false jsdom@26.1.0
+      - name: Test UI DOM integration
+        run: node scripts/test-ui-redesign-dom.mjs
       - name: Test ticket workspace recovery
         run: node scripts/test-ticket-workspace.mjs
       - name: Validate ticket numbering migrations
