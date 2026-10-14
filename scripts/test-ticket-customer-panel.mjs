@@ -207,6 +207,12 @@ result=await request(quickRequest);
 assert.equal(result.status,200);
 assert.equal(result.body.reason,'folder_lookup_unavailable');
 state.graphError=false;
+const savedEnv=backend.Deno.env.get;
+backend.Deno.env.get=key=>key==='MICROSOFT_CLIENT_SECRET'?'':savedEnv(key);
+result=await request(quickRequest);
+assert.equal(result.status,200);
+assert.equal(result.body.reason,'integration_not_configured');
+backend.Deno.env.get=savedEnv;
 
 state.m365_customer_folder_roots=[];
 result=await request(quickRequest);
@@ -275,6 +281,14 @@ function uiHarness(reply) {
   h.doc.querySelector('#ticketCustomerPanelClose').click();
   assert.equal(h.doc.querySelector('#appModalLayer'),null);
   assert.equal(h.input.value,'保存前の対応メモ');
+  h.dom.window.close();
+}
+{
+  const h=uiHarness({linked:false,reason:'integration_not_configured'});
+  h.ctx.openPanel();
+  await tick();
+  assert.match(h.doc.querySelector('#ticketCustomerFolderStatus').textContent,/Microsoft 365連携の認証情報が未設定/);
+  assert.equal(h.doc.querySelector('#ticketCustomerFolderLink a'),null);
   h.dom.window.close();
 }
 {
