@@ -1,0 +1,125 @@
+/* QuoteFlow Cloud — UI redesign layer. Loaded after legacy CSS. */
+:root{--qf-accent:#2860db;--qf-paper:#fff;--qf-ring:rgba(37,99,235,.2)}
+html{scroll-behavior:smooth}
+body{background:#f3f5fa;letter-spacing:.005em}
+body[data-role="support_staff"]{--qf-accent:#c65c27}
+button,input,textarea,select{font-family:inherit}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,a:focus-visible{outline:3px solid #7caaff;outline-offset:2px}
+button:disabled{opacity:.55;cursor:not-allowed}
+#appView .wrap,#appView .workspace{min-width:0}
+body:has(#appView:not(.hidden)) .wrap{max-width:1660px;padding:18px 24px}
+#appView .appShell{grid-template-columns:232px minmax(0,1fr);gap:20px}
+#appView .side{border:1px solid #1f334f;border-radius:19px;top:84px;max-height:calc(100dvh - 100px);padding:15px 12px;background:#11233d;color:#fff;box-shadow:0 16px 42px rgba(12,27,48,.12)}
+body[data-role="support_staff"] #appView .side{background:#283242;border-color:#344257}
+#appView .sideTitle{color:#9cb1cb;padding:8px 12px;font-size:10px}
+#navMenu{display:flex;flex-direction:column;gap:6px}
+.qf-nav-group{display:grid;gap:2px;padding-bottom:8px;margin-bottom:2px;border-bottom:1px solid rgba(255,255,255,.09)}
+.qf-nav-group:last-child{border:0}
+.qf-nav-group-title{color:#91a6c2;text-transform:uppercase;font-size:10px;letter-spacing:.11em;font-weight:800;margin:10px 10px 5px}
+#navMenu .navBtn{color:#dce7f4;border-radius:12px;min-height:42px;width:100%;font-size:13px;font-weight:650;gap:11px;padding:10px 12px;white-space:normal;text-align:left;line-height:1.35}
+#navMenu .navBtn:hover{background:#263c5a;color:#fff}
+#navMenu .navBtn.active{background:#e9f0ff;color:#1e4d9c;border-color:transparent;box-shadow:0 4px 10px rgba(0,0,0,.07)}
+body[data-role="support_staff"] #navMenu .navBtn.active{background:#fff1e9;color:#a34112}
+.qf-icon{width:18px;height:18px;display:inline-flex;flex:0 0 18px}
+.qf-icon svg{width:100%;height:100%}
+#appView .workspaceHead{border-radius:16px;box-shadow:none;padding:15px 19px}
+#appView .workspaceHead h1{font-size:21px;letter-spacing:-.025em}
+#appView .card{box-shadow:0 6px 24px rgba(14,32,59,.04)}
+#appView .section{margin-top:13px}
+#appView .pageIntro h2{font-size:16px}
+#appView .pageIntro p{font-size:12px}
+#home .qf-view-title h2{font-size:24px;line-height:1.25;margin:3px 0 5px;letter-spacing:-.035em}
+.qf-eyebrow{font-size:10px;font-weight:850;letter-spacing:.14em;color:var(--qf-accent)}
+.qf-view-help{font-size:13px;line-height:1.6;color:#64748b;margin:0}
+.qf-command-header{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin:13px 0 14px}
+.qf-home-shortcuts{display:flex;gap:8px;flex-wrap:wrap}
+.qf-shortcut-button{padding:12px 16px;border-radius:11px;border:1px solid #d7e0ed;background:#fff;color:#20314d;font-size:13px;font-weight:750;min-height:43px}
+.qf-shortcut-button:hover{background:#f6f9ff;border-color:#91b5f1}
+.qf-shortcut-primary{background:var(--qf-accent);border-color:var(--qf-accent);color:#fff}
+.qf-shortcut-primary:hover{background:#1f51bf;color:#fff}
+.qf-home-switcher,.qf-ticket-tabs{display:flex;gap:5px;overflow-x:auto;scrollbar-width:thin;padding:5px;background:#e7ecf5;border:1px solid #d7e0ed;border-radius:13px;margin:10px 0 14px}
+.qf-switch-button{border:0;background:transparent;border-radius:9px;padding:10px 15px;font-size:13px;font-weight:760;color:#596b81;white-space:nowrap;min-height:40px}
+.qf-switch-button[aria-selected="true"]{background:#fff;color:#154f9c;box-shadow:0 2px 9px rgba(26,48,84,.08)}
+.qf-home-panel[hidden],.qf-ticket-pane[hidden]{display:none!important}
+.qf-native-intro{display:none!important}
+.qf-home-panel{display:grid;gap:11px;align-content:start}
+.qf-home-panel > section{margin-top:0!important}
+.qf-home-panel > .supportTodayBoard{margin:0}
+.qf-home-panel > .internalCommandCenter{margin-top:0}
+.qf-home-panel .supportTodayGrid{grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}
+.qf-home-panel .supportTodayTile{min-height:84px;padding:13px}
+.qf-home-panel .supportTodayTile strong{font-size:26px;margin-top:7px}
+.qf-home-panel .supportHomeSection,.qf-home-panel .supportReceptionBar{margin:0;border-radius:15px}
+.qf-home-panel .supportHomeSection{padding:17px}
+.qf-home-panel .supportHomeSectionHead h2,.qf-home-panel .supportTodayHead h2{font-size:17px}
+.qf-home-panel .internalActionStrip{grid-template-columns:repeat(3,minmax(0,1fr))}
+.qf-extra-actions{margin:13px 0;border-top:1px solid #dbe5f1}
+.qf-extra-actions summary{padding:12px 3px;font-size:13px;font-weight:750;color:#315b99;cursor:pointer}
+.qf-extra-actions .internalActionStrip{margin-top:4px}
+#ticketDetailHost .card.section{border-radius:18px}
+#ticketDetailHost .quoteDetailHead{margin-bottom:9px}
+#ticketDetailHost .quoteDetailHead h2{font-size:19px}
+#ticketDetailHost .supportTicketTopbar,#ticketDetailHost .internalTicketTopbar{position:static;margin-top:8px;box-shadow:none;border-radius:14px;padding:14px}
+#ticketDetailHost .supportTicketFacts,#ticketDetailHost .internalTicketOverviewGrid{display:none}
+#ticketDetailHost .supportTicketTopbar .supportQuickActions{align-items:center}
+.qf-ticket-tabs{position:sticky;top:72px;z-index:12;background:#eef2f8;border-color:#d4deec}
+.qf-ticket-shell{display:grid;grid-template-columns:minmax(0,1fr) minmax(215px,250px);gap:14px;align-items:start}
+.qf-ticket-main{min-width:0}
+.qf-ticket-pane{display:grid;align-content:start;gap:12px}
+.qf-ticket-pane > .section,.qf-ticket-pane > .formSection,.qf-ticket-pane > .card,.qf-ticket-pane > .modalGrid2{margin-top:0!important}
+.qf-ticket-context{position:sticky;top:145px;border:1px solid #dbe4ef;background:#f9fbff;border-radius:14px;padding:13px;max-height:calc(100dvh - 165px);overflow:auto}
+.qf-context-heading{font-weight:800;font-size:12px;color:#334155;margin-bottom:10px}
+.qf-context-fact{padding:10px 0;border-top:1px solid #e5ebf3}
+.qf-context-fact span{display:block;font-size:11px;color:#64748b;margin-bottom:4px}
+.qf-context-fact strong{font-size:12px;overflow-wrap:anywhere}
+.qf-context-action{display:block;width:100%;border:1px solid #d6dfed;border-radius:9px;text-align:left;background:#fff;padding:10px 11px;color:#2a4d7f;font-weight:700;font-size:12px;margin-top:7px}
+.qf-ticket-pane .supportLinearFlow{gap:9px;margin:0}
+.qf-ticket-pane .supportLinearCard{padding:12px 14px;border-radius:12px}
+.qf-ticket-pane .supportLinearCard .supportLinearBody{margin:10px 0 0 0}
+.qf-step-toggle{background:#fff;border:1px solid #d4ddeb;color:#2a4a7c;min-width:60px;padding:7px 10px;border-radius:8px;font-size:12px;font-weight:800}
+.qf-ticket-pane .supportLinearCard.qf-step-collapsed .supportLinearBody{display:none}
+.qf-step-toggle:focus-visible{outline:3px solid #7caaff}
+#appView .workspace,#home,#ticketDetailHost,.qf-home-panel,.qf-ticket-pane{min-width:0;overflow-wrap:break-word}
+@media(max-width:1150px){
+  .qf-home-panel .supportTodayGrid{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .qf-ticket-shell{grid-template-columns:minmax(0,1fr) 195px}
+}
+@media(max-width:980px){
+  #appView .appShell{grid-template-columns:minmax(0,1fr);gap:9px}
+  #appView .side{position:static;max-height:none;overflow:auto;padding:8px 10px;border-radius:12px}
+  #navMenu{display:flex;flex-direction:row;overflow-x:auto;gap:5px;scrollbar-width:thin}
+  .qf-nav-group{display:contents}
+  .qf-nav-group-title{display:none}
+  #navMenu .navBtn{flex:0 0 auto;min-height:38px;width:auto;white-space:nowrap;padding:8px 11px}
+  .qf-ticket-shell{grid-template-columns:minmax(0,1fr)}
+  .qf-ticket-context{position:static;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));max-height:none;gap:6px 12px}
+  .qf-context-heading{grid-column:1/-1}
+  .qf-context-fact{padding:7px 0}
+}
+@media(max-width:680px){
+  body:has(#appView:not(.hidden)) .wrap{padding:10px 9px 80px}
+  #appView .workspaceHead{padding:12px 14px}
+  #appView .workspaceHead h1{font-size:17px}
+  .qf-command-header{gap:10px}
+  #home .qf-view-title h2{font-size:22px}
+  .qf-home-shortcuts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}
+  .qf-shortcut-button{padding:11px 7px;font-size:12px}
+  .qf-home-switcher,.qf-ticket-tabs{margin:8px -3px 12px}
+  .qf-switch-button{padding:10px 12px;font-size:12px}
+  .qf-home-panel .supportTodayGrid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .qf-home-panel .supportTodayTile{min-height:78px}
+  .qf-home-panel .supportHomeSection{padding:12px}
+  .qf-home-panel .supportReceptionBar{padding:13px}
+  .qf-home-panel .internalActionStrip{grid-template-columns:repeat(2,minmax(0,1fr))}
+  #ticketDetailHost .supportTicketTopbar,#ticketDetailHost .internalTicketTopbar{padding:12px}
+  #ticketDetailHost .supportTicketTopbar .supportQuickActions button{width:auto;min-width:0;flex:1}
+  .qf-ticket-tabs{top:0}
+  .qf-ticket-context{grid-template-columns:1fr}
+  .qf-context-heading{font-size:13px}
+  #ticketDetailHost .card.section{padding:12px}
+  #ticketDetailHost .modalGrid2{grid-template-columns:1fr}
+  .qf-ticket-pane .supportLinearCard{padding:11px}
+  .qf-ticket-pane .supportLinearHead{gap:8px}
+  .qf-step-toggle{min-width:54px;padding:7px}
+}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
