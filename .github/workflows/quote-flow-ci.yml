@@ -23,6 +23,8 @@ jobs:
 
       - name: Validate production HTML
         run: node scripts/validate-static.mjs
+      - name: Validate UI redesign compatibility
+        run: node scripts/test-ui-redesign.mjs
       - name: Test ticket workspace recovery
         run: node scripts/test-ticket-workspace.mjs
       - name: Validate ticket numbering migrations
