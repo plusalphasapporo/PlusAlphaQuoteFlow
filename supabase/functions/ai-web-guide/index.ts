@@ -171,6 +171,65 @@ export default {
       })
     }
 
+    // Reopen previously researched steps even when OpenAI is unavailable.
+    // Both read paths are scoped to a ticket that RLS already allowed and to
+    // that ticket's customer. Never expose other customers' private drafts.
+    const customerTag = 'customer:' + String(ticket.customer_id)
+    const savedQuery = (record: any): string => {
+      const content = String(record?.body || '')
+      const line = content.match(/(?:^|\n)症状・依頼\s*[:：]\s*([^\r\n]*)/)?.[1] || ''
+      const title = String(record?.title || '').replace(/^Web調査\s*[:：]\s*/, '')
+      return safeQuery(line || title)
+    }
+    if (body.listRecent === true) {
+      const { data: history, error: historyError } = await ctx.supabaseAdmin
+        .from('knowledge_articles')
+        .select('id,title,body,tags,created_at,is_active')
+        .eq('category', 'Web詳細調査')
+        .contains('tags', [customerTag])
+        .order('created_at', { ascending: false }).limit(24)
+      if (historyError) return reply({ error: 'SAVED_GUIDES_UNAVAILABLE' }, 503)
+      const seen = new Set<string>()
+      const articles: Array<{ id: string; query: string; checkedAt: string; published: boolean }> = []
+      for (const item of history || []) {
+        if ((item.tags || []).includes('却下')) continue
+        const query = savedQuery(item)
+        if (query.length < 4) continue
+        const normalized = query.toLowerCase()
+        if (seen.has(normalized)) continue
+        seen.add(normalized)
+        articles.push({
+          id: String(item.id), query, checkedAt: String(item.created_at || ''),
+          published: item.is_active === true,
+        })
+        if (articles.length >= 8) break
+      }
+      return reply({ recent: true, articles, noExternalCall: true })
+    }
+    if (body.reopenId !== undefined) {
+      if (!isUuid(body.reopenId)) return reply({ error: 'INVALID_SAVED_GUIDE_ID' }, 400)
+      const { data: article, error: articleError } = await ctx.supabaseAdmin
+        .from('knowledge_articles')
+        .select('id,title,body,tags,created_at,is_active')
+        .eq('id', body.reopenId)
+        .eq('category', 'Web詳細調査')
+        .contains('tags', [customerTag])
+        .maybeSingle()
+      if (articleError) return reply({ error: 'SAVED_GUIDES_UNAVAILABLE' }, 503)
+      if (!article || (article.tags || []).includes('却下')) {
+        return reply({ error: 'SAVED_GUIDE_NOT_FOUND' }, 404)
+      }
+      const lastChecked = new Date(article.created_at).getTime()
+      const needsRefresh = !Number.isFinite(lastChecked) ||
+        Date.now() - lastChecked > 30 * 24 * 60 * 60 * 1000
+      const parts = cachedParts(String(article.body || ''))
+      return reply({
+        ...parts, query: savedQuery(article), fromCache: true, saved: true,
+        needsRefresh, knowledgeId: article.id, checkedAt: article.created_at,
+        verifiedByStaff: article.is_active === true, noExternalCall: true,
+      })
+    }
+
     // Public web search must require an explicit technical query. Never use
     // the ticket subject, customer name, asset record, internal notes, calls,
     // credentials or attachments as an automatic search fallback.
