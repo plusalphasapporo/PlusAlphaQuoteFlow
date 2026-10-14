@@ -10,9 +10,11 @@ const isUuid = (value: unknown): value is string =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 
 function safeQuery(value: unknown): string {
-  return String(value ?? '')
+  return String(value ?? '').normalize('NFKC')
     .replace(/https?:\/\/[^\s]+/gi, '[URL省略]')
     .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[メール省略]')
+    .replace(/(?:\d{1,3}\.){3}\d{1,3}/g, '[IP省略]')
+    .replace(/(?:[A-Za-z]:\\|\\\\)[^\s]+/g, '[パス省略]')
     .replace(/\b(?:\+?\d[\d ()-]{8,}\d)\b/g, '[番号省略]')
     .replace(/\b[A-Za-z0-9]{24,}\b/g, '[識別子省略]')
     .replace(/\s+/g, ' ').trim().slice(0, 300)
@@ -98,22 +100,18 @@ export default {
     // permit callers to ask the AI to inspect a ticket they cannot access.
     const { data: ticket, error: ticketError } = await ctx.supabase
       .from('support_tickets')
-      .select('id,subject,customer_id,asset_id')
+      .select('id,customer_id')
       .eq('id', ticketId).single()
     if (ticketError || !ticket) return reply({ error: 'TICKET_NOT_FOUND_OR_FORBIDDEN' }, 404)
 
-    let assetModel = ''
-    if (ticket.asset_id) {
-      const { data: asset } = await ctx.supabase
-        .from('assets').select('model_name').eq('id', ticket.asset_id).maybeSingle()
-      assetModel = String(asset?.model_name || '')
-    }
-
-    // This is a PUBLIC technical search, never customer folders, passwords,
-    // call transcripts, attachments, messages, or entire ticket details.
-    const query = safeQuery(body.query || [assetModel, ticket.subject].filter(Boolean).join(' '))
-    if (query.length < 4) return reply({ error: 'TECHNICAL_QUERY_REQUIRED' }, 400)
-    const normalized = query.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ')
+    // Public web search must require an explicit technical query. Never use
+    // the ticket subject, customer name, asset record, internal notes, calls,
+    // credentials or attachments as an automatic search fallback.
+    if (typeof body.query !== 'string') return reply({ error: 'TECHNICAL_QUERY_REQUIRED' }, 400)
+    const query = safeQuery(body.query)
+    const meaningful = query.replace(/\[[^\]]+省略\]/g, '').trim()
+    if (meaningful.length < 4) return reply({ error: 'TECHNICAL_QUERY_REQUIRED' }, 400)
+    const normalized = query.toLowerCase().replace(/\s+/g, ' ')
     const cacheKey = 'web-cache:' + (await fingerprint(String(ticket.customer_id) + '\n' + normalized)).slice(0, 32)
 
     const { data: found, error: cacheError } = await ctx.supabaseAdmin
