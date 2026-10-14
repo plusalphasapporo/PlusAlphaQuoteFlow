@@ -124,6 +124,18 @@ async function request(body) {
   return { status: response.status, body: await response.json() };
 }
 
+// Read-only preflight must not call the provider, save records or disclose the API key.
+const baselineCount=state.knowledge_articles.length;
+let preflight=await request({ticketId:ticketA, diagnostics:true});
+assert.equal(preflight.status,200);
+assert.equal(preflight.body.diagnostics,true);
+assert.equal(preflight.body.ready,true);
+assert.equal(preflight.body.checks.knowledgeRead,true);
+assert.equal(preflight.body.checks.aiConfigured,true);
+assert.equal(state.webCalls.length,0);
+assert.equal(state.knowledge_articles.length,baselineCount);
+assert.doesNotMatch(JSON.stringify(preflight.body),/example-test-key|customer_id|33333333/);
+
 // Input checks must block incomplete requests before calling the paid provider.
 let res = await request({ ticketId: ticketA });
 assert.equal(res.status, 400);
