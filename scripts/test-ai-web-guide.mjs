@@ -54,6 +54,10 @@ function selectBuilder(table) {
         ? { data: result[0], error: null }
         : { data: null, error: { message: 'Not found' } };
     },
+    async maybeSingle() {
+      const result = state[table].filter(row => checks.every(fn => fn(row)));
+      return { data: result.length ? result[0] : null, error: null };
+    },
     insert(row) {
       assert.equal(table, 'knowledge_articles');
       if (!state.persistOk) {
@@ -181,6 +185,40 @@ assert.equal(state.knowledge_articles[0].is_active, false);
 assert.equal(state.knowledge_articles[0].audience, 'support');
 assert.ok(state.knowledge_articles[0].tags.includes('AI仮保存'));
 
+// Saved guides are browsable without calling OpenAI or modifying anything.
+// Tests exercise the *actual* production handler and its customer-tag filter.
+const firstGuideId = state.knowledge_articles[0].id;
+res = await request({ ticketId: ticketA, listRecent: true });
+assert.equal(res.status, 200);
+assert.equal(res.body.recent, true);
+assert.equal(res.body.noExternalCall, true);
+assert.equal(res.body.articles.length, 1);
+assert.equal(res.body.articles[0].id, firstGuideId);
+assert.equal(res.body.articles[0].query, query);
+assert.equal(state.webCalls.length, 1);
+assert.equal(state.knowledge_articles.length, 1);
+
+res = await request({ ticketId: ticketA, reopenId: firstGuideId });
+assert.equal(res.status, 200);
+assert.equal(res.body.fromCache, true);
+assert.equal(res.body.noExternalCall, true);
+assert.equal(res.body.verifiedByStaff, false);
+assert.equal(res.body.text, '手順1: 印刷キューを開く。\n手順2: 印刷状態を確認する。');
+assert.equal(res.body.sources[0].title, 'Microsoft Learn');
+assert.equal(state.webCalls.length, 1);
+assert.equal(state.knowledge_articles.length, 1);
+
+// The second customer cannot see or open this customer's private draft.
+res = await request({ ticketId: ticketB, listRecent: true });
+assert.equal(res.status, 200);
+assert.equal(res.body.articles.length, 0);
+res = await request({ ticketId: ticketB, reopenId: firstGuideId });
+assert.equal(res.status, 404);
+assert.equal(res.body.error, 'SAVED_GUIDE_NOT_FOUND');
+res = await request({ ticketId: ticketA, reopenId: 'not-a-uuid' });
+assert.equal(res.status, 400);
+assert.equal(state.webCalls.length, 1);
+
 // Second identical look-up must re-use the draft with its real citations.
 res = await request({ ticketId: ticketA, query });
 assert.equal(res.status, 200);
@@ -202,6 +240,21 @@ res = await request({ ticketId: ticketA, query, refresh: true });
 assert.equal(res.body.fromCache, false);
 assert.equal(state.webCalls.length, 3);
 assert.equal(state.knowledge_articles.length, 3);
+
+// Latest refresh wins; recent history deduplicates repeated queries.
+res = await request({ ticketId: ticketA, listRecent: true });
+assert.equal(res.status, 200);
+assert.equal(res.body.articles.length, 1);
+assert.equal(res.body.articles[0].id, state.knowledge_articles[2].id);
+assert.equal(state.webCalls.length, 3);
+
+// Even during an upstream outage, previously saved guides remain readable.
+state.upstreamOk = false;
+res = await request({ ticketId: ticketA, reopenId: firstGuideId });
+assert.equal(res.status, 200);
+assert.equal(res.body.noExternalCall, true);
+assert.equal(state.webCalls.length, 3);
+state.upstreamOk = true;
 
 // Synthetic PII-like tokens must not appear in the outgoing search input.
 res = await request({ ticketId: ticketA,
@@ -226,4 +279,4 @@ res = await request({ ticketId: ticketA, query: 'Windows 11 コントロール�
 assert.equal(res.status, 502);
 assert.equal(res.body.error, 'WEB_RESEARCH_FAILED');
 
-console.log('AI Web Guide mocked E2E passed: authorization, web research, private draft save, reuse, refresh, tenant separation, redaction, error handling.');
+console.log('AI Web Guide mocked E2E passed: authorization, web research, private draft save, cached reuse, secure history and reopen, outage fallback, refresh, tenant separation, redaction, error handling.');
