@@ -104,6 +104,31 @@ export default {
       .eq('id', ticketId).single()
     if (ticketError || !ticket) return reply({ error: 'TICKET_NOT_FOUND_OR_FORBIDDEN' }, 404)
 
+    // Read-only connection diagnostics for authenticated support users.
+    // This never calls a paid AI model and never inserts/updates a record.
+    // Do not return the API key, customer data, document IDs or error details.
+    if (body.diagnostics === true) {
+      const results = await Promise.allSettled([
+        ctx.supabaseAdmin.from('knowledge_articles').select('id')
+          .eq('category', 'Web詳細調査').limit(1),
+        ctx.supabaseAdmin.rpc('openai_service_credentials'),
+      ])
+      const knowledgeReady = results[0].status === 'fulfilled' && !results[0].value.error
+      const aiConfigured = results[1].status === 'fulfilled' &&
+        !results[1].value.error && !!String(results[1].value.data?.api_key || '').trim()
+      return reply({
+        diagnostics: true,
+        ready: knowledgeReady && aiConfigured,
+        checkedAt: new Date().toISOString(),
+        checks: {
+          authentication: true,
+          ticketAccess: true,
+          knowledgeRead: knowledgeReady,
+          aiConfigured,
+        },
+      })
+    }
+
     // Public web search must require an explicit technical query. Never use
     // the ticket subject, customer name, asset record, internal notes, calls,
     // credentials or attachments as an automatic search fallback.
