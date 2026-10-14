@@ -62,6 +62,8 @@ const state = {
     {id:ticketId, customer_id:customerId},
     {id:otherTicketId, customer_id:otherCustomerId}
   ],
+  customer_management_info: [],
+  audit_logs: [],
   customer_onedrive_folders: [
     {customer_id:customerId, web_url:trustedFolderUrl, folder_name:'アクメ設備'}
   ],
@@ -82,6 +84,7 @@ function tableBuilder(table, scope) {
       conditions.push(row => row[field] === expected);
       return builder;
     },
+    async limit(n) {return {data:state[table].filter(row=>conditions.every(fn=>fn(row))).slice(0,n),error:null};},
     async single() {
       const record=state[table].find(row => conditions.every(fn => fn(row)));
       if (!record || (scope==='user' && table==='support_tickets' && !state.accessibleTickets.has(record.id))) {
@@ -93,10 +96,10 @@ function tableBuilder(table, scope) {
       const record=state[table].find(row => conditions.every(fn => fn(row)));
       return {data:record||null,error:null};
     },
-    async insert() { state.databaseWrites++; throw new Error('Read-only shortcut must not insert'); },
-    async upsert() { state.databaseWrites++; throw new Error('Read-only shortcut must not upsert'); },
+    async insert(row) { if(table==='audit_logs'){state[table].push(row);return {error:null};}state.databaseWrites++;throw new Error('Unexpected insert'); },
+    async upsert(row) { if(table!=='customer_management_info') throw new Error('Unexpected upsert'); state.databaseWrites++; const prior=state[table].find(x=>x.id===row.id);if(prior)Object.assign(prior,row);else state[table].push({...row,id:'77777777-7777-4777-8777-777777777777'});return {error:null}; },
     async update() { state.databaseWrites++; throw new Error('Read-only shortcut must not update'); },
-    async delete() { state.databaseWrites++; throw new Error('Read-only shortcut must not delete'); }
+    async delete() { if(table!=='customer_management_info') throw new Error('Unexpected delete'); const idx=state[table].findIndex(row=>conditions.every(fn=>fn(row)));if(idx>=0)state[table].splice(idx,1);state.databaseWrites++;return {error:null}; }
   };
   return builder;
 }
@@ -137,6 +140,19 @@ async function request(body, overrides={}) {
 }
 const quickRequest={action:'get_quick_link',customerId,ticketId};
 
+let denied=await request({action:'set_direct_link',customerId,folderUrl:trustedFolderUrl});
+assert.equal(denied.status,403,'Support staff must not edit direct URLs');
+let adminSaved=await request({action:'set_direct_link',customerId,folderUrl:trustedFolderUrl},{role:'internal_admin'});
+assert.equal(adminSaved.status,200);
+assert.equal(adminSaved.body.source,'direct');
+state.profiles[0].role='support_staff';
+let directFound=await request(quickRequest);
+assert.equal(directFound.body.source,'direct');
+assert.equal(directFound.body.webUrl,trustedFolderUrl);
+let adminDeleted=await request({action:'remove_direct_link',customerId},{role:'internal_admin'});
+assert.equal(adminDeleted.status,200);
+state.profiles[0].role='support_staff';
+state.databaseWrites=0;
 let result=await request(quickRequest);
 assert.equal(result.status,200);
 assert.equal(result.body.linked,true);
