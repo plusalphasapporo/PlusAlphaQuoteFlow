@@ -300,24 +300,69 @@
     });
   }
   function revealTicketTarget(event) {
-    const root=home.querySelector('#ticketDetailHost > section.qf-ticket-shell');
+    // Original ticket handlers use scrollIntoView/focus to jump between
+    // controls. Their destination must be visible after the redesign.
+    // Reveal it BEFORE the original click handler runs (capture phase).
     const mainRoot=home.querySelector('#ticketDetailHost > section.card.section[data-qf-enhance-version="1"]');
     if (!mainRoot || !mainRoot.__qfTicketTab) return;
-    const button=event.target.closest('button');
-    if (!button) return;
-    const id=button.id || '';
-    const action=button.dataset.action || '';
-    if (id==='internalTicketCustomer') mainRoot.__qfTicketTab('customer');
-    else if (id==='internalTicketMessage' || /^(customer_reply|customer_wait)$/.test(action)) mainRoot.__qfTicketTab('messages');
-    else if (id==='internalTicketAttachments' || id==='internalTicketEdit') mainRoot.__qfTicketTab('details');
-    else if (action === 'history') mainRoot.__qfTicketTab('history');
-    else if (button.id === 'supportTopPrimaryAction') {
-      mainRoot.__qfTicketTab('work');
-      const target= action === 'remote' ? '#supportRemoteWorkspace'
-        : action === 'report' ? '#supportReportWorkspace'
-        : action === 'procedure' || action === 'assist' ? '#supportKnowledgeWorkspace'
-        : '#supportLinearIntake';
-      mainRoot.querySelector(target)?.__qfExpand?.();
+    const trigger=event.target.closest('button,.supportTopAttachmentJump');
+    if (!trigger || !mainRoot.contains(trigger)) return;
+    const id=trigger.id || '';
+    const action=trigger.dataset.action || trigger.dataset.target || '';
+    const reveal=(pane,cardSelector)=>{
+      mainRoot.__qfTicketTab(pane);
+      if(cardSelector) mainRoot.querySelector(cardSelector)?.__qfExpand?.();
+    };
+    if (trigger.matches('.supportTopAttachmentJump,.supportTopAttachmentJump *') ||
+        trigger.matches('.supportTopAttachmentJump') ||
+        ['internalTicketAttachments','supportTopAttachments','supportTicketContentJump',
+         'ticketLinearAttachments','internalTicketEdit'].includes(id) ||
+        trigger.matches('.supportTopAttachmentJump')) {
+      reveal('details');
+      return;
+    }
+    if (['supportTopCustomer','supportTicketCustomerJump','ticketActionCustomer',
+         'ticketLinearCustomer','internalTicketCustomer'].includes(id)) {
+      reveal('customer');
+      return;
+    }
+    if (['internalTicketMessage','ticketAssistReplyCustomer'].includes(id) ||
+        trigger.matches('.ticketKnowledgeUse')) {
+      reveal('messages');
+      return;
+    }
+    if (['supportTicketAiJump','ticketActionAi'].includes(id)) {
+      reveal('work','#supportKnowledgeWorkspace');
+      return;
+    }
+    if (['ticketActionRemote','ticketAssistUseRemote'].includes(id)) {
+      reveal('work','#supportRemoteWorkspace');
+      return;
+    }
+    if (id==='ticketAssistGoReport') {
+      reveal('work','#supportReportWorkspace');
+      return;
+    }
+    if (id==='internalTicketPrimaryAction') {
+      const destination=trigger.dataset.target||'content';
+      if (destination==='manage'||destination==='deadline') reveal('details');
+      else if (destination==='history'||destination==='status') reveal('messages');
+      else if (destination==='handoff') reveal('work','#internalHandoffWorkspace');
+      else reveal('customer');
+      return;
+    }
+    if (id==='supportTopPrimaryAction'||id==='supportPrimaryNext') {
+      if (['history','customer_reply','customer_wait'].includes(action)) {
+        reveal('messages');
+      } else if (action==='remote') {
+        reveal('work','#supportRemoteWorkspace');
+      } else if (action==='report') {
+        reveal('work','#supportReportWorkspace');
+      } else if (action==='assist'||action==='procedure') {
+        reveal('work','#supportKnowledgeWorkspace');
+      } else {
+        reveal('work','#supportLinearIntake');
+      }
     }
   }
   function revealHomeTarget(event) {
