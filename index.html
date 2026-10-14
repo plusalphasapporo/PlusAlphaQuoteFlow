@@ -2353,6 +2353,20 @@
     if(!(role==='internal_admin'||role==='internal_staff')) return;
     internalHandoffRealtimeChannel=supabase
       .channel('internal-handoff-live')
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'support_tickets'},async payload=>{
+        // Never announce CallConnect-originated new cases to internal roles.
+        // The role-secured unread RPC is the final authority on eligibility.
+        const ticket=payload.new||{};
+        const from=String(ticket.request_details?.source||'').toLowerCase();
+        if(from.includes('callconnect')||ticket.request_details?.callconnect_call_id||
+          /^【受付経路】CallConnect/i.test(String(ticket.description||''))) return;
+        const unread=await refreshInternalUnreadHandoffBadge();
+        const eligible=(unread.ticket_items||[]).find(x=>String(x.ticket_id)===String(ticket.id));
+        if(eligible){
+          toast('新着案件：'+(eligible.customer_name||'')+' '+(eligible.subject||''));
+          if(currentPage==='home') await renderHome();
+        }
+      })
       .on('postgres_changes',{event:'UPDATE',schema:'public',table:'support_tickets'},async payload=>{
         const progress=payload.new?.request_details?.support_procedure_progress||null;
         const oldProgress=payload.old?.request_details?.support_procedure_progress||null;
@@ -2377,6 +2391,171 @@
         if(currentPage==='home') await renderHome();
       })
       .subscribe();
+  }
+
+  async function openUnifiedNotificationCenter(){
+    const role=bootData?.context?.role;
+    const internal=role==='internal_admin'||role==='internal_staff';
+    const support=role==='support_staff';
+    if(!internal&&!support) return go(role==='customer_user'?'customer_status':'home');
+    mountAppModal(
+      '<div class="appModalHead"><div><h2>通知センター</h2><p>自分に届いた未読案件・引き継ぎ・対応アラートを確認します。</p></div><button id="unifiedNotificationClose" class="ghost" type="button">×</button></div>'+
+      '<div id="unifiedNotificationBody" class="appModalBody"><div class="notice">最新の通知を取得しています...</div></div>'+
+      '<div class="appModalFoot"><button id="unifiedNotificationRefresh" class="ghost" type="button">更新</button><button id="unifiedNotificationDone" class="primary" type="button">閉じる</button></div>',
+      true
+    );
+    $('#unifiedNotificationClose').onclick=closeAppModal;
+    $('#unifiedNotificationDone').onclick=closeAppModal;
+    $('#unifiedNotificationRefresh').onclick=()=>openUnifiedNotificationCenter();
+    const host=$('#unifiedNotificationBody');
+
+    try{
+      const data=internal
+        ? await Promise.all([
+            rpc('internal_unread_handoff_notifications'),
+            rpcOptional('support_deadline_states',{},[])
+          ]).then(([notifications,deadlines])=>({
+            notifications:notifications||{},
+            deadlines:Array.isArray(deadlines)?deadlines:[]
+          }))
+        : await Promise.all([
+            rpc('support_unread_notifications'),
+            rpcOptional('support_unread_handoff_updates',{}, {items:[],count:0}),
+            rpcOptional('callconnect_unread_notifications',{}, {items:[],count:0}),
+            rpcOptional('support_deadline_states',{}, []),
+            rpcOptional('support_next_action_states',{}, []),
+            rpcOptional('support_unanswered_messages',{}, {items:[],count:0})
+          ]).then(([notifications,handoffs,calls,deadlines,queue,unanswered])=>({
+            notifications:notifications||{},
+            handoffs:handoffs||{},
+            calls:calls||{},
+            deadlines:Array.isArray(deadlines)?deadlines:[],
+            queue:Array.isArray(queue)?queue:[],
+            unanswered:unanswered||{}
+          }));
+      if(!host?.isConnected) return;
+      const entries=[];
+      const seenTickets=new Set();
+      const add=(kind,category,item,ticketId,title,details,occurredAt,priority='normal')=>{
+        entries.push({
+          kind,category,item,ticketId:ticketId||null,
+          title:String(title||'内容未登録'),
+          details:String(details||''),
+          occurredAt:String(occurredAt||''),
+          priority:String(priority||'normal')
+        });
+      };
+      const describe=t=>[t.customer_name,t.ticket_number,t.source_label].filter(Boolean).join(' / ');
+      if(internal){
+        for(const t of (data.notifications.ticket_items||[])){
+          if(!t.ticket_id) continue;
+          seenTickets.add(String(t.ticket_id));
+          add('ticket','新着案件',t,t.ticket_id,t.subject,describe(t),t.activity_at||t.created_at,t.priority);
+        }
+        for(const h of (data.notifications.items||[])){
+          if(!h.ticket_id||!h.handoff_id) continue;
+          seenTickets.add(String(h.ticket_id));
+          add('internal_handoff','自社への引き継ぎ',h,h.ticket_id,h.subject,
+            [h.customer_name,h.ticket_number,h.reason].filter(Boolean).join(' / '),h.created_at,h.priority);
+        }
+      }else{
+        for(const t of (data.notifications.items||[])){
+          if(!t.id) continue;
+          seenTickets.add(String(t.id));
+          add('ticket','障害・問い合わせ・設定依頼',t,t.id,t.subject,
+            describe(t),t.latest_message_at||t.created_at,t.priority);
+        }
+        for(const h of (data.handoffs.items||[])){
+          if(!h.ticket_id||!h.handoff_id) continue;
+          seenTickets.add(String(h.ticket_id));
+          add('support_handoff','引き継ぎ状況',h,h.ticket_id,h.subject,
+            [h.customer_name,h.ticket_number,h.handoff_state==='accepted'?'自社が受付済み':'自社対応完了'].filter(Boolean).join(' / '),
+            h.updated_at,h.priority);
+        }
+        for(const c of (data.calls.items||[])){
+          if(!c.id) continue;
+          if(c.support_ticket_id&&seenTickets.has(String(c.support_ticket_id))) continue;
+          add('callconnect','CallConnect',c,c.support_ticket_id,
+            c.matched_customer_name||c.contact_company||c.contact_name||'新しい電話受付',
+            [c.customer_code,c.contact_number,'電話・着信記録'].filter(Boolean).join(' / '),c.created_at,'normal');
+        }
+        for(const a of (data.queue||[])){
+          if(!a.ticket_id||!['warning','critical'].includes(a.alert_level)||a.notification_active===false) continue;
+          if(seenTickets.has(String(a.ticket_id))) continue;
+          seenTickets.add(String(a.ticket_id));
+          add('ticket','対応滞留',a,a.ticket_id,a.subject||'対応の確認が必要です',
+            a.alert_level==='critical'?'緊急：対応滞留':'注意：対応滞留',a.support_next_action_changed_at||a.updated_at,
+            a.alert_level==='critical'?'urgent':'high');
+        }
+        for(const a of (data.unanswered.items||[])){
+          if(!a.ticket_id||!['attention','warning','critical'].includes(a.wait_level)) continue;
+          if(seenTickets.has(String(a.ticket_id))) continue;
+          seenTickets.add(String(a.ticket_id));
+          add('ticket','顧客への未返信',a,a.ticket_id,a.subject||'顧客への回答が必要です',
+            a.customer_name||'対応待ち',a.last_customer_message_at,a.wait_level==='critical'?'urgent':'high');
+        }
+      }
+      for(const d of data.deadlines){
+        if(!d.ticket_id||!['overdue','due_today'].includes(d.deadline_state)) continue;
+        if(seenTickets.has(String(d.ticket_id))) continue;
+        seenTickets.add(String(d.ticket_id));
+        add('ticket','対応期限',d,d.ticket_id,d.subject||'対応期限を確認してください',
+          d.deadline_state==='overdue'?'期限超過':'本日期限',d.resolution_due_at||d.first_response_due_at,
+          d.deadline_state==='overdue'?'urgent':'high');
+      }
+      const priorityRank={urgent:0,high:1,normal:2,low:3};
+      entries.sort((a,b)=>
+        (priorityRank[a.priority]??2)-(priorityRank[b.priority]??2)
+        || (Date.parse(b.occurredAt)||0)-(Date.parse(a.occurredAt)||0)
+      );
+      const summary=internal
+        ? '案件 '+Number(data.notifications.ticket_count||0)+'件 / 引き継ぎ '+Number(data.notifications.count||0)+'件'
+        : '案件 '+Number(data.notifications.count||0)+'件 / 引き継ぎ '+Number(data.handoffs.count||0)+'件 / CallConnect '+Number(data.calls.count||0)+'件';
+      const display=entries.slice(0,60);
+      host.innerHTML=
+        '<div class="notice"><strong>未読・要対応</strong><p class="sectionDesc" style="margin:6px 0 0">'+esc(summary)+'</p>'+
+          '<small>通知を選ぶと案件カルテに直接移動します。既読は案件を開いた時点で記録されます。</small></div>'+
+        (display.length
+          ? '<div class="col" style="display:grid;gap:9px;margin-top:12px">'+display.map((entry,index)=>
+              '<button type="button" class="card unifiedNotificationOpen" data-index="'+index+'" style="display:block;width:100%;text-align:left;cursor:pointer;padding:14px">'+
+                '<div class="row between" style="margin-bottom:7px;gap:8px"><span class="pill '+(entry.priority==='urgent'?'bad':'')+'">'+esc(entry.category)+'</span>'+
+                '<small class="muted">'+esc(entry.occurredAt?dateTimeText(entry.occurredAt):'')+'</small></div>'+
+                '<strong style="display:block;margin-bottom:5px">'+esc(entry.title)+'</strong>'+
+                '<small class="muted">'+esc(entry.details)+'</small>'+
+              '</button>'
+            ).join('')+'</div>'
+          : '<div class="empty" style="margin-top:12px">現在、新しい通知はありません。</div>')+
+        (entries.length>display.length?'<small class="muted">新しい通知を最大60件表示しています。</small>':'');
+      host.querySelectorAll('.unifiedNotificationOpen').forEach(btn=>{
+        btn.onclick=async()=>{
+          const entry=display[Number(btn.dataset.index)];
+          if(!entry) return;
+          btn.disabled=true;
+          closeAppModal();
+          try{
+            if(entry.kind==='internal_handoff'){
+              await rpc('mark_internal_handoff_read',{p_handoff_id:entry.item.handoff_id});
+            }else if(entry.kind==='support_handoff'){
+              await rpc('mark_support_handoff_update_read',{p_handoff_id:entry.item.handoff_id});
+            }else if(entry.kind==='callconnect'){
+              await rpc('mark_callconnect_notification_read',{p_notification_id:entry.item.id});
+            }
+            if(entry.ticketId) await openTicketWorkspace(entry.ticketId);
+            else if(entry.kind==='callconnect') await go('support_callconnect');
+            if(internal) await refreshInternalUnreadHandoffBadge();
+            else await refreshSupportUnreadBadge();
+          }catch(err){
+            toast('通知から案件を開けませんでした：'+String(err.message||err));
+          }finally{btn.disabled=false;}
+        };
+      });
+    }catch(err){
+      if(host?.isConnected){
+        host.innerHTML='<div class="notice error">通知の取得に失敗しました：'+esc(err.message||String(err))+'</div>'+
+          '<button id="unifiedNotificationRetry" class="primary" type="button">再試行</button>';
+        $('#unifiedNotificationRetry').onclick=()=>openUnifiedNotificationCenter();
+      }
+    }
   }
 
   async function setupGlobalHeader(){
@@ -2438,18 +2617,7 @@
     }
     $('#notificationBtn').onclick=async()=>{
       if(['support_staff','internal_admin','internal_staff'].includes(role)){
-        if(role==='support_staff'){
-          const cc=await refreshCallConnectUnread();
-          if(Number(cc?.count||0)>0) return go('support_callconnect');
-        }
-        if(role==='support_staff'){
-          const nextActions=await rpc('support_next_action_states').catch(()=>[]);
-          if((nextActions||[]).some(x=>(x.alert_level==='warning'||x.alert_level==='critical')&&x.notification_active!==false)){
-            supportQueueView='attention';
-            return go('support_cases');
-          }
-        }
-        return go('home');
+        return openUnifiedNotificationCenter();
       }
       return go(role==='customer_user'?'customer_status':'support');
     };
@@ -8092,6 +8260,9 @@
     const attachments=detail.attachments||[];
     const handoffs=detail.handoffs||[];
     if(internal){
+      // Reading an internal ticket clears its per-user unread notification,
+      // including tickets created by customers and support staff.
+      try{await rpc('mark_support_ticket_read',{p_ticket_id:t.id});}catch(_){}
       for(const h of handoffs){
         if(h.requested_by_role==='support_staff' && h.state!=='completed'){
           try{await rpc('mark_internal_handoff_read',{p_handoff_id:h.id});}catch(_){}
