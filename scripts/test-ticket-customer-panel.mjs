@@ -250,6 +250,7 @@ function uiHarness(reply) {
   const calls=[];
   const ctx={
     document:doc,window:dom.window,URL,
+    internal:false,bootData:{context:{role:'support_staff'}},
     $:selector=>doc.querySelector(selector),
     esc:safeEsc,
     t:{id:ticketId,customer_id:customerId,ticket_number:'TKT-001'},
