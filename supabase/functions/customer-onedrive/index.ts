@@ -7,7 +7,7 @@ type SyncImportItem = {
 }
 
 type Body = {
-  action?: 'link_folder' | 'get_folder' | 'versions' | 'unlink_folder' | 'sync_preview' | 'import_selected' | 'get_quick_link'
+  action?: 'link_folder' | 'get_folder' | 'versions' | 'unlink_folder' | 'sync_preview' | 'import_selected' | 'get_quick_link' | 'set_direct_link' | 'remove_direct_link'
   customerId?: string
   ticketId?: string
   folderUrl?: string
@@ -280,7 +280,8 @@ export default {
     if (!internalRole && !(profile.role === 'support_staff' && action === 'get_quick_link')) {
       return json({ error: 'INTERNAL_REQUIRED' }, 403)
     }
-    if (action === 'get_quick_link') {
+    if (['get_quick_link', 'set_direct_link', 'remove_direct_link'].includes(action)) {
+      if (action !== 'get_quick_link' && profile.role !== 'internal_admin') return json({ error: 'ADMIN_REQUIRED' }, 403)
       if (!isUuid(body.customerId)) return json({ error: 'INVALID_CUSTOMER_ID' }, 400)
       if (profile.role === 'support_staff') {
         if (!isUuid(body.ticketId)) return json({ error: 'INVALID_TICKET_ID' }, 400)
@@ -303,10 +304,79 @@ export default {
       const safeFolderUrl = (raw: unknown): string => {
         try {
           const parsed = new URL(String(raw || ''))
-          if (parsed.protocol !== 'https:' || !parsed.hostname.toLowerCase().endsWith('.sharepoint.com')) return ''
+          if (parsed.protocol !== 'https:' || !parsed.hostname.toLowerCase().endsWith('.sharepoint.com') || parsed.username || parsed.password) return ''
           return parsed.href
         } catch { return '' }
       }
+
+      // Direct SharePoint folder links can be maintained without Microsoft Graph
+      // credentials. Reuse the pre-existing management-info table, but keep the
+      // special category private behind this authorized Edge Function.
+      const directCategory = 'Microsoft365情報フォルダ'
+      const { data: directRows, error: directError } = await ctx.supabaseAdmin
+        .from('customer_management_info')
+        .select('id,url')
+        .eq('customer_id', customer.id)
+        .eq('category', directCategory)
+        .limit(2)
+      if (directError) return json({ error: 'DIRECT_LINK_READ_FAILED' }, 503)
+      if ((directRows || []).length > 1) {
+        return json({ error: 'DUPLICATE_DIRECT_LINKS' }, 409)
+      }
+      const existingDirect = (directRows || [])[0] || null
+
+      if (action === 'set_direct_link') {
+        const folderUrl = String(body.folderUrl || '').trim()
+        const webUrl = safeFolderUrl(folderUrl)
+        if (!webUrl || folderUrl.length > 4096) return json({ error: 'INVALID_FOLDER_URL' }, 400)
+        const row: Record<string, unknown> = {
+          customer_id: customer.id,
+          category: directCategory,
+          url: webUrl,
+          updated_at: new Date().toISOString(),
+        }
+        if (existingDirect?.id) row.id = existingDirect.id
+        const { error: saveError } = await ctx.supabaseAdmin
+          .from('customer_management_info')
+          .upsert(row, { onConflict: 'id' })
+        if (saveError) return json({ error: 'DIRECT_LINK_SAVE_FAILED' }, 503)
+        await ctx.supabaseAdmin.from('audit_logs').insert({
+          actor_user_id: actorUserId,
+          actor_role: profile.role,
+          action: 'customer.folder_direct_url_saved',
+          target_type: 'customer',
+          target_id: customer.id,
+          after_data: { link_kind: 'microsoft365_folder', source: 'direct_url' },
+        })
+        return json({ ok: true, linked: true, webUrl, source: 'direct' })
+      }
+
+      if (action === 'remove_direct_link') {
+        if (existingDirect?.id) {
+          const { error: deleteError } = await ctx.supabaseAdmin
+            .from('customer_management_info')
+            .delete()
+            .eq('id', existingDirect.id)
+          if (deleteError) return json({ error: 'DIRECT_LINK_DELETE_FAILED' }, 503)
+          await ctx.supabaseAdmin.from('audit_logs').insert({
+            actor_user_id: actorUserId,
+            actor_role: profile.role,
+            action: 'customer.folder_direct_url_removed',
+            target_type: 'customer',
+            target_id: customer.id,
+            after_data: { link_kind: 'microsoft365_folder' },
+          })
+        }
+        return json({ ok: true, linked: false })
+      }
+
+      if (existingDirect) {
+        const webUrl = safeFolderUrl(existingDirect.url)
+        return webUrl
+          ? json({ ok: true, linked: true, webUrl, source: 'direct' })
+          : json({ ok: true, linked: false, reason: 'invalid_stored_url' })
+      }
+
       const { data: mapping, error: mappingError } = await ctx.supabaseAdmin
         .from('customer_onedrive_folders')
         .select('web_url,folder_name')
