@@ -41,5 +41,7 @@ jobs:
         run: node scripts/test-ticket-workspace.mjs
       - name: Test ticket customer panel and M365 shortcut
         run: node scripts/test-ticket-customer-panel.mjs
+      - name: Test role-aware unified notifications
+        run: node scripts/test-unified-notifications.mjs
       - name: Validate ticket numbering migrations
         run: node scripts/test-ticket-number-migration.mjs
