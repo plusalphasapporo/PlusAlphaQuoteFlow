@@ -2008,7 +2008,8 @@
       callconnectNotificationPollTimer=null;
     }
     const role=bootData?.context?.role;
-    if(!['internal_admin','internal_staff','support_staff'].includes(role)) return;
+    // The internal team does not receive CallConnect-originated alerts.
+    if(role!=='support_staff') return;
 
     const checkUnread=async()=>{
       try{
@@ -2214,16 +2215,14 @@
     const role=bootData?.context?.role;
     if(!(role==='internal_admin'||role==='internal_staff')) return {count:0,items:[]};
     try{
-      const [biz,unread,deadlineStates,callUnread]=await Promise.all([
-        rpc('internal_business_dashboard'),
+      const [unread,deadlineStates]=await Promise.all([
         rpc('internal_unread_handoff_notifications'),
-        rpc('support_deadline_states'),
-        rpc('callconnect_unread_notifications')
+        rpc('support_deadline_states')
       ]);
       const deadlineAttention=(deadlineStates||[]).filter(x=>x.deadline_state==='overdue'||x.deadline_state==='due_today');
       const overdueCount=deadlineAttention.filter(x=>x.deadline_state==='overdue').length;
       const dueTodayCount=deadlineAttention.filter(x=>x.deadline_state==='due_today').length;
-      const count=Number(biz?.kpis?.urgent_open_tickets||0)+Number(unread?.count||0)+overdueCount+dueTodayCount+Number(callUnread?.count||0);
+      const count=Number(unread?.ticket_count||0)+Number(unread?.count||0)+overdueCount+dueTodayCount;
       if(count>0){
         $('#notificationCount').textContent=count>99?'99+':String(count);
         $('#notificationCount').classList.remove('hidden');
@@ -2389,14 +2388,12 @@
     let count=0;
     try{
       if(role==='internal_admin'||role==='internal_staff'){
-        const [biz,unreadHandoffs,deadlineStates,callUnread]=await Promise.all([
-          rpc('internal_business_dashboard'),
+        const [unreadHandoffs,deadlineStates]=await Promise.all([
           rpc('internal_unread_handoff_notifications'),
-          rpc('support_deadline_states'),
-          rpc('callconnect_unread_notifications')
+          rpc('support_deadline_states')
         ]);
         const deadlineCount=(deadlineStates||[]).filter(x=>x.deadline_state==='overdue'||x.deadline_state==='due_today').length;
-        count=Number(biz?.kpis?.urgent_open_tickets||0)+Number(unreadHandoffs?.count||0)+deadlineCount+Number(callUnread?.count||0);
+        count=Number(unreadHandoffs?.ticket_count||0)+Number(unreadHandoffs?.count||0)+deadlineCount;
       }else if(role==='support_staff'){
         const [unread,unanswered,nextActionStates,handoffUpdates,deadlineStates,callUnread]=await Promise.all([
           rpc('support_unread_notifications'),
@@ -2441,8 +2438,10 @@
     }
     $('#notificationBtn').onclick=async()=>{
       if(['support_staff','internal_admin','internal_staff'].includes(role)){
-        const cc=await refreshCallConnectUnread();
-        if(Number(cc?.count||0)>0) return go('support_callconnect');
+        if(role==='support_staff'){
+          const cc=await refreshCallConnectUnread();
+          if(Number(cc?.count||0)>0) return go('support_callconnect');
+        }
         if(role==='support_staff'){
           const nextActions=await rpc('support_next_action_states').catch(()=>[]);
           if((nextActions||[]).some(x=>(x.alert_level==='warning'||x.alert_level==='critical')&&x.notification_active!==false)){
