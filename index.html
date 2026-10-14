@@ -8877,6 +8877,13 @@
           (aiState==='disabled'?'<div class="notice warn" style="margin-top:10px">OpenAI API Keyが未登録です。「設定 → 外部連携」から登録してください。</div>':'')+
           '<div id="ticketAiIncidentMsg" class="notice hidden"></div>'+
           '<div id="ticketAiIncidentResult" class="hidden"></div>'+
+            '<section class="item" style="margin-top:14px;border-color:#bfdbfe">'+
+              '<div class="row between" style="align-items:flex-start;gap:10px;flex-wrap:wrap"><div><strong>Webで詳しい操作手順を調査</strong><div class="muted" style="margin-top:4px">保存済みの調査結果を先に検索。情報がない場合だけ、公式資料などを調べて仮保存します。</div></div><span class="pill">出典・確認日付き</span></div>'+
+              '<div class="field" style="margin-top:10px"><label>技術的な症状・型番・エラーコード（顧客名・ID・パスワードは入力しない）</label><input id="ticketAiWebQuery" maxlength="300" placeholder="例：Windows 11 Canon MF印刷キュー停止"></div>'+
+              '<div class="supportQuickActions"><button id="ticketAiWebSearch" class="primary" type="button">保存済み検索・Web調査</button><button id="ticketAiWebRefresh" class="ghost" type="button">公式資料を再確認</button></div>'+
+              '<div id="ticketAiWebMessage" class="notice hidden"></div><div id="ticketAiWebResult" class="hidden"></div>'+
+            '</section>'+
+
         '</section>':'')+
         '<section class="section"><div class="row between"><div><h3>写真・添付ファイル</h3><p class="sectionDesc">'+(support?'顧客または自社から届いた写真を確認します。':customer?'サポート会社へ追加の写真を送れます。':'サポート会社へ追加の写真を送れます。')+'</p></div>'+
           ((customer||internal)&&t.status!=='closed'?'<label class="ghost" style="display:inline-flex;align-items:center;cursor:pointer">＋ 写真を追加<input id="ticketAttachmentInput" type="file" accept="image/*,.pdf" multiple style="display:none"></label>':'')+
@@ -9027,6 +9034,53 @@
           ticketAiIncidentAnalyze.disabled=false;
         }
       };
+    }
+
+
+    const ticketAiWebQuery=$('#ticketAiWebQuery');
+    if(ticketAiWebQuery){
+      const runWebGuide=async(refresh=false)=>{
+        const query=ticketAiWebQuery.value.trim();
+        if(query.length<4){notice('#ticketAiWebMessage','技術的な症状を4文字以上で入力してください。');return;}
+        const button=$('#ticketAiWebSearch');
+        const refreshBtn=$('#ticketAiWebRefresh');
+        const host=$('#ticketAiWebResult');
+        if(button)button.disabled=true;
+        if(refreshBtn)refreshBtn.disabled=true;
+        notice('#ticketAiWebMessage',refresh?'Webの公式情報を再確認しています...':'保存済み情報を検索しています。なければWebを調査します...',true);
+        try{
+          const {data,error}=await supabase.functions.invoke('ai-web-guide',{
+            body:{ticketId:t.id,query,refresh}
+          });
+          if(error)throw await edgeFunctionError(error,{write:false});
+          if(data?.error)throw new Error(String(data.error));
+          const sources=Array.isArray(data?.sources)?data.sources:[];
+          const sourced=sources.map(source=>{
+            const url=String(source.url||'');
+            if(!/^https:\/\//i.test(url))return '';
+            return '<li><a target="_blank" rel="noopener noreferrer" href="'+esc(url)+'">'+esc(source.title||url)+'</a></li>';
+          }).join('');
+          const checkedAt=String(data?.checkedAt||'');
+          host.classList.remove('hidden');
+          host.innerHTML='<div class="item" style="margin-top:12px">'+
+            '<div class="row between" style="gap:10px;flex-wrap:wrap"><strong>詳細な操作手順</strong><span class="pill '+(data.fromCache?'good':'')+'">'+(data.fromCache?'保存済みから再利用':'Web調査結果')+'</span></div>'+
+            (data.needsRefresh?'<div class="notice warn">前回の調査から30日以上経過しています。「公式資料を再確認」を選択してください。</div>':'')+
+            '<p class="muted">Web情報確認日: '+esc(checkedAt?checkedAt.slice(0,10):'確認できません')+' / '+(data.verifiedByStaff?'担当者確認済み':'実機検証は未実施')+'</p>'+
+            '<div style="white-space:pre-wrap;line-height:1.8;max-height:420px;overflow:auto">'+esc(data.text||'確認できません')+'</div>'+
+            (sourced?'<details style="margin-top:12px"><summary>調査に使用した出典（'+sources.length+'件）</summary><ul>'+sourced+'</ul></details>':'')+
+            '<p class="muted" style="margin-top:10px">保存状態: '+(data.saved?'確認待ちナレッジへ保存済み':'保存できませんでした。再調査になる可能性があります。')+'</p>'+
+            '</div>';
+          notice('#ticketAiWebMessage',data.fromCache?'保存済みの調査内容を表示しました。':'Web調査が完了しました。出典と手順を確認してください。',true);
+        }catch(err){
+          notice('#ticketAiWebMessage','調査できませんでした。'+String(err.message||err));
+        }finally{
+          if(button)button.disabled=false;
+          if(refreshBtn)refreshBtn.disabled=false;
+        }
+      };
+      $('#ticketAiWebSearch').onclick=()=>runWebGuide(false);
+      $('#ticketAiWebRefresh').onclick=()=>runWebGuide(true);
+      ticketAiWebQuery.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();runWebGuide(false);}};
     }
 
     bindSupportDraftInputs(t.id,'message',{body:'#ticketMessageBody',important:'#ticketMessageImportant',visibility:'#ticketMessageVisibility'});
