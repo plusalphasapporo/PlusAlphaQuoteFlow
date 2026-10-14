@@ -313,11 +313,9 @@
       mainRoot.__qfTicketTab(pane);
       if(cardSelector) mainRoot.querySelector(cardSelector)?.__qfExpand?.();
     };
-    if (trigger.matches('.supportTopAttachmentJump,.supportTopAttachmentJump *') ||
-        trigger.matches('.supportTopAttachmentJump') ||
+    if (trigger.matches('.supportTopAttachmentJump') ||
         ['internalTicketAttachments','supportTopAttachments','supportTicketContentJump',
-         'ticketLinearAttachments','internalTicketEdit'].includes(id) ||
-        trigger.matches('.supportTopAttachmentJump')) {
+         'ticketLinearAttachments','internalTicketEdit'].includes(id)) {
       reveal('details');
       return;
     }
