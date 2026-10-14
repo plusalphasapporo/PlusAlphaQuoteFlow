@@ -8883,7 +8883,7 @@
             '<section class="item" style="margin-top:14px;border-color:#bfdbfe">'+
               '<div class="row between" style="align-items:flex-start;gap:10px;flex-wrap:wrap"><div><strong>Webで詳しい操作手順を調査</strong><div class="muted" style="margin-top:4px">保存済みの調査結果を先に検索。情報がない場合だけ、公式資料などを調べて仮保存します。</div></div><span class="pill">出典・確認日付き</span></div>'+
               '<div class="field" style="margin-top:10px"><label>技術的な症状・型番・エラーコード（顧客名・ID・パスワードは入力しない）</label><input id="ticketAiWebQuery" maxlength="300" placeholder="例：Windows 11 Canon MF印刷キュー停止"></div>'+
-              '<div class="supportQuickActions"><button id="ticketAiWebSearch" class="primary" type="button">保存済み検索・Web調査</button><button id="ticketAiWebRefresh" class="ghost" type="button">公式資料を再確認</button><button id="ticketAiWebDiagnostics" class="ghost" type="button">接続診断（読取のみ）</button></div>'+
+              '<div class="supportQuickActions"><button id="ticketAiWebSearch" class="primary" type="button">保存済み検索・Web調査</button><button id="ticketAiWebRecent" class="ghost" type="button">保存済みの手順を見る</button><button id="ticketAiWebRefresh" class="ghost" type="button">公式資料を再確認</button><button id="ticketAiWebDiagnostics" class="ghost" type="button">接続診断（読取のみ）</button></div>'+
               '<div id="ticketAiWebMessage" class="notice hidden"></div><div id="ticketAiWebResult" class="hidden"></div>'+
             '</section>'+
 
@@ -9080,6 +9080,62 @@
           if(button)button.disabled=false;
           if(refreshBtn)refreshBtn.disabled=false;
         }
+      };
+      const renderSavedWebGuide=(data)=>{
+        const host=$('#ticketAiWebResult');
+        if(!host) return;
+        const sources=Array.isArray(data?.sources)?data.sources:[];
+        host.classList.remove('hidden');
+        host.innerHTML='<div class="item" style="margin-top:12px"><strong>保存済みの操作手順</strong>'+
+          (data?.needsRefresh?'<p class="notice warn">前回確認から30日以上経過しています。使用前に公式資料を再確認してください。</p>':'')+
+          '<p class="muted">調査日 '+esc(String(data?.checkedAt||'').slice(0,10))+' / '+(data?.verifiedByStaff?'担当者確認済み':'実機検証は未実施')+'</p>'+
+          '<div style="white-space:pre-wrap;line-height:1.8">'+esc(String(data?.text||''))+'</div>'+
+          (sources.length?'<details><summary>参考資料（'+sources.length+'件）</summary><ul>'+
+            sources.filter(x=>/^https:\/\//.test(String(x.url||''))).map(x=>
+              '<li><a href="'+esc(x.url)+'" rel="noopener noreferrer" target="_blank">'+esc(x.title||x.url)+'</a></li>').join('')+
+            '</ul></details>':'')+'</div>';
+        notice('#ticketAiWebMessage','保存済み手順を再表示しました。外部AI検索は行っていません。',true);
+      };
+      const recentButton=$('#ticketAiWebRecent');
+      if(recentButton) recentButton.onclick=async()=>{
+        recentButton.disabled=true;
+        notice('#ticketAiWebMessage','保存済みの調査履歴を読み込んでいます...',true);
+        try{
+          const {data,error}=await supabase.functions.invoke('ai-web-guide',{
+            body:{ticketId:t.id,listRecent:true}
+          });
+          if(error) throw await edgeFunctionError(error,{write:false});
+          if(data?.error) throw new Error(String(data.error));
+          const articles=Array.isArray(data?.articles)?data.articles:[];
+          const host=$('#ticketAiWebResult');
+          if(!host) return;
+          host.classList.remove('hidden');
+          if(!articles.length){
+            host.innerHTML='<div class="empty">この顧客の保存済みWeb調査はありません。AIが使えるときに初回調査を実行できます。</div>';
+          }else{
+            host.innerHTML='<div class="item" style="margin-top:12px"><strong>保存済み手順</strong>'+
+              '<p class="muted">外部AIを使わずに過去の調査を再表示します。</p>'+
+              articles.map((article,i)=>
+                '<button type="button" class="ghost ticketSavedWebGuide" data-index="'+i+'" style="display:block;width:100%;text-align:left;margin-top:7px">'+
+                esc(article.query||'調査内容')+' <span class="muted">('+esc(String(article.checkedAt||'').slice(0,10))+')</span></button>'
+              ).join('')+'</div>';
+            host.querySelectorAll('.ticketSavedWebGuide').forEach(button=>button.onclick=async()=>{
+              const item=articles[Number(button.dataset.index)];
+              if(!item||!item.id) return;
+              button.disabled=true;
+              try{
+                const {data:guide,error:guideError}=await supabase.functions.invoke('ai-web-guide',{
+                  body:{ticketId:t.id,reopenId:item.id}
+                });
+                if(guideError) throw await edgeFunctionError(guideError,{write:false});
+                if(guide?.error) throw new Error(String(guide.error));
+                renderSavedWebGuide(guide);
+              }catch(err){notice('#ticketAiWebMessage','保存済み手順を表示できませんでした。'+String(err.message||err));button.disabled=false;}
+            });
+          }
+          notice('#ticketAiWebMessage','保存済み手順を確認できます。外部AI検索は行っていません。',true);
+        }catch(err){notice('#ticketAiWebMessage','履歴を読み込めませんでした。'+String(err.message||err));}
+        finally{recentButton.disabled=false;}
       };
       const diagnosticButton=$('#ticketAiWebDiagnostics');
       if(diagnosticButton) diagnosticButton.onclick=async()=>{
