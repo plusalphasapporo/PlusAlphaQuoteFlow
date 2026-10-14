@@ -213,10 +213,34 @@ export default {
         signal:controller.signal,
       })
 
-      if(response.status===429 || response.status>=500){
+      if(response.status===429){
+        // A 429 may mean a temporary rate limit OR exhausted credit / spend caps.
+        // Never auto-retry an unknown 429: a billing cap cannot be fixed by retries.
+        // Only an allowlisted error code is logged; never log the raw provider body.
+        const upstreamBody=await response.json().catch(()=>null)
+        const providerCode=String(upstreamBody?.error?.code||'').toLowerCase()
+        const quotaCodes=new Set([
+          'credit_balance_exhausted','insufficient_quota',
+          'organization_spend_limit_exceeded','project_spend_limit_exceeded',
+          'organization_usage_limit_exceeded'
+        ])
+        const code=quotaCodes.has(providerCode)?'AI_QUOTA_EXCEEDED':'AI_RATE_LIMITED'
+        const retryAfterRaw=Number(response.headers.get('Retry-After'))
+        const retryAfterSeconds=code==='AI_RATE_LIMITED' && Number.isFinite(retryAfterRaw) &&
+          retryAfterRaw>0 && retryAfterRaw<=3600 ? Math.ceil(retryAfterRaw) : null
+        await ctx.supabaseAdmin.from('integration_events').insert({
+          integration_name:'openai',event_type:'ai_assistant',
+          status:code==='AI_QUOTA_EXCEEDED'?'limit_reached':'rate_limited',
+          payload:{action,ticket_id:ticketId,model:analysisModel,request_id:requestId},
+          error_message:'HTTP 429 '+code,created_by:actorUserId,
+        })
+        return json({error:code,requestId,retryAfterSeconds},429)
+      }
+      if(response.status>=500){
         await ctx.supabaseAdmin.from('integration_events').insert({
           integration_name:'openai',event_type:'ai_assistant',status:'temporary_unavailable',
-          payload:{action,ticket_id:ticketId,model:analysisModel,request_id:requestId},error_message:'HTTP '+response.status,created_by:actorUserId,
+          payload:{action,ticket_id:ticketId,model:analysisModel,request_id:requestId},
+          error_message:'HTTP '+response.status,created_by:actorUserId,
         })
         return json({error:'AI_TEMPORARILY_UNAVAILABLE',requestId},503)
       }
