@@ -2533,15 +2533,39 @@
           btn.disabled=true;
           closeAppModal();
           try{
-            if(entry.kind==='internal_handoff'){
-              await rpc('mark_internal_handoff_read',{p_handoff_id:entry.item.handoff_id});
-            }else if(entry.kind==='support_handoff'){
-              await rpc('mark_support_handoff_update_read',{p_handoff_id:entry.item.handoff_id});
+            // A notification must not be marked read until its destination
+            // actually opens; otherwise network failures silently hide it.
+            if(entry.ticketId){
+              const opened=await openTicketWorkspace(entry.ticketId);
+              if(opened===false) throw new Error('案件カルテを開けませんでした');
             }else if(entry.kind==='callconnect'){
-              await rpc('mark_callconnect_notification_read',{p_notification_id:entry.item.id});
+              await go('support_callconnect');
             }
-            if(entry.ticketId) await openTicketWorkspace(entry.ticketId);
-            else if(entry.kind==='callconnect') await go('support_callconnect');
+
+            const markSafe=async(name,args)=>{
+              try{await rpc(name,args);}catch(err){
+                console.warn('Notification read acknowledgement failed',name,err);
+              }
+            };
+            if(entry.kind==='internal_handoff'){
+              await markSafe('mark_internal_handoff_read',{p_handoff_id:entry.item.handoff_id});
+            }else if(entry.kind==='support_handoff'){
+              await markSafe('mark_support_handoff_update_read',{p_handoff_id:entry.item.handoff_id});
+            }
+            // CallConnect and a ticket it created may both have unread
+            // records. The UI shows only one card, and acknowledges both
+            // records after the corresponding workspace opens.
+            if(support){
+              const callIds=new Set(
+                (data.calls?.items||[])
+                  .filter(call=>call.id&&entry.ticketId&&String(call.support_ticket_id||'')===String(entry.ticketId))
+                  .map(call=>String(call.id))
+              );
+              if(entry.kind==='callconnect'&&entry.item?.id) callIds.add(String(entry.item.id));
+              for(const id of callIds){
+                await markSafe('mark_callconnect_notification_read',{p_notification_id:id});
+              }
+            }
             if(internal) await refreshInternalUnreadHandoffBadge();
             else await refreshSupportUnreadBadge();
           }catch(err){
@@ -8151,7 +8175,7 @@
       const host=$('#ticketDetailHost');
       if(!host){
         toast('案件カルテの読み込みに失敗しました。案件一覧から再度開いてください。');
-        return;
+        return false;
       }
       host.innerHTML=
         '<section class="card section" role="alert">'+
@@ -8165,7 +8189,7 @@
         '</section>';
       $('#ticketWorkspaceRetry').onclick=()=>openTicketWorkspace(ticketId);
       $('#ticketWorkspaceReturn').onclick=()=>go(backPage);
-      return;
+      return false;
     }
 
     const closeBtn=$('#ticketDetailClose');
@@ -8196,6 +8220,7 @@
     }else{
       window.scrollTo({top:0,behavior:'smooth'});
     }
+    return true;
   }
 
   async function renderTicketDetail(ticketId){
