@@ -44,7 +44,7 @@ const trustedFolderUrl='https://tenant.sharepoint.com/sites/support/Shared%20Doc
 
 const edgeSource = fs.readFileSync('supabase/functions/customer-onedrive/index.ts', 'utf8');
 assert.match(edgeSource, /withSupabase\(\{\s*auth:\s*'user'\s*\}/);
-assert.match(edgeSource, /if \(action === 'get_quick_link'\)/);
+assert.match(edgeSource, /\['get_quick_link', 'set_direct_link', 'remove_direct_link'\]\.includes\(action\)/);
 let edgeScript = edgeSource
   .replace("import { withSupabase } from 'npm:@supabase/server'",
            'const withSupabase = (_options, handler) => handler')
