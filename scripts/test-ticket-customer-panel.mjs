@@ -99,7 +99,7 @@ function tableBuilder(table, scope) {
     async insert(row) { if(table==='audit_logs'){state[table].push(row);return {error:null};}state.databaseWrites++;throw new Error('Unexpected insert'); },
     async upsert(row) { if(table!=='customer_management_info') throw new Error('Unexpected upsert'); state.databaseWrites++; const prior=state[table].find(x=>x.id===row.id);if(prior)Object.assign(prior,row);else state[table].push({...row,id:'77777777-7777-4777-8777-777777777777'});return {error:null}; },
     async update() { state.databaseWrites++; throw new Error('Read-only shortcut must not update'); },
-    async delete() { if(table!=='customer_management_info') throw new Error('Unexpected delete'); const idx=state[table].findIndex(row=>conditions.every(fn=>fn(row)));if(idx>=0)state[table].splice(idx,1);state.databaseWrites++;return {error:null}; }
+    delete() {return {eq:async(field,value)=>{if(table!=='customer_management_info') throw new Error('Unexpected delete');const idx=state[table].findIndex(row=>conditions.every(fn=>fn(row))&&row[field]===value);if(idx>=0)state[table].splice(idx,1);state.databaseWrites++;return {error:null};}}; }
   };
   return builder;
 }
