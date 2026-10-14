@@ -88,6 +88,10 @@ const ctx = {
 };
 
 async function fakeFetch(url, init) {
+  if (url === 'https://api.openai.com/v1/models/test-web-search-model') {
+    assert.equal(init.method, 'GET');
+    return Response.json({id:'test-web-search-model'});
+  }
   assert.equal(url, 'https://api.openai.com/v1/responses');
   assert.equal(init.method, 'POST');
   assert.equal(init.headers.Authorization, 'Bearer example-test-key-not-a-secret');
@@ -135,6 +139,15 @@ assert.equal(preflight.body.checks.aiConfigured,true);
 assert.equal(state.webCalls.length,0);
 assert.equal(state.knowledge_articles.length,baselineCount);
 assert.doesNotMatch(JSON.stringify(preflight.body),/example-test-key|customer_id|33333333/);
+const providerPreflight=await request({ticketId:ticketA,diagnostics:true,checkProvider:true});
+assert.equal(providerPreflight.status,200);
+assert.equal(providerPreflight.body.checks.modelAccessible,true);
+assert.equal(providerPreflight.body.checks.modelStatus,'ok');
+assert.equal(providerPreflight.body.billingVerified,false);
+assert.equal(providerPreflight.body.generationVerified,false);
+assert.equal(state.webCalls.length,0);
+assert.equal(state.knowledge_articles.length,baselineCount);
+
 
 // Input checks must block incomplete requests before calling the paid provider.
 let res = await request({ ticketId: ticketA });
