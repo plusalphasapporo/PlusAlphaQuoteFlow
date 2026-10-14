@@ -19,7 +19,7 @@ assert.match(source, /if\(role!=='support_staff'\) return;\s*const checkUnread=a
 const migration=fs.readFileSync('supabase/migrations/20261014070500_internal_non_callconnect_ticket_notifications.sql','utf8');
 assert.match(migration, /'ticket_count'/);
 assert.match(migration, /'ticket_items'/);
-assert.match(migration, /t\.description,'\) ilike '【受付経路】CallConnect%'/);
+assert.match(migration, /t\.description,''\) ilike '【受付経路】CallConnect%'/);
 assert.match(migration, /from public\.callconnect_calls cc/);
 assert.match(migration, /r\.user_id=v_user/);
 assert.match(migration, /app_private\.is_internal\(\)/);
