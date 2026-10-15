@@ -10,7 +10,8 @@ const outputRoot = join(projectRoot, 'public');
 const allowedFiles = [
   'index.html',
   'assets/quoteflow-mark.png',
-  'assets/operations-ui.css'
+  'assets/operations-ui.css',
+  'assets/support-ticket-tabs.js'
 ];
 
 const validation = spawnSync(
