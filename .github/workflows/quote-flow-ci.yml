@@ -30,6 +30,9 @@ jobs:
       - name: Work report access regression tests
         run: node --test tests/work-report-access.test.mjs
 
+      - name: Edge function preflight regression
+        run: node --test tests/edge-functions.cors.test.mjs
+
       - name: Chrome browser workflow checks
         run: node scripts/validate-browser.mjs
 
