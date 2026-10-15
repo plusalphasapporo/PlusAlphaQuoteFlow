@@ -71,14 +71,15 @@ assert.match(edge,/requires_explicit_confirmation:true/);
 assert.match(edge,/input\.confirmed!==true/);
 assert.match(edge,/fingerprintPlanItem\(item\)/);
 assert.match(edge,/before=await readDetail\(\)/);
-assert.match(edge,/String\(before\.memo\?\?""\)!==String\(item\.existing_memo\)/);
-assert.match(edge,/String\(before\.updated_at\?\?""\)!==item\.remote_updated_at/);
+assert.match(edge,/verifiedContactDetail\(item,before\)/);
+
+
 assert.match(edge,/contact_writes_disabled_pending_vendor_verification/);
 assert.match(edge,/CALLCONNECT_CONTACT_WRITES_ENABLED/);
 assert.match(edge,/new URL\(endpoint\.origin\+endpoint\.pathname\.replace/);
 assert.match(edge,/method:"PUT"/);
 assert.match(edge,/form\.set\("memo",item\.next_memo\)/);
-assert.match(edge,/verified&&String\(verified\.memo\?\?""\)===item\.next_memo/);
+
 assert.match(edge,/verification_pending/);
 assert.match(edge,/updated_count:counts\.updated\|\|0/);
 
