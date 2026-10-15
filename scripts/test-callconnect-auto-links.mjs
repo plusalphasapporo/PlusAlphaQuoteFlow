@@ -53,7 +53,7 @@ assert.equal(otherContactFieldsEqual({id:10,phone:'0111234567',memo:'before'},{i
 assert.equal(otherContactFieldsEqual({id:10,phone:'0111234567',memo:'before'},{id:10,phone:'',memo:'after'}),false);
 assert.equal(otherContactFieldsEqual({id:10,phone:'0111234567',memo:'before'},{id:10,memo:'after'}),false);
 assert.equal(buildPlan([{id:'10',number:'0111234567'}],[customer],[])[0].status,'memo_unavailable');
-assert.equal(verifiedContactDetail(selected,{id:'10',phone:'0111234567',memo:'既存のメモ'}),'verified');
+assert.equal(verifiedContactDetail(buildPlan([{id:'10',number:'0111234567',memo:'既存のメモ'}],[customer],[])[0],{id:'10',phone:'0111234567',memo:'既存のメモ'}),'verified');
 
 const edge=fs.readFileSync('supabase/functions/callconnect-contact-link-sync/index.ts','utf8');
 // Approval hashes bind the selected CallConnect contact, customer, phone and
