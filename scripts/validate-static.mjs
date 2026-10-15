@@ -63,6 +63,22 @@ if (!fs.existsSync(logoPath)) {
   }
 }
 
+// Notification center and installable web app checks.
+requireText('<script src="/assets/notification-center.js"></script>', 'Notification-center runtime');
+requireText('<link rel="manifest" href="/manifest.webmanifest">', 'Installable app manifest');
+requireText("navigator.serviceWorker.register('/sw.js')", 'Service worker registration');
+requireText("window.QuoteFlowNotificationCenter?.mount(", 'Notification center mounting');
+requireText("mark_all_quote_notifications_read", 'Role-scoped mark-all-read RPC wiring');
+if (html.includes('>🔔<')) failures.push('Legacy emoji notification icon remains');
+for (const path of ['assets/notification-center.js','manifest.webmanifest','sw.js','sql/quote_notifications_mark_all_read.sql']) {
+  if (!fs.existsSync(path)) failures.push('Missing notification asset: '+path);
+}
+for (const path of ['assets/notification-center.js','sw.js']) {
+  if (fs.existsSync(path)) {
+    const checked=spawnSync(process.execPath,['--check',path],{encoding:'utf8'});
+    if(checked.status!==0) failures.push('Notification JavaScript syntax error: '+path+' '+(checked.stderr||checked.stdout));
+  }
+}
 // Ensure the tabbed support-ticket UI is loaded and its implementation is syntactically valid.
 requireText('<script src="/assets/support-ticket-tabs.js"></script>', 'Support ticket navigation script');
 requireText('window.QuoteFlowTicketTabs?.mount(', 'Tabbed ticket detail mounting');
