@@ -10830,14 +10830,22 @@
       $('#ticketProfileForm').onsubmit=async e=>{
         e.preventDefault();const btn=e.submitter;if(btn)btn.disabled=true;
         try{
+          const submittedProfile={
+            ticketProfilePriority:$('#ticketProfilePriority').value,
+            ticketProfileAssigned:$('#ticketProfileAssigned').value,
+            ticketProfileAsset:$('#ticketProfileAsset').value,
+            ticketProfileContract:$('#ticketProfileContract').value,
+            ticketProfileInternalNote:$('#ticketProfileInternalNote').value
+          };
           await rpc('update_support_ticket_profile',{
             p_ticket_id:t.id,
-            p_priority:$('#ticketProfilePriority').value,
-            p_assigned_internal_user_id:$('#ticketProfileAssigned').value||null,
-            p_asset_id:$('#ticketProfileAsset').value||null,
-            p_contract_id:$('#ticketProfileContract').value||null,
-            p_internal_note:$('#ticketProfileInternalNote').value.trim()||null
+            p_priority:submittedProfile.ticketProfilePriority,
+            p_assigned_internal_user_id:submittedProfile.ticketProfileAssigned||null,
+            p_asset_id:submittedProfile.ticketProfileAsset||null,
+            p_contract_id:submittedProfile.ticketProfileContract||null,
+            p_internal_note:submittedProfile.ticketProfileInternalNote.trim()||null
           });
+          window.QuoteFlowTicketTabs?.clearSavedEdits(t.id,submittedProfile);
           notice('#ticketProfileMsg','案件情報を更新しました。',true);
           toast('案件情報を更新しました');
           await renderTicketDetail(t.id);
@@ -11314,16 +11322,23 @@
           const pad=n=>String(n).padStart(2,'0');
           return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes());
         };
-        $('#ticketFirstResponseDue').value=toLocal(deadlineState?.first_response_due_at);
-        $('#ticketResolutionDue').value=toLocal(deadlineState?.resolution_due_at);
+        const firstDue=$('#ticketFirstResponseDue');
+        const resolutionDue=$('#ticketResolutionDue');
+        if(firstDue && firstDue.dataset.ticketUnsaved!=='1') firstDue.value=toLocal(deadlineState?.first_response_due_at);
+        if(resolutionDue && resolutionDue.dataset.ticketUnsaved!=='1') resolutionDue.value=toLocal(deadlineState?.resolution_due_at);
         deadlineSave.onclick=async()=>{
           deadlineSave.disabled=true;
           try{
+            const submittedDeadlines={
+              ticketFirstResponseDue:$('#ticketFirstResponseDue').value,
+              ticketResolutionDue:$('#ticketResolutionDue').value
+            };
             await rpc('set_support_deadlines',{
               p_ticket_id:t.id,
-              p_first_response_due_at:$('#ticketFirstResponseDue').value||null,
-              p_resolution_due_at:$('#ticketResolutionDue').value||null
+              p_first_response_due_at:submittedDeadlines.ticketFirstResponseDue||null,
+              p_resolution_due_at:submittedDeadlines.ticketResolutionDue||null
             });
+            window.QuoteFlowTicketTabs?.clearSavedEdits(t.id,submittedDeadlines);
             toast('対応期限を更新しました');
             await renderTicketDetail(t.id);
           }catch(err){notice('#ticketDeadlineMsg',err.message||String(err));}
