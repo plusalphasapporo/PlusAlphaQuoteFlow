@@ -7,6 +7,7 @@
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://esm.sh; style-src 'self' 'unsafe-inline'; connect-src 'self' https://dqtqoghnctdqoljxbjjz.supabase.co wss://dqtqoghnctdqoljxbjjz.supabase.co; img-src 'self' data: https:; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
   <title>QuoteFlow Cloud</title>
+  <link rel="icon" type="image/png" href="/assets/quoteflow-mark.png">
   <style>
     :root{
       --navy:#07162f;--navy2:#0e2448;--bg:#f5f7fb;--card:#fff;--ink:#172033;--muted:#667085;
@@ -17,6 +18,10 @@
     body{margin:0;font-family:system-ui,-apple-system,"Segoe UI","Noto Sans JP",sans-serif;background:var(--bg);color:var(--ink)}
     header{height:68px;background:var(--navy);color:#fff;display:grid;grid-template-columns:minmax(220px,300px) minmax(260px,620px) minmax(280px,1fr);align-items:center;gap:18px;padding:0 22px;position:sticky;top:0;z-index:20}
     .brandBlock{min-width:0}.brand{font-size:19px;font-weight:900;letter-spacing:.01em}.sub{font-size:11px;opacity:.72;margin-top:2px}
+    .brandIdentity{display:flex;align-items:center;gap:8px;min-width:0}.brandMark{display:block;object-fit:contain;flex:0 0 46px}.brandText{min-width:0}.brandText .brand{white-space:nowrap;letter-spacing:-.035em}.brandCloud{color:#38bdf8}
+    .loginBrand{display:flex;align-items:center;justify-content:center;gap:4px;margin:2px 0 18px;white-space:nowrap}.loginBrand img{display:block;object-fit:contain;flex:0 0 66px}.loginWordmark{font-size:clamp(24px,3.2vw,34px);font-weight:900;letter-spacing:-.055em;color:#092354}.loginCloud{color:#178bf2}
+    @media(max-width:1050px){.brandText .brand{font-size:16px}.brandMark{width:40px;height:40px;flex-basis:40px}}
+    @media(max-width:420px){.brandText .brand{font-size:15px}.loginBrand img{width:52px;height:52px;flex-basis:52px}.loginWordmark{font-size:25px}}
     .globalSearch{position:relative;display:flex;align-items:center;background:#fff;border-radius:11px;min-height:40px;color:#334155;box-shadow:0 4px 14px rgba(0,0,0,.12)}
     .globalSearch .searchIcon{padding-left:12px;color:#64748b;font-size:18px}.globalSearch input{border:0;outline:0;width:100%;padding:10px 12px;background:transparent;font:inherit}
     .globalSearchResults{position:absolute;left:0;right:0;top:46px;background:#fff;color:#172033;border:1px solid var(--line);border-radius:12px;box-shadow:0 16px 38px rgba(15,23,42,.2);max-height:420px;overflow:auto;padding:8px;z-index:80}
@@ -453,7 +458,7 @@
 </head>
 <body>
 <header>
-  <div class="brandBlock"><div class="brand">QuoteFlow Cloud</div><div class="sub">3社でつながる OA機器サポート統合システム</div></div>
+  <div class="brandBlock"><div class="brandIdentity"><img class="brandMark" src="/assets/quoteflow-mark.png" alt="" width="46" height="46"><div class="brandText"><div class="brand">QuoteFlow <span class="brandCloud">Cloud</span></div><div class="sub">3社でつながる OA機器サポート統合システム</div></div></div></div>
   <div id="globalSearchWrap" class="globalSearch hidden">
     <span class="searchIcon">⌕</span>
     <input id="globalSearch" type="search" placeholder="顧客名・電話番号・機器で検索" autocomplete="off">
@@ -470,6 +475,7 @@
 
 <main class="wrap">
   <section id="loginView" class="card login">
+    <div class="loginBrand" role="img" aria-label="QuoteFlow Cloud"><img src="/assets/quoteflow-mark.png" alt="" width="66" height="66"><div class="loginWordmark"><span>QuoteFlow</span><span class="loginCloud">Cloud</span></div></div>
     <h1>ログイン</h1>
     <p class="muted">QuoteFlow Cloud のアカウントでログインしてください。</p>
     <div id="loginMsg" class="notice hidden"></div>
