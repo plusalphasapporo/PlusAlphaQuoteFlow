@@ -3851,12 +3851,13 @@
     const role=bootData?.context?.role;
     // Login and MFA must succeed before accepting any navigation request.
     if(!role) return false;
-    removeCallconnectCustomerQuery();
     if(!CALLCONNECT_CUSTOMER_ID_RE.test(id)){
+      removeCallconnectCustomerQuery();
       toast('CallConnectの顧客リンクが正しくありません。');
       return false;
     }
     if(!['internal_admin','internal_staff','support_staff'].includes(role)){
+      removeCallconnectCustomerQuery();
       toast('この顧客カルテを開く権限がありません。');
       return false;
     }
@@ -3869,6 +3870,9 @@
         if(!$('#customerDetailHost')) throw new Error('顧客一覧を読み込めませんでした。');
         await renderCustomerDetail(id,'overview');
       }
+      // Clear only after the authorized customer record is open. A network
+      // failure leaves the URL available for retry after reconnection.
+      removeCallconnectCustomerQuery();
       return true;
     }catch(err){
       toast('顧客カルテを開けませんでした。権限・通信状態を確認してください。');
