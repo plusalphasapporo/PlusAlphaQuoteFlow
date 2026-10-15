@@ -40,11 +40,11 @@ if (!match) {
 
 // Ensure the brand image referenced by both entry points is actually deployed.
 const logoPath = 'assets/quoteflow-mark.png';
-const logoReferenceCount = (html.match(/src="\/assets\/quoteflow-mark\.png"/g) || []).length;
+const logoReferenceCount = (html.match(/src="\.\/assets\/quoteflow-mark\.png"/g) || []).length;
 if (logoReferenceCount < 2) {
   failures.push('Logo must appear in both the application header and login screen');
 }
-if (!html.includes('rel="icon" type="image/png" href="/assets/quoteflow-mark.png"')) {
+if (!html.includes('rel="icon" type="image/png" href="./assets/quoteflow-mark.png"')) {
   failures.push('QuoteFlow favicon reference is missing');
 }
 if (!fs.existsSync(logoPath)) {
@@ -64,9 +64,9 @@ if (!fs.existsSync(logoPath)) {
 }
 
 // Notification center and installable web app checks.
-requireText('<script src="/assets/notification-center.js"></script>', 'Notification-center runtime');
-requireText('<link rel="manifest" href="/manifest.webmanifest">', 'Installable app manifest');
-requireText("navigator.serviceWorker.register('/sw.js')", 'Service worker registration');
+requireText('<script src="./assets/notification-center.js"></script>', 'Notification-center runtime');
+requireText('<link rel="manifest" href="./manifest.webmanifest">', 'Installable app manifest');
+requireText("navigator.serviceWorker.register('./sw.js')", 'Service worker registration');
 requireText("window.QuoteFlowNotificationCenter?.mount(", 'Notification center mounting');
 if (!fs.readFileSync('assets/notification-center.js','utf8').includes("mark_all_quote_notifications_read")) failures.push('Missing role-scoped mark-all-read RPC wiring');
 if (html.includes('>🔔<')) failures.push('Legacy emoji notification icon remains');
@@ -80,7 +80,7 @@ for (const path of ['assets/notification-center.js','sw.js']) {
   }
 }
 // Ensure the tabbed support-ticket UI is loaded and its implementation is syntactically valid.
-requireText('<script src="/assets/support-ticket-tabs.js"></script>', 'Support ticket navigation script');
+requireText('<script src="./assets/support-ticket-tabs.js"></script>', 'Support ticket navigation script');
 requireText('window.QuoteFlowTicketTabs?.mount(', 'Tabbed ticket detail mounting');
 if (!fs.existsSync('assets/support-ticket-tabs.js')) {
   failures.push('Missing support ticket tab UI script');

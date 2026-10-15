@@ -7,8 +7,8 @@
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://esm.sh; style-src 'self' 'unsafe-inline'; connect-src 'self' https://dqtqoghnctdqoljxbjjz.supabase.co wss://dqtqoghnctdqoljxbjjz.supabase.co; img-src 'self' data: https:; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
   <title>QuoteFlow Cloud</title>
-  <link rel="icon" type="image/png" href="/assets/quoteflow-mark.png">
-  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" type="image/png" href="./assets/quoteflow-mark.png">
+  <link rel="manifest" href="./manifest.webmanifest">
   <meta name="theme-color" content="#07162f">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -477,7 +477,7 @@
 </head>
 <body>
 <header>
-  <div class="brandBlock"><div class="brandIdentity"><img class="brandMark" src="/assets/quoteflow-mark.png" alt="" width="46" height="46"><div class="brandText"><div class="brand">QuoteFlow <span class="brandCloud">Cloud</span></div><div class="sub">3社でつながる OA機器サポート統合システム</div></div></div></div>
+  <div class="brandBlock"><div class="brandIdentity"><img class="brandMark" src="./assets/quoteflow-mark.png" alt="" width="46" height="46"><div class="brandText"><div class="brand">QuoteFlow <span class="brandCloud">Cloud</span></div><div class="sub">3社でつながる OA機器サポート統合システム</div></div></div></div>
   <div id="globalSearchWrap" class="globalSearch hidden">
     <span class="searchIcon">⌕</span>
     <input id="globalSearch" type="search" placeholder="顧客名・電話番号・機器で検索" autocomplete="off">
@@ -494,7 +494,7 @@
 
 <main class="wrap">
   <section id="loginView" class="card login">
-    <div class="loginBrand" role="img" aria-label="QuoteFlow Cloud"><img src="/assets/quoteflow-mark.png" alt="" width="66" height="66"><div class="loginWordmark"><span>QuoteFlow</span><span class="loginCloud">Cloud</span></div></div>
+    <div class="loginBrand" role="img" aria-label="QuoteFlow Cloud"><img src="./assets/quoteflow-mark.png" alt="" width="66" height="66"><div class="loginWordmark"><span>QuoteFlow</span><span class="loginCloud">Cloud</span></div></div>
     <h1>ログイン</h1>
     <p class="muted">QuoteFlow Cloud のアカウントでログインしてください。</p>
     <div id="loginMsg" class="notice hidden"></div>
@@ -2479,7 +2479,7 @@
     };
     if(['support_staff','internal_admin','internal_staff'].includes(role)){
       if('serviceWorker' in navigator && window.isSecureContext){
-        navigator.serviceWorker.register('/sw.js').catch(err=>console.warn('PWA worker registration failed',err));
+        navigator.serviceWorker.register('./sw.js').catch(err=>console.warn('PWA worker registration failed',err));
       }
       window.QuoteFlowNotificationCenter?.mount({
         role,rpc,toast,
@@ -15615,7 +15615,7 @@
   healthTimer=setInterval(checkHealth,60000);
   await boot();
 </script>
-<script src="/assets/support-ticket-tabs.js"></script>
-<script src="/assets/notification-center.js"></script>
+<script src="./assets/support-ticket-tabs.js"></script>
+<script src="./assets/notification-center.js"></script>
 </body>
 </html>

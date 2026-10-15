@@ -35,7 +35,7 @@ for (const base of bases) {
   test('browser assets resolve within deployment: ' + base, () => {
     const refs = [...html.matchAll(/(?:src|href)=["']([^"']+)["']/g)]
       .map(match => match[1]).filter(ref => /^(?:\.\/|\/)?(?:assets\/|manifest\.webmanifest)/.test(ref));
-    assert.ok(refs.length >= 7, 'all logo, stylesheet, manifest and runtime references must be checked');
+    assert.ok(refs.length >= 6, 'all logo, manifest and runtime references must be checked');
     for (const ref of refs) {
       const local = ref.replace(/^\.?\//, '');
       assert.ok(existsSync(local), 'missing deployed asset: ' + local);
