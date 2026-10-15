@@ -8,6 +8,10 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://esm.sh; style-src 'self' 'unsafe-inline'; connect-src 'self' https://dqtqoghnctdqoljxbjjz.supabase.co wss://dqtqoghnctdqoljxbjjz.supabase.co; img-src 'self' data: https:; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
   <title>QuoteFlow Cloud</title>
   <link rel="icon" type="image/png" href="/assets/quoteflow-mark.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#07162f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <style>
     :root{
       --navy:#07162f;--navy2:#0e2448;--bg:#f5f7fb;--card:#fff;--ink:#172033;--muted:#667085;
@@ -2459,6 +2463,9 @@
       return go(role==='customer_user'?'customer_status':'support');
     };
     if(['support_staff','internal_admin','internal_staff'].includes(role)){
+      if('serviceWorker' in navigator && window.isSecureContext){
+        navigator.serviceWorker.register('/sw.js').catch(err=>console.warn('PWA worker registration failed',err));
+      }
       window.QuoteFlowNotificationCenter?.mount({
         role,rpc,toast,
         refreshBadges:()=>role==='support_staff'?refreshSupportUnreadBadge():refreshInternalUnreadHandoffBadge()
