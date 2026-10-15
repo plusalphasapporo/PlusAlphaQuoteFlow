@@ -268,6 +268,17 @@
       const step=element.closest('.supportLinearCard');
       if(step && steps.some(([id])=>id===step.id)) setStep(step.id,false);
     }
+    const inProgressIds=new Set([
+      'ticketMessageBody','ticketAiIncidentContext','ticketRemoteAction',
+      'ticketRemoteResultNote','ticketKnowledgeSearch','ticketProfileInternalNote',
+      'ticketProfilePriority','ticketProfileAssigned','ticketProfileAsset',
+      'ticketProfileContract','ticketFirstResponseDue','ticketResolutionDue'
+    ]);
+    const markEdited=event=>{
+      if(inProgressIds.has(event.target?.id)) event.target.dataset.ticketUnsaved='1';
+    };
+    deck.addEventListener('input',markEdited);
+    deck.addEventListener('change',markEdited);
     activeController={ticketId,panes,reveal};
     host.classList.add('ticketTabsEnabled');
     if(steps.length) setStep(activeStep,false);
@@ -279,11 +290,102 @@
     if(activeController && host?.contains(element)) activeController.reveal(element);
     element.scrollIntoView(options);
   }
+  function inProgressHost(ticketId){
+    const host=document.getElementById('ticketDetailHost');
+    return activeController?.ticketId===String(ticketId)&&host?.classList.contains('ticketTabsEnabled')?host:null;
+  }
+  // Returning to a case or changing tabs never writes to the database.
+  // Preserve only local transient fields and File objects during a full ticket re-render.
+  function captureInProgress(ticketId){
+    const host=inProgressHost(ticketId);
+    if(!host) return null;
+    const fields={};
+    for(const id of ['ticketAiIncidentContext','ticketRemoteAction','ticketRemoteResultNote','ticketKnowledgeSearch']){
+      const el=host.querySelector('#'+id);
+      if(el?.dataset.ticketUnsaved==='1') fields[id]=el.value;
+    }
+    const input=host.querySelector('#ticketMessageFiles');
+    const files=input?[...input.files]:[];
+    return {ticketId:String(ticketId),fields,files};
+  }
+  function restoreInProgress(ticketId,snapshot){
+    const host=inProgressHost(ticketId);
+    if(!host||snapshot?.ticketId!==String(ticketId)) return;
+    for(const [id,value] of Object.entries(snapshot.fields||{})){
+      const el=host.querySelector('#'+id);
+      if(!el) continue;
+      el.value=value;
+      el.dataset.ticketUnsaved='1';
+      el.dispatchEvent(new Event('input',{bubbles:true}));
+    }
+    if(snapshot.files?.length){
+      const input=host.querySelector('#ticketMessageFiles');
+      if(input && typeof DataTransfer!=='undefined'){
+        try{
+          const transfer=new DataTransfer();
+          snapshot.files.forEach(file=>transfer.items.add(file));
+          input.files=transfer.files;
+          input.dispatchEvent(new Event('change',{bubbles:true}));
+        }catch(error){
+          console.warn('Unable to restore in-progress ticket attachments',error);
+        }
+      }
+    }
+  }
+  function hasUnsentEdits(ticketId){
+    const host=inProgressHost(ticketId);
+    if(!host) return false;
+    const body=host.querySelector('#ticketMessageBody');
+    const files=host.querySelector('#ticketMessageFiles');
+    const reply=host.querySelector('#ticketMessageReplyContext');
+    return !!(body?.value.trim()||files?.files.length||
+      (reply&&!reply.classList.contains('hidden'))||
+      host.querySelector('[data-ticket-unsaved="1"]'));
+  }
+  function showPendingMessage(ticketId,label,refresh){
+    const host=inProgressHost(ticketId);
+    if(!host) return;
+    const tab=host.querySelector('#ticketWorkspaceTab_messages');
+    if(tab && !tab.dataset.hasPendingMessage){
+      tab.dataset.hasPendingMessage='1';
+      tab.textContent='連絡・返信 ●';
+    }
+    const pane=host.querySelector('#ticketWorkspacePane_messages');
+    if(!pane) return;
+    let banner=pane.querySelector('#ticketPendingNewMessage');
+    if(banner) return;
+    banner=document.createElement('div');
+    banner.id='ticketPendingNewMessage';
+    banner.className='notice warn';
+    banner.setAttribute('role','status');
+    const message=document.createElement('strong');
+    message.textContent=(label||'新着メッセージ')+'があります。入力・添付を保護するため自動更新を停止しました。';
+    const actions=document.createElement('div');
+    actions.className='supportQuickActions';
+    actions.style.marginTop='8px';
+    const button=document.createElement('button');
+    button.type='button';
+    button.className='ghost';
+    button.textContent='最新を読み込む';
+    button.onclick=async()=>{
+      if(hasUnsentEdits(ticketId) && !window.confirm(
+        '入力中の内容があります。添付ファイルの保持を試みますが、引用返信の設定は解除されます。最新の案件情報を読み込みますか？'
+      )) return;
+      button.disabled=true;
+      try{await refresh();}catch(error){
+        button.disabled=false;
+        console.error('Ticket message refresh failed',error);
+      }
+    };
+    actions.append(button);
+    banner.append(message,actions);
+    pane.prepend(banner);
+  }
   function moveAudit(ticketId){
     const host=document.getElementById('ticketDetailHost');
     if(!activeController||activeController.ticketId!==String(ticketId)||!host) return;
     const audit=host.querySelector(':scope > .entityAuditSection');
     if(audit) activeController.panes.get('history')?.append(audit);
   }
-  window.QuoteFlowTicketTabs={mount,revealAndScroll,moveAudit};
+  window.QuoteFlowTicketTabs={mount,revealAndScroll,moveAudit,captureInProgress,restoreInProgress,hasUnsentEdits,showPendingMessage};
 })();
