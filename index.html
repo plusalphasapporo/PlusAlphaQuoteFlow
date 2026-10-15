@@ -14025,11 +14025,42 @@
         (dash?.last_error?'<div class="notice error">最終エラー: '+esc(dash.last_error)+'</div>':'')+
       '</section>')+
       (!supportView&&dash?.api_key_configured&&!dash?.contacts_create_api_url_configured?'<div class="notice error"><strong>着信時の顧客表示はまだ未完成です。</strong><br>CallConnect側に顧客を同期するため、Contacts Create API URLの設定が必要です。Webhookによる通話履歴保存・電話番号照合は動作しています。</div>':'')+
+      (bootData?.context?.role==='internal_admin'?'<section class="card section"><div class="row between"><div><h2>連絡先と顧客の自動照合</h2><p class="sectionDesc">既存のCallConnect連絡先を電話番号で照合します。プレビューではCallConnectの顧客メモを書き換えません。</p></div><button id="callconnectAutoLinksPreview" class="primary" type="button">自動照合を確認</button></div><div id="callconnectAutoLinksResult" class="notice hidden"></div></section>':'')+
       '<div id="callconnectPageSyncMsg" class="notice hidden"></div>'+
       '<section class="card section"><div class="row between"><div><h2>通話履歴</h2><p class="sectionDesc">電話番号で顧客を確認し、内容を聞いてから新規問い合わせを登録します。登録後はそのまま対応画面へ進めます。</p></div><div class="field" style="margin:0;min-width:260px"><label>履歴を検索</label><input id="callconnectHistorySearch" placeholder="電話番号・会社名・担当者"></div></div>'+
         '<div id="callconnectHistoryTable">'+dataTable(['日時','種別','電話番号','CallConnect担当','連絡先リンク','通話','文字起こし','顧客照合','案件','操作'],rows)+'</div>'+
       '</section>';
 
+    const callconnectAutoLinksPreview=$('#callconnectAutoLinksPreview');
+    if(callconnectAutoLinksPreview){
+      callconnectAutoLinksPreview.onclick=async()=>{
+        const btn=callconnectAutoLinksPreview;
+        btn.disabled=true;
+        const host=$('#callconnectAutoLinksResult');
+        host.classList.remove('hidden');
+        host.textContent='電話番号の照合結果を確認しています...';
+        try{
+          const {data,error}=await supabase.functions.invoke('callconnect-contact-link-sync',{body:{mode:'preview'}});
+          if(error) throw error;
+          if(!data?.ok) throw new Error(data?.error||'照合結果を確認できませんでした');
+          const names={eligible:'URL追記候補',already_linked:'登録済み',conflict_link:'別リンク・競合',
+            ambiguous_customer:'複数顧客と一致',duplicate_remote_phone:'CallConnect側の番号重複',
+            unmatched:'該当なし',no_phone:'電話番号なし',invalid_contact_id:'連絡先ID形式不明',memo_too_long:'メモ長さ超過'};
+          const c=data.counts||{};
+          const summary=Object.entries(names).map(([k,v])=>'<div class="item"><strong>'+esc(v)+'</strong><span style="float:right">'+esc(c[k]||0)+' 件</span></div>').join('');
+          const rows=(data.items||[]).map(x=>
+            '<tr><td>'+esc(x.contact_name||'—')+'</td><td>'+esc(x.masked_phone||'—')+'</td>'+
+            '<td>'+esc(x.customer_name||'—')+'</td><td>'+esc(names[x.status]||x.status)+'</td></tr>');
+          host.innerHTML='<div class="notice"><strong>プレビューのみ：更新は行っていません</strong><p>取得 '+esc(data.contact_count||0)+' 件。顧客が1社だけ一致するものだけをURL追記候補にしています。</p></div>'+
+            '<div class="modalGrid3">'+summary+'</div>'+
+            '<div style="margin-top:12px">'+dataTable(['CallConnect連絡先','電話番号（末尾のみ）','QuoteFlow顧客','判定'],rows)+'</div>';
+        }catch(err){
+          host.textContent='照合結果を取得できませんでした：'+String(err.message||err);
+        }finally{
+          btn.disabled=false;
+        }
+      };
+    }
     const callconnectPageSyncRecords=$('#callconnectPageSyncRecords');
     if(callconnectPageSyncRecords){
       callconnectPageSyncRecords.onclick=async()=>{
