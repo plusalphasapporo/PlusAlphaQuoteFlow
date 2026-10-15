@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import {createClient} from "https://esm.sh/@supabase/supabase-js@2.95.0";
-import {buildPlan,publicPlanItem,summarize,STAGING_ORIGIN,parseContactsPage,decideContactsPage,fingerprintPlanItem,remotePhones,prepareMemo} from "./logic.mjs";
+import {buildPlan,publicPlanItem,summarize,STAGING_ORIGIN,parseContactsPage,decideContactsPage,fingerprintPlanItem,remotePhones,prepareMemo,otherContactFieldsEqual,verifiedContactDetail} from "./logic.mjs";
 const headers={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"authorization, x-client-info, apikey, content-type","Access-Control-Allow-Methods":"POST, OPTIONS","Cache-Control":"no-store"};
 const json=(status:number,body:unknown)=>new Response(JSON.stringify(body),{status,headers:{...headers,"Content-Type":"application/json"}});
 Deno.serve(async(req:Request)=>{
@@ -92,7 +92,7 @@ Deno.serve(async(req:Request)=>{
        : base;
    }));
    return json(200,{
-     ok:true,mode:"preview",write_enabled:true,requires_explicit_confirmation:true,
+     ok:true,mode:"preview",write_enabled:Deno.env.get("CALLCONNECT_CONTACT_WRITES_ENABLED")==="true",requires_explicit_confirmation:true,
      contact_count:list.length,counts:summarize(plan),items
    });
  }
@@ -140,13 +140,7 @@ Deno.serve(async(req:Request)=>{
      results.push({contact_id:id,status:"verification_failed"});
      continue;
    }
-   // Race/conflict check: only update if memo, phone and remote timestamp
-   // still match the full-inventory preview.
-   const currentPhones=remotePhones(before).sort();
-   const approvedPhones=[...(item.phones||[])].sort();
-   if(String(before.memo??"")!==String(item.existing_memo)||
-      JSON.stringify(currentPhones)!==JSON.stringify(approvedPhones)||
-      (item.remote_updated_at&&String(before.updated_at??"")!==item.remote_updated_at)){
+   if(verifiedContactDetail(item,before)!=="verified"){
      results.push({contact_id:id,status:"remote_changed"});
      continue;
    }
@@ -167,8 +161,15 @@ Deno.serve(async(req:Request)=>{
      continue;
    }
    const verified=await readDetail();
-   results.push({contact_id:id,status:verified&&String(verified.memo??"")===item.next_memo
-     ? "updated":"verification_pending"});
+   if(!verified||String(verified.memo??"")!==item.next_memo){
+     results.push({contact_id:id,status:"verification_pending"});
+     break;
+   }
+   if(!otherContactFieldsEqual(before,verified)){
+     results.push({contact_id:id,status:"unexpected_contact_change_stop"});
+     break;
+   }
+   results.push({contact_id:id,status:"updated"});
  }
  const counts:Record<string,number>={};
  for(const item of results) counts[item.status]=(counts[item.status]||0)+1;
