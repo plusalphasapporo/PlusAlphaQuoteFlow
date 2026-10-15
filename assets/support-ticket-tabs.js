@@ -382,6 +382,10 @@
       (reply&&!reply.classList.contains('hidden'))||
       host.querySelector('[data-ticket-unsaved="1"]'));
   }
+  function confirmLeave(ticketId){
+    if(!hasUnsentEdits(ticketId)) return true;
+    return window.confirm('未送信の入力や添付ファイルがあります。画面を離れると、選択したファイルや一部の入力内容が失われる可能性があります。移動しますか？');
+  }
   function showPendingMessage(ticketId,label,refresh){
     const host=inProgressHost(ticketId);
     if(!host) return;
@@ -427,5 +431,5 @@
     const audit=host.querySelector(':scope > .entityAuditSection');
     if(audit) activeController.panes.get('history')?.append(audit);
   }
-  window.QuoteFlowTicketTabs={mount,revealAndScroll,moveAudit,captureInProgress,restoreInProgress,hasUnsentEdits,showPendingMessage};
+  window.QuoteFlowTicketTabs={mount,revealAndScroll,moveAudit,captureInProgress,restoreInProgress,hasUnsentEdits,confirmLeave,showPendingMessage};
 })();
