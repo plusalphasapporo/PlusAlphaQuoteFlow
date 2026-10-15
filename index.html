@@ -7,6 +7,11 @@
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://esm.sh; style-src 'self' 'unsafe-inline'; connect-src 'self' https://dqtqoghnctdqoljxbjjz.supabase.co wss://dqtqoghnctdqoljxbjjz.supabase.co; img-src 'self' data: https:; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
   <title>QuoteFlow Cloud</title>
+  <link rel="icon" type="image/png" href="./assets/quoteflow-mark.png">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <meta name="theme-color" content="#07162f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <style>
     :root{
       --navy:#07162f;--navy2:#0e2448;--bg:#f5f7fb;--card:#fff;--ink:#172033;--muted:#667085;
@@ -17,6 +22,10 @@
     body{margin:0;font-family:system-ui,-apple-system,"Segoe UI","Noto Sans JP",sans-serif;background:var(--bg);color:var(--ink)}
     header{height:68px;background:var(--navy);color:#fff;display:grid;grid-template-columns:minmax(220px,300px) minmax(260px,620px) minmax(280px,1fr);align-items:center;gap:18px;padding:0 22px;position:sticky;top:0;z-index:20}
     .brandBlock{min-width:0}.brand{font-size:19px;font-weight:900;letter-spacing:.01em}.sub{font-size:11px;opacity:.72;margin-top:2px}
+    .brandIdentity{display:flex;align-items:center;gap:8px;min-width:0}.brandMark{display:block;object-fit:contain;flex:0 0 46px}.brandText{min-width:0}.brandText .brand{white-space:nowrap;letter-spacing:-.035em}.brandCloud{color:#38bdf8}
+    .loginBrand{display:flex;align-items:center;justify-content:center;gap:4px;margin:2px 0 18px;white-space:nowrap}.loginBrand img{display:block;object-fit:contain;flex:0 0 66px}.loginWordmark{font-size:clamp(24px,3.2vw,34px);font-weight:900;letter-spacing:-.055em;color:#092354}.loginCloud{color:#178bf2}
+    @media(max-width:1050px){.brandText .brand{font-size:16px}.brandMark{width:40px;height:40px;flex-basis:40px}}
+    @media(max-width:420px){.brandText .brand{font-size:15px}.loginBrand img{width:52px;height:52px;flex-basis:52px}.loginWordmark{font-size:25px}}
     .globalSearch{position:relative;display:flex;align-items:center;background:#fff;border-radius:11px;min-height:40px;color:#334155;box-shadow:0 4px 14px rgba(0,0,0,.12)}
     .globalSearch .searchIcon{padding-left:12px;color:#64748b;font-size:18px}.globalSearch input{border:0;outline:0;width:100%;padding:10px 12px;background:transparent;font:inherit}
     .globalSearchResults{position:absolute;left:0;right:0;top:46px;background:#fff;color:#172033;border:1px solid var(--line);border-radius:12px;box-shadow:0 16px 38px rgba(15,23,42,.2);max-height:420px;overflow:auto;padding:8px;z-index:80}
@@ -358,6 +367,21 @@
     .section{margin-top:18px}.section h2{margin:0 0 6px}.sectionDesc{margin:0 0 14px;color:var(--muted);font-size:13px}
     .item{border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:10px}
     .item h3{margin:0 0 5px;font-size:14px}.item p{margin:4px 0;font-size:13px;color:#475569}
+    .customerDirectoryToolbar{margin-bottom:12px;gap:12px;flex-wrap:wrap}
+    .customerDirectoryGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:14px}
+    .customerDirectoryCard{background:#fff;border:1px solid var(--line);border-radius:16px;padding:16px;box-shadow:0 4px 18px rgba(15,23,42,.04);min-width:0}
+    .customerDirectoryCardTop{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+    .customerDirectoryCard h3{font-size:17px;margin:7px 0 5px;overflow-wrap:anywhere}
+    .customerDirectoryCode{font-size:12px;font-weight:800;color:#2563eb;letter-spacing:.03em}
+    .customerDirectoryRelation{font-size:12px;color:#475569;line-height:1.6}
+    .customerDirectoryFacts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:14px 0}
+    .customerDirectoryFacts>div{min-width:0}
+    .customerDirectoryFacts small{display:block;color:#64748b;font-weight:700;font-size:11px;margin-bottom:4px}
+    .customerDirectoryFacts strong{font-size:13px;font-weight:700;white-space:normal;overflow-wrap:anywhere}
+    .customerDirectoryCardFoot{display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px solid var(--line);padding-top:12px}
+    .customerIdentitySummary{background:#f8fbff;border:1px solid #cfe0fb;border-radius:16px;padding:16px;margin:14px 0}
+    .customerIdentitySummary h3{margin:0}
+    @media(max-width:620px){.customerDirectoryFacts{grid-template-columns:1fr}.customerDirectoryCardFoot{align-items:stretch;flex-direction:column}.customerDirectoryCardFoot button{width:100%}}
     .tableWrap{overflow:auto;border:1px solid var(--line);border-radius:14px;background:#fff}
     table{width:100%;border-collapse:collapse;min-width:720px}
     th,td{padding:11px 12px;border-bottom:1px solid #edf1f6;text-align:left;font-size:13px;vertical-align:middle}
@@ -453,7 +477,7 @@
 </head>
 <body>
 <header>
-  <div class="brandBlock"><div class="brand">QuoteFlow Cloud</div><div class="sub">3社でつながる OA機器サポート統合システム</div></div>
+  <div class="brandBlock"><div class="brandIdentity"><img class="brandMark" src="./assets/quoteflow-mark.png" alt="" width="46" height="46"><div class="brandText"><div class="brand">QuoteFlow <span class="brandCloud">Cloud</span></div><div class="sub">3社でつながる OA機器サポート統合システム</div></div></div></div>
   <div id="globalSearchWrap" class="globalSearch hidden">
     <span class="searchIcon">⌕</span>
     <input id="globalSearch" type="search" placeholder="顧客名・電話番号・機器で検索" autocomplete="off">
@@ -461,7 +485,7 @@
   </div>
   <div class="headerActions">
     <span id="dbBadge" class="pill headerPill">接続確認中</span>
-    <button id="notificationBtn" class="headerIconBtn hidden" type="button" title="通知">🔔<span id="notificationCount" class="notificationCount hidden"></span></button>
+    <button id="notificationBtn" class="headerIconBtn hidden" type="button" title="通知センター" aria-label="通知センター"><svg viewBox="0 0 24 24" aria-hidden="true" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg><span id="notificationCount" class="notificationCount hidden"></span></button>
     <span id="userBadge" class="profileBadge hidden"></span>
     <button id="logoutBtn" class="headerLogout hidden">ログアウト</button>
   </div>
@@ -470,6 +494,7 @@
 
 <main class="wrap">
   <section id="loginView" class="card login">
+    <div class="loginBrand" role="img" aria-label="QuoteFlow Cloud"><img src="./assets/quoteflow-mark.png" alt="" width="66" height="66"><div class="loginWordmark"><span>QuoteFlow</span><span class="loginCloud">Cloud</span></div></div>
     <h1>ログイン</h1>
     <p class="muted">QuoteFlow Cloud のアカウントでログインしてください。</p>
     <div id="loginMsg" class="notice hidden"></div>
@@ -1627,13 +1652,14 @@
       const queueWarningCount=queueWarningItems.length;
       const queueAlertCount=queueCriticalCount+queueWarningCount;
       const count=Number(unread?.count||0)+Number(handoffUpdates?.count||0)+overdueCount+dueTodayCount+Number(callUnread?.count||0)+unansweredAlertCount+queueAlertCount;
+      const unreadBadgeCount=Number(unread?.count||0)+Number(handoffUpdates?.count||0)+Number(callUnread?.count||0);
       const badge=$('#notificationCount');
       badge.classList.remove('attention','warning','critical');
       if(unansweredCriticalCount||queueCriticalCount) badge.classList.add('critical');
       else if(unansweredWarningCount||queueWarningCount) badge.classList.add('warning');
       else if(unansweredAttentionCount) badge.classList.add('attention');
-      if(count>0){
-        badge.textContent=count>99?'99+':String(count);
+      if(unreadBadgeCount>0){
+        badge.textContent=unreadBadgeCount>99?'99+':String(unreadBadgeCount);
         badge.classList.remove('hidden');
       }else{
         badge.classList.add('hidden');
@@ -2162,7 +2188,7 @@
                 await rpc('claim_support_ticket',{p_ticket_id:item.id});
                 await openTicketWorkspace(item.id);
                 setTimeout(()=>{
-                  $('#supportRemoteWorkspace')?.scrollIntoView({behavior:'smooth',block:'start'});
+                  window.QuoteFlowTicketTabs?.revealAndScroll($('#supportRemoteWorkspace'),{behavior:'smooth',block:'start'});
                 },150);
                 if(supporterLink){
                   if(tvWindow) tvWindow.location.href=supporterLink;
@@ -2215,8 +2241,9 @@
       const overdueCount=deadlineAttention.filter(x=>x.deadline_state==='overdue').length;
       const dueTodayCount=deadlineAttention.filter(x=>x.deadline_state==='due_today').length;
       const count=Number(biz?.kpis?.urgent_open_tickets||0)+Number(unread?.count||0)+overdueCount+dueTodayCount+Number(callUnread?.count||0);
-      if(count>0){
-        $('#notificationCount').textContent=count>99?'99+':String(count);
+      const unreadBadgeCount=Number(unread?.count||0)+Number(unread?.ticket_count||0)+Number(callUnread?.count||0);
+      if(unreadBadgeCount>0){
+        $('#notificationCount').textContent=unreadBadgeCount>99?'99+':String(unreadBadgeCount);
         $('#notificationCount').classList.remove('hidden');
       }else{
         $('#notificationCount').classList.add('hidden');
@@ -2313,8 +2340,13 @@
 
         if(isActive){
           try{
-            await renderTicketDetail(msg.ticket_id);
-            setTimeout(()=>$('#ticketMessageList')?.scrollIntoView({behavior:'smooth',block:'end'}),120);
+            if(window.QuoteFlowTicketTabs?.hasUnsentEdits(msg.ticket_id)){
+              window.QuoteFlowTicketTabs.showPendingMessage(msg.ticket_id,label,()=>renderTicketDetail(msg.ticket_id));
+              toast(label+'：入力途中の内容は保持しました。「連絡・返信」で確認できます。');
+            }else{
+              await renderTicketDetail(msg.ticket_id);
+              setTimeout(()=>{const list=$('#ticketMessageList');if(list?.closest('.ticketWorkspacePane')?.hidden){toast(label+'：新しいメッセージがあります（連絡・返信タブで確認）');}else{window.QuoteFlowTicketTabs?.revealAndScroll(list,{behavior:'smooth',block:'end'});}},120);
+            }
           }catch(err){
             console.error('Realtime message refresh failed',err);
           }
@@ -2387,7 +2419,7 @@
           rpc('callconnect_unread_notifications')
         ]);
         const deadlineCount=(deadlineStates||[]).filter(x=>x.deadline_state==='overdue'||x.deadline_state==='due_today').length;
-        count=Number(biz?.kpis?.urgent_open_tickets||0)+Number(unreadHandoffs?.count||0)+deadlineCount+Number(callUnread?.count||0);
+        count=Number(unreadHandoffs?.count||0)+Number(unreadHandoffs?.ticket_count||0)+Number(callUnread?.count||0);
       }else if(role==='support_staff'){
         const [unread,unanswered,nextActionStates,handoffUpdates,deadlineStates,callUnread]=await Promise.all([
           rpc('support_unread_notifications'),
@@ -2405,7 +2437,7 @@
         const queueCriticalCount=(nextActionStates||[]).filter(x=>x.alert_level==='critical'&&x.notification_active!==false).length;
         const queueWarningCount=(nextActionStates||[]).filter(x=>x.alert_level==='warning'&&x.notification_active!==false).length;
         const queueAlertCount=queueCriticalCount+queueWarningCount;
-        count=Number(unread?.count||0)+Number(handoffUpdates?.count||0)+deadlineCount+Number(callUnread?.count||0)+unansweredAlertCount+queueAlertCount;
+        count=Number(unread?.count||0)+Number(handoffUpdates?.count||0)+Number(callUnread?.count||0);
         const badge=$('#notificationCount');
         badge.classList.remove('attention','warning','critical');
         if(unansweredCriticalCount||queueCriticalCount) badge.classList.add('critical');
@@ -2417,7 +2449,7 @@
         $('#notificationBtn').title='通知'+(parts.length?' / '+parts.join(' / '):'');
       }else if(role==='customer_user'){
         const h=await rpc('customer_portal_home');
-        count=(h?.recent_tickets||[]).filter(x=>x.status!=='closed').length;
+        count=0; // Open tickets are not unread notifications.
       }
     }catch(_){ count=0; }
     if(role!=='support_staff'){
@@ -2445,6 +2477,15 @@
       }
       return go(role==='customer_user'?'customer_status':'support');
     };
+    if(['support_staff','internal_admin','internal_staff'].includes(role)){
+      if('serviceWorker' in navigator && window.isSecureContext){
+        navigator.serviceWorker.register('./sw.js').catch(err=>console.warn('PWA worker registration failed',err));
+      }
+      window.QuoteFlowNotificationCenter?.mount({
+        role,rpc,toast,
+        refreshBadges:()=>role==='support_staff'?refreshSupportUnreadBadge():refreshInternalUnreadHandoffBadge()
+      });
+    }
 
     const searchWrap=$('#globalSearchWrap');
     if(!['internal_admin','internal_staff','support_staff'].includes(role)){
@@ -3114,7 +3155,7 @@
           if(assigned&&!mine){
             toast(assignee+' が返信対応中です');
             await openTicketWorkspace(btn.dataset.id);
-            setTimeout(()=>$('#ticketReplyLockNotice')?.scrollIntoView({behavior:'smooth',block:'center'}),180);
+            setTimeout(()=>window.QuoteFlowTicketTabs?.revealAndScroll($('#ticketReplyLockNotice'),{behavior:'smooth',block:'center'}),180);
             return;
           }
           if(!assigned){
@@ -3122,7 +3163,7 @@
             toast('返信担当を確保しました');
           }
           await openTicketWorkspace(btn.dataset.id);
-          setTimeout(()=>{const el=$('#ticketMessageBody');el?.scrollIntoView({behavior:'smooth',block:'center'});el?.focus();},180);
+          setTimeout(()=>{const el=$('#ticketMessageBody');window.QuoteFlowTicketTabs?.revealAndScroll(el,{behavior:'smooth',block:'center'});el?.focus({preventScroll:true});},180);
         }catch(err){toast(err.message||String(err));}
         finally{btn.disabled=false;}
       });
@@ -3136,7 +3177,7 @@
         btn.disabled=true;
         try{
           await openTicketWorkspace(btn.dataset.id);
-          setTimeout(()=>$('#supportRemoteWorkspace')?.scrollIntoView({behavior:'smooth',block:'start'}),150);
+          setTimeout(()=>window.QuoteFlowTicketTabs?.revealAndScroll($('#supportRemoteWorkspace'),{behavior:'smooth',block:'start'}),150);
         }catch(err){toast(err.message||String(err));}
         finally{btn.disabled=false;}
       });
@@ -3254,7 +3295,7 @@
           await refreshSupportUnreadBadge();
           await go('support_cases');
           await renderTicketDetail(btn.dataset.ticketId);
-          setTimeout(()=>$('#supportAssistWorkspace')?.scrollIntoView({behavior:'smooth',block:'start'}),150);
+          setTimeout(()=>window.QuoteFlowTicketTabs?.revealAndScroll($('#supportAssistWorkspace'),{behavior:'smooth',block:'start'}),150);
         }catch(err){toast(err.message||String(err));}
         finally{btn.disabled=false;}
       });
@@ -3597,7 +3638,7 @@
 
   async function renderCustomerCreate(){
     const options=await rpc('internal_customer_registration_options');
-    const parentOptions=(options?.parents||[]).map(x=>
+    const parentOptions=(options?.parents||[]).filter(x=>x.branch_type==='head_office').map(x=>
       '<option value="'+esc(x.id)+'">'+esc(x.customer_code||'—')+' / '+esc(x.name||'')+'</option>'
     ).join('');
     const supportOptions=(options?.support_companies||[]).map(x=>
@@ -4550,8 +4591,16 @@
         rpc('internal_customer_registration_options')
       ]);
       const c=base||{};
+      const hierarchy=await supabase.from('customers').select('id,customer_code,name,branch_type,parent_customer_id').or('id.eq.'+customerId+',parent_customer_id.eq.'+customerId);
+      if(hierarchy.error) throw hierarchy.error;
+      const related=hierarchy.data||[];
+      const headquarters=related.find(x=>x.id===c.parent_customer_id)||((registrationOptions?.parents||[]).find(x=>x.id===c.parent_customer_id));
+      const branches=related.filter(x=>x.parent_customer_id===customerId).sort((a,b)=>String(a.customer_code||'').localeCompare(String(b.customer_code||''),'ja'));
+      const relationshipHtml='<section class="card section" style="box-shadow:none;margin:0"><h3>本店・支店の紐づけ</h3><p class="sectionDesc">顧客番号を維持したまま本支店を管理します。</p>'+
+        (c.branch_type==='branch' ? '<div class="item"><strong>所属する本店</strong><p>'+(headquarters?'<button class="linkBtn customerRelatedOpen" type="button" data-id="'+esc(headquarters.id)+'">'+esc(headquarters.customer_code||'—')+' / '+esc(headquarters.name||'')+'</button>':'親本店が未設定です')+'</p></div>' : '<div class="item"><strong>本店</strong><p>'+esc(c.customer_code||'—')+' / '+esc(c.name||'')+'</p></div>')+
+        (branches.length?'<div class="item"><strong>紐づく支店 '+branches.length+'件</strong>'+branches.map(x=>'<p><button class="linkBtn customerRelatedOpen" type="button" data-id="'+esc(x.id)+'">'+esc(x.customer_code||'—')+' / '+esc(x.name||'')+'</button></p>').join('')+'</div>':'<div class="item"><span class="muted">紐づく支店はありません。</span></div>')+'</section>';
       const primary=(contacts||[]).find(x=>x.is_primary)||(contacts||[])[0]||null;
-      const parentOptions=(registrationOptions?.parents||[]).filter(x=>x.id!==c.id).map(x=>'<option value="'+esc(x.id)+'" '+(x.id===c.parent_customer_id?'selected':'')+'>'+esc(x.customer_code||'—')+' / '+esc(x.name||'')+'</option>').join('');
+      const parentOptions=(registrationOptions?.parents||[]).filter(x=>x.id!==c.id && x.branch_type==='head_office').map(x=>'<option value="'+esc(x.id)+'" '+(x.id===c.parent_customer_id?'selected':'')+'>'+esc(x.customer_code||'—')+' / '+esc(x.name||'')+'</option>').join('');
       const supportOptions=(registrationOptions?.support_companies||[]).map(x=>'<option value="'+esc(x.id)+'" '+(x.id===c.support_company_id?'selected':'')+'>'+esc(x.name||'')+'</option>').join('');
       const salesOwnerOptions=(registrationOptions?.sales_owners||[]).map(x=>'<option value="'+esc(x.user_id)+'" '+(x.user_id===c.sales_owner_user_id?'selected':'')+'>'+esc(x.display_name||'—')+'</option>').join('');
       const now=Date.now();
@@ -4700,6 +4749,16 @@
           '</div>'+
           unifiedTabs(tabs,tab,'customer')+
           '<div id="customerUnifiedTabBody">'+
+            '<section class="customerIdentitySummary"><div class="row between"><div><h3>顧客基本情報</h3><p class="sectionDesc">カルテを開いたら、最初に基本情報を確認できます。</p></div></div><div class="customerDirectoryFacts">'+
+              '<div><small>顧客番号</small><strong>'+esc(c.customer_code||'—')+'</strong></div>'+ 
+              '<div><small>区分</small><strong>'+esc(c.branch_type==='branch'?'支店・営業所':'本店・本社')+'</strong></div>'+ 
+              '<div><small>代表者</small><strong>'+esc(c.representative_name||'未登録')+'</strong></div>'+ 
+              '<div><small>所在地</small><strong>'+esc([c.postal_code,c.address1,c.address2].filter(Boolean).join(' ')||'未登録')+'</strong></div>'+ 
+              '<div><small>電話</small><strong>'+esc(c.phone||c.mobile||'未登録')+'</strong></div>'+ 
+              '<div><small>メール</small><strong>'+esc(c.email||'未登録')+'</strong></div>'+ 
+              '<div><small>主担当者</small><strong>'+esc(primary?.name||'未登録')+'</strong></div>'+ 
+              '<div><small>所属する本店</small><strong>'+esc(c.branch_type==='branch'?(headquarters?.customer_code||'未登録')+' / '+(headquarters?.name||'未登録'):'本店・本社')+'</strong></div>'+ 
+            '</div></section>'+ 
             (c.manual_hold?'<div class="notice error"><strong>手動ホールド中</strong><br>新規取引を進める前にホールド理由・解除可否を確認してください。</div>':'')+
             kpis([
               ['対応中',openSupportTickets.length],
@@ -4750,6 +4809,7 @@
                 attentionHtml+
               '</section>'+
             '</div>'+
+            relationshipHtml+
             '<section class="section">'+
               '<div class="row between"><div><h3>直近活動</h3><p class="sectionDesc">見積・受注・発注・納品・問い合わせ・営業履歴などを新しい順に表示します。</p></div><button id="customerOverviewHistory" class="ghost" type="button">営業履歴</button></div>'+
               activityHtml+
@@ -4798,6 +4858,7 @@
       $('#customerOverviewNewQuote').onclick=()=>renderCustomerQuoteCreate(customerId);
       $('#customerOverviewTransactions').onclick=()=>renderCustomerDetail(customerId,'transactions');
       $('#customerOverviewHistory').onclick=()=>renderCustomerDetail(customerId,'history');
+      document.querySelectorAll('.customerRelatedOpen').forEach(btn=>btn.onclick=()=>renderCustomerDetail(btn.dataset.id,'overview'));
 
       const openCustomerSupportCreate=async(type)=>{
         await go('support');
@@ -4854,6 +4915,7 @@
         const box=$('#customerOverviewEditBox');
         box.classList.toggle('hidden');
         $('#customerOverviewEditToggle').textContent=box.classList.contains('hidden')?'基本情報を編集':'編集を閉じる';
+        if(!box.classList.contains('hidden')) box.scrollIntoView({behavior:'smooth',block:'start'});
       };
       bindUnifiedTabs(t=>renderCustomerDetail(customerId,t));
 
@@ -5559,8 +5621,9 @@
         ['code_asc','顧客コード順']
       ])+
       '<div id="customerDetailHost"></div>'+
-      '<section class="section"><div id="customerListHost"></div></section>';
+      '<section class="section"><div class="row between customerDirectoryToolbar"><strong>顧客の基本情報</strong><div class="row"><button id="customerViewCards" class="primary" type="button">カード表示</button><button id="customerViewTable" class="ghost" type="button">一覧表示</button></div></div><div id="customerListHost"></div></section>';
 
+    let customerView='cards';
     const renderRows=()=>{
       const state=listToolbarState('customerList');
       let filtered=(data||[]).filter(c=>{
@@ -5580,13 +5643,30 @@
       });
 
       updateListCount('customerList',filtered.length,(data||[]).length);
+      const lookup=new Map((data||[]).map(x=>[x.id,x]));
+      const cards=filtered.map(c=>{
+        const parent=lookup.get(c.parent_customer_id);
+        const branchCount=(data||[]).filter(x=>x.parent_customer_id===c.id).length;
+        const relation=c.branch_type==='branch'?'支店｜本店 '+(parent?.customer_code||'未設定')+' / '+(parent?.name||'未設定'):'本店・本社｜支店 '+branchCount+'件';
+        const address=[c.postal_code,c.address1,c.address2].filter(Boolean).join(' ');
+        return '<article class="customerDirectoryCard">'+
+          '<div class="customerDirectoryCardTop"><div><span class="customerDirectoryCode">'+esc(c.customer_code||'—')+'</span><h3>'+esc(c.name||'名称未登録')+'</h3><div class="customerDirectoryRelation">'+esc(relation)+'</div></div><span class="pill">'+esc(statusText(c.status))+'</span></div>'+ 
+          '<div class="customerDirectoryFacts">'+
+            '<div><small>所在地</small><strong>'+esc(address||'未登録')+'</strong></div>'+ 
+            '<div><small>電話</small><strong>'+esc(c.phone||c.mobile||'未登録')+'</strong></div>'+ 
+            '<div><small>メール</small><strong>'+esc(c.email||'未登録')+'</strong></div>'+ 
+            '<div><small>代表者</small><strong>'+esc(c.representative_name||'未登録')+'</strong></div>'+ 
+            '<div><small>営業担当</small><strong>'+esc(c.sales_owner_name||'未設定')+'</strong></div>'+ 
+          '</div><div class="customerDirectoryCardFoot"><span class="muted">最終更新 '+esc(dateText(c.updated_at))+'</span><button class="primary customerDetail" type="button" data-id="'+esc(c.id)+'">顧客カルテを開く</button></div></article>';
+      });
       const rows=filtered.map(c=>
         '<tr>'+
           '<td>'+esc(c.customer_code||'—')+'</td>'+
-          '<td><strong>'+esc(c.name)+'</strong>'+(c.trade_name?'<br><span class="muted">'+esc(c.trade_name)+'</span>':'')+'</td>'+
+          '<td><strong>'+esc(c.name)+'</strong>'+(c.trade_name?'<br><span class="muted">'+esc(c.trade_name)+'</span>':'')+(c.branch_type==='branch'?'<br><span class="pill">支店</span> <span class="muted">本店: '+esc(lookup.get(c.parent_customer_id)?.customer_code||'未登録')+'</span>':'<br><span class="pill">本店</span>')+'</td>'+
           '<td>'+esc(({corporation:'法人',sole_proprietor:'個人事業主',individual:'個人',public:'公共',other:'その他'}[c.customer_type]||c.customer_type||'—'))+(c.industry?'<br><span class="muted">'+esc(c.industry)+'</span>':'')+'</td>'+
           '<td>'+esc(c.sales_owner_name||'未設定')+'</td>'+
           '<td>'+esc(c.phone||c.mobile||'—')+(c.email?'<br><span class="muted">'+esc(c.email)+'</span>':'')+'</td>'+
+          '<td>'+esc([c.postal_code,c.address1,c.address2].filter(Boolean).join(' ')||'—')+'</td>'+
           '<td>'+esc(statusText(c.status))+'</td>'+
           '<td>'+(c.manual_hold?'<span class="hold">手動ホールド中</span>':'<span class="normal">通常</span>')+'</td>'+
           '<td>'+esc(dateText(c.updated_at))+'</td>'+
@@ -5594,9 +5674,11 @@
         '</tr>'
       );
 
-      $('#customerListHost').innerHTML=dataTable(
-        ['顧客コード','顧客名','区分・業種','営業担当','連絡先','状態','取引状態','更新日','操作'],rows
-      );
+      $('#customerListHost').innerHTML=customerView==='cards'
+        ? (cards.length?'<div class="customerDirectoryGrid">'+cards.join('')+'</div>':'<div class="empty">該当する顧客はありません。</div>')
+        : dataTable(['顧客コード','顧客名','区分・業種','営業担当','連絡先','所在地','状態','取引状態','更新日','操作'],rows);
+      $('#customerViewCards').className=customerView==='cards'?'primary':'ghost';
+      $('#customerViewTable').className=customerView==='table'?'primary':'ghost';
 
       document.querySelectorAll('.customerDetail').forEach(btn=>{
         btn.onclick=async()=>{
@@ -5609,6 +5691,8 @@
     };
 
     $('#customerCreateOpen').onclick=renderCustomerCreate;
+    $('#customerViewCards').onclick=()=>{customerView='cards';renderRows();};
+    $('#customerViewTable').onclick=()=>{customerView='table';renderRows();};
     bindListToolbar('customerList',renderRows);
     renderRows();
   }
@@ -6262,11 +6346,12 @@
     const role=bootData.context?.role;
     if(role!=='internal_admin') throw new Error('管理者のみ利用できます。');
 
-    const [company,cfg,docProfile,demoStatus,callconnectApi,openaiApi,teamviewerApi]=await Promise.all([
+    const [company,cfg,docProfile,demoStatus,demoCleanupPreview,callconnectApi,openaiApi,teamviewerApi]=await Promise.all([
       rpc('internal_company_settings'),
       rpc('internal_numbering_settings'),
       rpc('internal_document_profile'),
       rpc('internal_demo_seed_status'),
+      rpc('internal_demo_cleanup_preview'),
       rpc('callconnect_api_settings'),
       rpc('openai_settings'),
       rpc('teamviewer_api_settings')
@@ -6448,7 +6533,16 @@
       body=
         '<section class="card section">'+
           '<div class="formSectionHead"><span class="sectionNo">05</span><h2>デモデータ</h2></div>'+
-          '<p class="sectionDesc">機能確認用のデモデータです。削除してもログイン用デモアカウントと本データは残ります。</p>'+
+          '<p class="sectionDesc">既存シード以外のデモ顧客・問い合わせも含めた残存状況です。削除前に確認してください。</p>'+ 
+          '<div class="notice">DEMO-CUSTOMER / DEMO-HOKKAIDO / DEMO-MIRAI を含む全デモ顧客が対象です。旧データ98顧客・200商品は保持します。CallConnectの通話履歴は消さず、誤ったデモ顧客への紐づけだけを解除する必要があります。</div>'+ 
+          '<div class="grid" id="demoCleanupPreview">'+
+            '<div class="kpi"><div class="label">残存デモ顧客</div><div class="value">'+esc(demoCleanupPreview?.demo_customers??'—')+'</div></div>'+
+            '<div class="kpi"><div class="label">残存デモ商品</div><div class="value">'+esc(demoCleanupPreview?.demo_products??'—')+'</div></div>'+
+            '<div class="kpi"><div class="label">残存デモ案件</div><div class="value">'+esc(demoCleanupPreview?.demo_support_tickets??'—')+'</div></div>'+
+            '<div class="kpi"><div class="label">デモ専用ログイン</div><div class="value">'+esc(demoCleanupPreview?.demo_customer_users??'—')+'</div></div>'+
+            '<div class="kpi"><div class="label">移行済み顧客（保護）</div><div class="value">'+esc(demoCleanupPreview?.imported_customers??'—')+'</div></div>'+
+            '<div class="kpi"><div class="label">移行済み商品（保護）</div><div class="value">'+esc(demoCleanupPreview?.imported_products??'—')+'</div></div>'+
+          '</div>'+ 
           '<div class="grid">'+
             '<div class="kpi"><div class="label">顧客</div><div class="value">'+esc(demoStatus?.customers||0)+'</div></div>'+
             '<div class="kpi"><div class="label">見積</div><div class="value">'+esc(demoStatus?.quotes||0)+'</div></div>'+
@@ -6458,8 +6552,8 @@
             '<div class="kpi"><div class="label">問い合わせ</div><div class="value">'+esc(demoStatus?.support_tickets||0)+'</div></div>'+
           '</div>'+
           (demoStatus?.exists
-            ? '<div class="notice">Seed: '+esc(demoStatus.seed_key||'')+'<br>削除対象を確認してから実行してください。</div><button id="deleteDemoSeedBtn" class="orange" type="button">デモデータを一括削除</button>'
-            : '<div class="notice">現在、削除対象のデモデータはありません。</div>')+
+            ? '<div class="notice">旧シード: '+esc(demoStatus.seed_key||'')+'<br>この操作は旧シードの一部のみを削除します。全デモデータの削除ではありません。</div><button id="deleteDemoSeedBtn" class="orange" type="button">旧シードのみ削除</button>'
+            : '<div class="notice">旧シードはありません。上の全デモ件数で残存状態を確認してください。</div>')+
           '<div id="demoSeedMsg" class="notice hidden"></div>'+
         '</section>';
     }
@@ -6757,13 +6851,13 @@
     const deleteDemoBtn=$('#deleteDemoSeedBtn');
     if(deleteDemoBtn){
       deleteDemoBtn.onclick=async()=>{
-        const phrase=prompt('デモデータを削除します。確認のため「DELETE DEMO」と入力してください。');
+        const phrase=prompt('旧デモシードのみを削除します。DEMO-CUSTOMERや他のデモ案件・デモアカウントは残ります。確認のため「DELETE DEMO」と入力してください。');
         if(phrase!=='DELETE DEMO') return;
         deleteDemoBtn.disabled=true;
         try{
           await rpc('delete_demo_seed',{p_seed_key:demoStatus.seed_key});
-          notice('#demoSeedMsg','デモデータを削除しました。ログイン用デモアカウントと既存本データは残っています。',true);
-          toast('デモデータを削除しました');
+          notice('#demoSeedMsg','旧シードの一部を削除しました。全デモデータの削除は未完了です。',true);
+          toast('旧シードの一部を削除しました');
           setTimeout(()=>renderSettings('demo'),500);
         }catch(err){notice('#demoSeedMsg',err.message||String(err));}
         finally{deleteDemoBtn.disabled=false;}
@@ -7912,6 +8006,16 @@
   }
 
   async function openTicketWorkspace(ticketId){
+    // Opening another ticket replaces the current editor and its selected files.
+    const previousId=activeTicketId;
+    const previousOpen=!!document.querySelector('#ticketDetailHost .quoteDetailHead');
+    if(previousOpen && previousId && window.QuoteFlowTicketTabs?.hasUnsentEdits(previousId)){
+      if(String(previousId)===String(ticketId)){
+        document.querySelector('#ticketDetailHost .ticketWorkspaceBar')?.scrollIntoView({behavior:'smooth',block:'start'});
+        return;
+      }
+      if(window.QuoteFlowTicketTabs?.confirmLeave(previousId)===false) return;
+    }
     const role=bootData?.context?.role;
     const backPage=role==='support_staff'?'support_cases':'support';
     currentPage=backPage;
@@ -7986,6 +8090,7 @@
   }
 
   async function renderTicketDetail(ticketId){
+    const previouslyOpen=String(activeTicketId||'')===String(ticketId||'')&&!!document.querySelector('#ticketDetailHost .quoteDetailHead');
     activeTicketId=ticketId||null;
     if(teamviewerStatusTimer){
       clearInterval(teamviewerStatusTimer);
@@ -8739,6 +8844,7 @@
         '<div id="ticketActionMsg" class="notice hidden"></div>'
       : '';
 
+    const ticketInProgressSnapshot=window.QuoteFlowTicketTabs?.captureInProgress(t.id);
     $('#ticketDetailHost').innerHTML=
       '<section class="card section">'+
         '<div class="quoteDetailHead"><div><h2>サポート案件カルテ</h2><p class="sectionDesc">'+esc(t.ticket_number||'—')+' / '+supportRequestTypeLabel(t.request_type)+' / '+esc(t.subject||'')+'</p></div><button id="ticketDetailClose" class="ghost" type="button">閉じる</button></div>'+
@@ -8843,8 +8949,14 @@
         '</div><div id="ticketAttachmentGallery" class="attachmentGallery"></div>'+dataTable(['ファイル名','送信元','公開範囲','サイズ(bytes)','作成日'],attachmentRows)+'<div id="ticketAttachmentMsg" class="notice hidden"></div></section>'+
       '</section>';
 
-    $('#ticketDetailClose').onclick=()=>{activeTicketId=null;$('#ticketDetailHost').innerHTML='';};
-    $('#ticketDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
+    window.QuoteFlowTicketTabs?.mount({
+      ticketId:t.id,role,nextTarget:supportPrimaryStep.target,
+      title:cust?.name||'顧客未登録',ticket:t.ticket_number||'—',subject:t.subject||'',
+      assignee:support?'サポート担当 '+supportAssigneeLabel(assignmentState):'自社担当 '+(t.assigned_internal_user_name||'未設定'),
+      stage:supportStageLabel(supportStage||((t.status==='closed')?'completed':'unhandled'))
+    });
+    $('#ticketDetailClose').onclick=()=>{if(window.QuoteFlowTicketTabs?.confirmLeave(t.id)===false) return;activeTicketId=null;$('#ticketDetailHost').innerHTML='';};
+    if(!previouslyOpen) $('#ticketDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
     const ticketCallAiSummary=$('#ticketCallAiSummary');
     if(ticketCallAiSummary){
       ticketCallAiSummary.onclick=async()=>{
@@ -8935,7 +9047,7 @@
           await uploadSupportAttachments(t.id,files,internal?'internal':'support');
           toast('解析用写真を追加しました');
           await renderTicketDetail(t.id);
-          setTimeout(()=>$('#ticketAiIncidentSection')?.scrollIntoView({behavior:'smooth',block:'start'}),150);
+          setTimeout(()=>window.QuoteFlowTicketTabs?.revealAndScroll($('#ticketAiIncidentSection'),{behavior:'smooth',block:'start'}),150);
         }catch(err){
           notice('#ticketAiIncidentMsg',err.message||String(err));
         }
@@ -9214,7 +9326,7 @@
     $('#ticketMessageLatest')?.addEventListener('click',()=>{
       const cards=[...document.querySelectorAll('.ticketMessageCard:not(.hidden)')];
       const target=cards[cards.length-1]||document.querySelector('.ticketMessageCard:last-of-type');
-      target?.scrollIntoView({behavior:'smooth',block:'center'});
+      window.QuoteFlowTicketTabs?.revealAndScroll(target,{behavior:'smooth',block:'center'});
     });
     if(newestMessageAt){
       setTimeout(()=>setMessageSeenAt(t.id,new Date(newestMessageAt).toISOString()),600);
@@ -9238,7 +9350,7 @@
       updateMessageVisibilityBanner();
       messageVisibilityEl?.dispatchEvent(new Event('change',{bubbles:true}));
       messageBodyEl.focus();
-      messageBodyEl.scrollIntoView({behavior:'smooth',block:'center'});
+      window.QuoteFlowTicketTabs?.revealAndScroll(messageBodyEl,{behavior:'smooth',block:'center'});
       toast('返信先を設定しました');
     });
     document.querySelectorAll('.ticketMessageCopy').forEach(btn=>btn.onclick=async()=>{
@@ -9251,7 +9363,7 @@
     if(internal){
       const internalJump=(selector)=>{
         const el=$(selector);
-        if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
+        if(el) window.QuoteFlowTicketTabs?.revealAndScroll(el,{behavior:'smooth',block:'start'});
       };
       const primary=$('#internalTicketPrimaryAction');
       if(primary) primary.onclick=()=>{
@@ -9308,7 +9420,7 @@
     if(support){
       const jump=(selector)=>{
         const el=$(selector);
-        if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
+        if(el) window.QuoteFlowTicketTabs?.revealAndScroll(el,{behavior:'smooth',block:'start'});
       };
       const topPrimaryAction=$('#supportTopPrimaryAction');
       if(topPrimaryAction) topPrimaryAction.onclick=()=>$('#supportPrimaryNext')?.click();
@@ -9658,7 +9770,7 @@
           setTimeout(()=>{
             const note=document.querySelector('.ticketAssistStepNote[data-step="'+firstPending.dataset.step+'"]');
             (note||firstPending)?.focus();
-            firstPending.scrollIntoView({behavior:'smooth',block:'center'});
+            window.QuoteFlowTicketTabs?.revealAndScroll(firstPending,{behavior:'smooth',block:'center'});
           },250);
           return;
         }
@@ -9696,7 +9808,7 @@
         setTimeout(()=>{
           const first=isIncident?$('#classifyOccurredAt'):$('#classifyRequested');
           (first||$('#ticketClassificationSave'))?.focus();
-          panel.scrollIntoView({behavior:'smooth',block:'center'});
+          window.QuoteFlowTicketTabs?.revealAndScroll(panel,{behavior:'smooth',block:'center'});
         },120);
         $('#ticketClassificationSave').onclick=async()=>{
           const btn=$('#ticketClassificationSave'); btn.disabled=true;
@@ -9720,7 +9832,7 @@
           }catch(err){notice('#ticketClassificationMsg',err.message||String(err));}
           finally{btn.disabled=false;}
         };
-        panel.scrollIntoView({behavior:'smooth',block:'center'});
+        window.QuoteFlowTicketTabs?.revealAndScroll(panel,{behavior:'smooth',block:'center'});
       };
       if(actionIncident) actionIncident.onclick=()=>openClassification('incident');
       if(actionSetting) actionSetting.onclick=()=>openClassification('setting_request');
@@ -10212,7 +10324,7 @@
           if(remote && !remote.value.trim()){
             remote.value='有力な解決候補が見つからないため、TeamViewerで現象・設定・エラー内容を直接確認する';
           }
-          $('#supportRemoteWorkspace')?.scrollIntoView({behavior:'smooth',block:'start'});
+          window.QuoteFlowTicketTabs?.revealAndScroll($('#supportRemoteWorkspace'),{behavior:'smooth',block:'start'});
           setTimeout(()=>($('#ticketRemoteAction')||$('#ticketTeamViewerCreate'))?.focus(),250);
           toast('TeamViewer確認へ移動しました');
         };
@@ -10230,7 +10342,7 @@
             $('#ticketHandoffBox')?.classList.remove('hidden');
             if($('#handoffReason')) $('#handoffReason').value='再検索でも有力な解決候補が見つからないため';
             if($('#handoffNextAction')) $('#handoffNextAction').value='自社管理者で詳細確認し、追加調査または現地対応要否を判断';
-            $('#ticketHandoffBox')?.scrollIntoView({behavior:'smooth',block:'center'});
+            window.QuoteFlowTicketTabs?.revealAndScroll($('#ticketHandoffBox'),{behavior:'smooth',block:'center'});
           }
         };
 
@@ -10358,7 +10470,7 @@
                 setTimeout(()=>{
                   const idx=Number(next.dataset.step||0);
                   const item=document.querySelector('[data-step-item="'+idx+'"]');
-                  (item||next).scrollIntoView({behavior:'smooth',block:'center'});
+                  window.QuoteFlowTicketTabs?.revealAndScroll(item||next,{behavior:'smooth',block:'center'});
                   document.querySelector('.ticketAssistStepNote[data-step="'+idx+'"]')?.focus({preventScroll:true});
                 },180);
               }
@@ -10396,7 +10508,7 @@
             if(search){
               search.value=retryTerms;
               search.dispatchEvent(new Event('input',{bubbles:true}));
-              search.scrollIntoView({behavior:'smooth',block:'center'});
+              window.QuoteFlowTicketTabs?.revealAndScroll(search,{behavior:'smooth',block:'center'});
             }
             await rpc('post_ticket_message',{
               p_ticket_id:t.id,
@@ -10438,7 +10550,7 @@
           if(!pending) return;
           const idx=Number(pending.dataset.step||0);
           const item=document.querySelector('[data-step-item="'+idx+'"]');
-          (item||pending).scrollIntoView({behavior:'smooth',block:'center'});
+          window.QuoteFlowTicketTabs?.revealAndScroll(item||pending,{behavior:'smooth',block:'center'});
           setTimeout(()=>document.querySelector('.ticketAssistStepNote[data-step="'+idx+'"]')?.focus(),220);
         };
 
@@ -10447,14 +10559,14 @@
           const pending=[...document.querySelectorAll('.ticketAssistStepCheck')].find(x=>!x.checked);
           if(pending){
             const idx=Number(pending.dataset.step||0);
-            document.querySelector('[data-step-item="'+idx+'"]')?.scrollIntoView({behavior:'smooth',block:'center'});
+            window.QuoteFlowTicketTabs?.revealAndScroll(document.querySelector('[data-step-item="'+idx+'"]'),{behavior:'smooth',block:'center'});
             toast('未完了の手順があります');
             return;
           }
           assistGoReport.disabled=true;
           try{
             await persistAssistStepState();
-            $('#supportReportWorkspace')?.scrollIntoView({behavior:'smooth',block:'center'});
+            window.QuoteFlowTicketTabs?.revealAndScroll($('#supportReportWorkspace'),{behavior:'smooth',block:'center'});
             setTimeout(()=>$('#ticketAssistSolved')?.click(),220);
           }catch(err){
             toast(err.message||String(err));
@@ -10498,7 +10610,7 @@
           }
           const nextAction=$('#ticketMessageNextAction');
           if(nextAction) nextAction.value='customer_reply_waiting';
-          body?.scrollIntoView({behavior:'smooth',block:'center'});
+          window.QuoteFlowTicketTabs?.revealAndScroll(body,{behavior:'smooth',block:'center'});
           setTimeout(()=>body?.focus(),250);
           toast('顧客向け返信欄に対応候補を下書きしました');
         };
@@ -10511,7 +10623,7 @@
             remote.dispatchEvent(new Event('input',{bubbles:true}));
           }
           const panel=$('#supportRemoteWorkspace');
-          panel?.scrollIntoView({behavior:'smooth',block:'start'});
+          window.QuoteFlowTicketTabs?.revealAndScroll(panel,{behavior:'smooth',block:'start'});
           setTimeout(()=>($('#ticketRemoteAction')||$('#ticketTeamViewerCreate'))?.focus(),250);
           toast(remote?'TeamViewerの対応内容に反映しました':'TeamViewer欄を開きました');
         };
@@ -10523,7 +10635,7 @@
           if(!body) return;
           body.value='【'+String(article.title||'ナレッジ')+'】\n'+String(article.body||'');
           body.focus();
-          body.scrollIntoView({behavior:'smooth',block:'center'});
+          window.QuoteFlowTicketTabs?.revealAndScroll(body,{behavior:'smooth',block:'center'});
           toast('返信欄にナレッジを下書きしました');
         });
 
@@ -10547,7 +10659,7 @@
         $('#ticketHandoffBox')?.classList.remove('hidden');
         if($('#handoffReason') && !$('#handoffReason').value) $('#handoffReason').value='AI・ナレッジ・マニュアルおよび遠隔対応で解決できないため';
         if($('#handoffNextAction') && !$('#handoffNextAction').value) $('#handoffNextAction').value='自社担当者で詳細調査・現地対応要否を判断';
-        $('#ticketHandoffBox')?.scrollIntoView({behavior:'smooth',block:'center'});
+        window.QuoteFlowTicketTabs?.revealAndScroll($('#ticketHandoffBox'),{behavior:'smooth',block:'center'});
         setTimeout(()=>$('#handoffReason')?.focus(),180);
       };
 
@@ -10801,14 +10913,22 @@
       $('#ticketProfileForm').onsubmit=async e=>{
         e.preventDefault();const btn=e.submitter;if(btn)btn.disabled=true;
         try{
+          const submittedProfile={
+            ticketProfilePriority:$('#ticketProfilePriority').value,
+            ticketProfileAssigned:$('#ticketProfileAssigned').value,
+            ticketProfileAsset:$('#ticketProfileAsset').value,
+            ticketProfileContract:$('#ticketProfileContract').value,
+            ticketProfileInternalNote:$('#ticketProfileInternalNote').value
+          };
           await rpc('update_support_ticket_profile',{
             p_ticket_id:t.id,
-            p_priority:$('#ticketProfilePriority').value,
-            p_assigned_internal_user_id:$('#ticketProfileAssigned').value||null,
-            p_asset_id:$('#ticketProfileAsset').value||null,
-            p_contract_id:$('#ticketProfileContract').value||null,
-            p_internal_note:$('#ticketProfileInternalNote').value.trim()||null
+            p_priority:submittedProfile.ticketProfilePriority,
+            p_assigned_internal_user_id:submittedProfile.ticketProfileAssigned||null,
+            p_asset_id:submittedProfile.ticketProfileAsset||null,
+            p_contract_id:submittedProfile.ticketProfileContract||null,
+            p_internal_note:submittedProfile.ticketProfileInternalNote.trim()||null
           });
+          window.QuoteFlowTicketTabs?.clearSavedEdits(t.id,submittedProfile);
           notice('#ticketProfileMsg','案件情報を更新しました。',true);
           toast('案件情報を更新しました');
           await renderTicketDetail(t.id);
@@ -10895,6 +11015,10 @@
           });
         }
         clearSupportDraft(t.id,'message');
+        // Prevent already-sent files from being restored during the next re-render.
+        messagePendingFiles=[];
+        syncMessageFileInput();
+        refreshMessageFileList();
         const destinationLabel=visibility==='customer'?'顧客':visibility==='support'?'サポート会社':'自社内メモ';
         notice('#ticketMessageMsg',destinationLabel+'へ'+(visibility==='internal'?'保存':'送信')+'しました。'+(useRelease?' 担当を解除しました。':'')+(files.length?' 添付 '+files.length+'件を追加しました。':''),true);
         toast(useRelease?'返信完了・担当を解除しました':destinationLabel+'へ'+(visibility==='internal'?'保存しました':'送信しました'));
@@ -10913,17 +11037,8 @@
     if(!customer){
       const closeBtn=$('#ticketCloseBtn');
       if(closeBtn) closeBtn.onclick=()=>{
-        const procedureState=readAssistStepState();
-        const pendingProcedure=procedureState.filter(x=>!x.done);
-        if(support && procedureState.length && pendingProcedure.length){
-          const firstPendingIndex=procedureState.findIndex(x=>!x.done);
-          const target=document.querySelector('[data-step-item="'+firstPendingIndex+'"]')||
-            document.querySelector('.ticketAssistStepCheck[data-step="'+firstPendingIndex+'"]');
-          target?.scrollIntoView({behavior:'smooth',block:'center'});
-          setTimeout(()=>document.querySelector('.ticketAssistStepNote[data-step="'+firstPendingIndex+'"]')?.focus(),220);
-          toast('未完了の対応手順があります。手順を完了してから作業報告へ進んでください。');
-          return;
-        }
+        // Unfinished steps are shown in the work report's remaining-tasks section.
+        // Do not block access to the report before the operator can document them.
         mountAppModal(
           '<div class="appModalHead">'+
             '<div><h2>作業報告・最終確認</h2><p>実施した対応を自動でまとめています。結果を確認して完了してください。</p></div>'+
@@ -11042,6 +11157,11 @@
           }
         };
         buildWorkReportFromSteps(false);
+        if(!$('#workReportAction')?.value.trim()) {
+          $('#workReportEditDetails')?.setAttribute('open','');
+          notice('#workReportMsg','自動集約できる作業記録がありません。対応内容を入力してから完了してください。');
+          setTimeout(()=>$('#workReportAction')?.focus(),80);
+        }
         bindSupportDraftInputs(t.id,'work_report',{
           action:'#workReportAction',
           cause:'#workReportCause',
@@ -11191,7 +11311,7 @@
             toast('引継ぎを受理しました。自社対応を開始します。');
             await renderTicketDetail(t.id);
             setTimeout(()=>{
-              $('#internalHandoffWorkspace')?.scrollIntoView({behavior:'smooth',block:'start'});
+              window.QuoteFlowTicketTabs?.revealAndScroll($('#internalHandoffWorkspace'),{behavior:'smooth',block:'start'});
               setTimeout(()=>$('#internalHandoffResult')?.focus(),220);
             },120);
           }catch(err){notice('#internalHandoffMsg',err.message||String(err));}
@@ -11202,7 +11322,7 @@
         if(primaryAccept) primaryAccept.onclick=()=>acceptInternalHandoff(primaryAccept,primaryAccept.dataset.id);
 
         document.querySelectorAll('.handoffWorkOpen').forEach(btn=>btn.onclick=()=>{
-          $('#internalHandoffWorkspace')?.scrollIntoView({behavior:'smooth',block:'start'});
+          window.QuoteFlowTicketTabs?.revealAndScroll($('#internalHandoffWorkspace'),{behavior:'smooth',block:'start'});
           setTimeout(()=>$('#internalHandoffResult')?.focus(),220);
         });
 
@@ -11271,6 +11391,7 @@
       }
     }
 
+    window.QuoteFlowTicketTabs?.restoreInProgress(t.id,ticketInProgressSnapshot);
     if(internal){
       const deadlineSave=$('#ticketDeadlineSave');
       if(deadlineSave){
@@ -11280,16 +11401,23 @@
           const pad=n=>String(n).padStart(2,'0');
           return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes());
         };
-        $('#ticketFirstResponseDue').value=toLocal(deadlineState?.first_response_due_at);
-        $('#ticketResolutionDue').value=toLocal(deadlineState?.resolution_due_at);
+        const firstDue=$('#ticketFirstResponseDue');
+        const resolutionDue=$('#ticketResolutionDue');
+        if(firstDue && firstDue.dataset.ticketUnsaved!=='1') firstDue.value=toLocal(deadlineState?.first_response_due_at);
+        if(resolutionDue && resolutionDue.dataset.ticketUnsaved!=='1') resolutionDue.value=toLocal(deadlineState?.resolution_due_at);
         deadlineSave.onclick=async()=>{
           deadlineSave.disabled=true;
           try{
+            const submittedDeadlines={
+              ticketFirstResponseDue:$('#ticketFirstResponseDue').value,
+              ticketResolutionDue:$('#ticketResolutionDue').value
+            };
             await rpc('set_support_deadlines',{
               p_ticket_id:t.id,
-              p_first_response_due_at:$('#ticketFirstResponseDue').value||null,
-              p_resolution_due_at:$('#ticketResolutionDue').value||null
+              p_first_response_due_at:submittedDeadlines.ticketFirstResponseDue||null,
+              p_resolution_due_at:submittedDeadlines.ticketResolutionDue||null
             });
+            window.QuoteFlowTicketTabs?.clearSavedEdits(t.id,submittedDeadlines);
             toast('対応期限を更新しました');
             await renderTicketDetail(t.id);
           }catch(err){notice('#ticketDeadlineMsg',err.message||String(err));}
@@ -11297,6 +11425,7 @@
         };
       }
       await appendEntityAuditHistory('#ticketDetailHost','support_ticket',t.id);
+      window.QuoteFlowTicketTabs?.moveAudit(t.id);
     }
   }
 
@@ -11874,11 +12003,11 @@
             if(action==='primary'){
               setTimeout(()=>$('#supportPrimaryNext')?.click(),220);
             }else if(action==='history'){
-              setTimeout(()=>$('#ticketMessageList')?.scrollIntoView({behavior:'smooth',block:'start'}),220);
+              setTimeout(()=>window.QuoteFlowTicketTabs?.revealAndScroll($('#ticketMessageList'),{behavior:'smooth',block:'start'}),220);
             }else if(btn.dataset.start==='1'){
               setTimeout(()=>{
                 const target=$('#ticketKnowledgeSearch')||$('#supportAssistWorkspace');
-                target?.scrollIntoView({behavior:'smooth',block:'start'});
+                window.QuoteFlowTicketTabs?.revealAndScroll(target,{behavior:'smooth',block:'start'});
                 $('#ticketKnowledgeSearch')?.focus();
               },220);
             }
@@ -12005,7 +12134,7 @@
           openBtn.disabled=true;
           try{
             await openTicketWorkspace(openBtn.dataset.ticketId);
-            setTimeout(()=>$('#ticketMessageList')?.scrollIntoView({behavior:'smooth',block:'start'}),200);
+            setTimeout(()=>window.QuoteFlowTicketTabs?.revealAndScroll($('#ticketMessageList'),{behavior:'smooth',block:'start'}),200);
           }catch(err){toast(err.message||String(err));}
           finally{openBtn.disabled=false;}
         });
@@ -12027,7 +12156,7 @@
       btn.disabled=true;
       try{
         await openTicketWorkspace(btn.dataset.id);
-        setTimeout(()=>$('#supportRemoteWorkspace')?.scrollIntoView({behavior:'smooth',block:'start'}),150);
+        setTimeout(()=>window.QuoteFlowTicketTabs?.revealAndScroll($('#supportRemoteWorkspace'),{behavior:'smooth',block:'start'}),150);
       }catch(err){toast(err.message||String(err));}
       finally{btn.disabled=false;}
     });
@@ -14775,6 +14904,8 @@
   }
 
   async function go(page){
+    // Sidebar navigation also replaces the ticket DOM. Confirm before losing unsent edits.
+    if(activeTicketId && window.QuoteFlowTicketTabs?.confirmLeave(activeTicketId)===false) return;
     const role=bootData?.context?.role;
     const allowed=(pageSets[role]||[]).map(x=>x[0]);
     const supplementalAllowed=role==='support_staff'
@@ -15484,5 +15615,7 @@
   healthTimer=setInterval(checkHealth,60000);
   await boot();
 </script>
+<script src="./assets/support-ticket-tabs.js"></script>
+<script src="./assets/notification-center.js"></script>
 </body>
 </html>

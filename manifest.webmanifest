@@ -1,0 +1,20 @@
+{
+  "name": "QuoteFlow Cloud",
+  "short_name": "QuoteFlow",
+  "description": "OA機器サポート統合システム",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f5f7fb",
+  "theme_color": "#07162f",
+  "lang": "ja",
+  "icons": [
+    {
+      "src": "./assets/quoteflow-mark.png",
+      "sizes": "96x96",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

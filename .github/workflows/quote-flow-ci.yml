@@ -21,5 +21,29 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Deployment base-path regression checks
+        run: node --test tests/deployment-base-path.test.mjs
+
       - name: Validate production HTML
         run: node scripts/validate-static.mjs
+
+      - name: Test support-ticket navigation and drafts
+        run: node --test tests/support-ticket-tabs.test.mjs
+
+      - name: Work report access regression tests
+        run: node --test tests/work-report-access.test.mjs
+
+      - name: Edge function preflight regression
+        run: node --test tests/edge-functions.cors.test.mjs
+
+      - name: Demo cleanup preview regression
+        run: node --test tests/demo-cleanup-preview.test.mjs
+
+      - name: Customer basics are immediately visible
+        run: node --test tests/customer-summary-visibility.test.mjs
+
+      - name: Chrome browser workflow checks
+        run: node scripts/validate-browser.mjs
+
+      - name: Build staging preview
+        run: node scripts/build-staging-preview.mjs

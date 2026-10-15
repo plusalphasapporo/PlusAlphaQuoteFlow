@@ -1,0 +1,50 @@
+name: Verify published GitHub Pages files
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: verify-published-pages
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Compare the public URL and every browser asset with the released commit
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, time
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+          base = 'https://plusalphasapporo.github.io/PlusAlphaQuoteFlow/'
+          files = ['index.html', 'assets/quoteflow-mark.png', 'assets/operations-ui.css', 'assets/support-ticket-tabs.js', 'assets/notification-center.js', 'manifest.webmanifest', 'sw.js']
+          expected = {name: Path(name).read_bytes() for name in files}
+          for attempt in range(1, 25):
+              try:
+                  verified = []
+                  for name in files:
+                      url = base + ('' if name == 'index.html' else name)
+                      req = Request(url, headers={'Cache-Control': 'no-cache', 'Accept-Encoding': 'identity', 'User-Agent': 'QuoteFlow-release-verification'})
+                      with urlopen(req, timeout=10) as response:
+                          if response.status != 200 or not response.url.startswith(base):
+                              raise RuntimeError('unexpected response for ' + name)
+                          actual = response.read(len(expected[name]) + 1)
+                      if actual != expected[name]:
+                          raise RuntimeError('public content does not yet match released commit: ' + name)
+                      verified.append({'file': name, 'sha256': hashlib.sha256(actual).hexdigest(), 'bytes': len(actual)})
+                  print(json.dumps({'status': 'PUBLIC_FILES_MATCH_RELEASE', 'url': base, 'commit': os.environ['GITHUB_SHA'], 'verified_utc': datetime.now(timezone.utc).isoformat(), 'files': verified}, indent=2))
+                  with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+                      summary.write('## Public release verified\n\nURL: ' + base + '\n\nCommit: `' + os.environ['GITHUB_SHA'] + '`\n\nAll seven public browser files match the released commit byte for byte. Login and authenticated operations are not tested here.\n')
+                  break
+              except Exception as exc:
+                  print('Attempt', attempt, ':', type(exc).__name__, str(exc), flush=True)
+                  if attempt == 24:
+                      raise
+                  time.sleep(10)
+          PY
