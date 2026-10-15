@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import { webcrypto } from 'node:crypto';
 const src=fs.readFileSync('supabase/functions/callconnect-contact-link-sync/logic.mjs','utf8');
 const tmp=src.replaceAll('export ','');
-const scope={URL,Set,Map};vm.createContext(scope);
-vm.runInContext(tmp+'\n globalThis.api={normalizePhone,buildPlan,prepareMemo,summarize,parseContactsPage,decideContactsPage};',scope);
-const {normalizePhone,buildPlan,prepareMemo,summarize,parseContactsPage,decideContactsPage}=scope.api;
+const scope={URL,Set,Map,TextEncoder,crypto:webcrypto};vm.createContext(scope);
+vm.runInContext(tmp+'\n globalThis.api={normalizePhone,buildPlan,prepareMemo,summarize,parseContactsPage,decideContactsPage,fingerprintPlanItem};',scope);
+const {normalizePhone,buildPlan,prepareMemo,summarize,parseContactsPage,decideContactsPage,fingerprintPlanItem}=scope.api;
 const id='91000000-0000-4000-8000-000000000001',other='92000000-0000-4000-8000-000000000002';
 assert.equal(normalizePhone('011-123-4567'),'0111234567');
 assert.equal(normalizePhone('+81 11 123 4567'),'0111234567');
@@ -49,12 +50,34 @@ assert.equal(decideContactsPage({contacts:rawPage,total:'not-a-number'},3,3).err
 assert.equal(decideContactsPage({contacts:rawPage,has_more:false},3,3).done,true);
 
 const edge=fs.readFileSync('supabase/functions/callconnect-contact-link-sync/index.ts','utf8');
-assert.match(edge,/input\.mode!=="preview"/);
-assert.match(edge,/write_enabled:false/);
+// Approval hashes bind the selected CallConnect contact, customer, phone and
+// original memo to the preview. A changed memo must have a different token.
+const selected=buildPlan([{id:'10',number:'0111234567',memo:'既存のメモ'}],[customer],[])[0];
+const selectedToken=await fingerprintPlanItem(selected);
+assert.match(selectedToken,/^[0-9a-f]{64}$/);
+const changedMemo={...selected,existing_memo:'第三者が追加したメモ'};
+assert.notEqual(await fingerprintPlanItem(changedMemo),selectedToken);
+assert.notEqual(await fingerprintPlanItem({...selected,customer_id:other}),selectedToken);
+assert.notEqual(await fingerprintPlanItem({...selected,phones:['09011112222']}),selectedToken);
+
+assert.match(edge,/!["']preview["'],["']apply["']|(?:\["preview","apply"\])/);
+assert.match(edge,/requires_explicit_confirmation:true/);
+assert.match(edge,/input\.confirmed!==true/);
+assert.match(edge,/fingerprintPlanItem\(item\)/);
+assert.match(edge,/before=await readDetail\(\)/);
+assert.match(edge,/String\(before\.memo\?\?""\)!==String\(item\.existing_memo\)/);
+assert.match(edge,/String\(before\.updated_at\?\?""\)!==item\.remote_updated_at/);
+assert.match(edge,/method:"PUT"/);
+assert.match(edge,/form\.set\("memo",item\.next_memo\)/);
+assert.match(edge,/verified&&String\(verified\.memo\?\?""\)===item\.next_memo/);
+assert.match(edge,/verification_pending/);
+assert.match(edge,/updated_count:counts\.updated\|\|0/);
+
+assert.match(edge,/write_enabled:true/);
 assert.match(edge,/decideContactsPage\(raw,batch\.length,list\.length\)/);
 assert.match(edge,/contacts_exceed_safe_scan_limit/);
 assert.match(edge,/contact_pagination_duplicate/);
 assert.match(edge,/claim\.aal!=="aal2"/);
 assert.match(edge,/profile\.role!=="internal_admin"/);
-assert.doesNotMatch(edge,/method:\s*["'](?:PUT|PATCH|POST)["'][\s\S]{0,130}X-Callconnect-Token/);
-console.log('CallConnect existing-contact preview tests passed: normalized phone, exact unique match, duplicate/ambiguous/conflicting links, memo retention, MFA and preview-only.');
+assert.match(edge,/explicit_confirmation_and_1_to_20_targets_required/);
+console.log('CallConnect contact sync tests passed: complete pagination, unique matching, admin MFA, expiring approval hashes, memo-only PUT and readback verification.');
