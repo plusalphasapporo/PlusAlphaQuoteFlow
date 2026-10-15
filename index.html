@@ -13897,6 +13897,11 @@
         '<td><strong>'+esc(x.contact_number||'—')+'</strong><br><span class="muted">'+esc(x.contact_company||x.contact_name||'')+'</span></td>'+
         '<td>'+esc(x.callconnect_user_name||'—')+'</td>'+
         '<td>'+esc(x.duration_seconds??0)+'秒</td>'+
+        '<td>'+(x.has_transcript
+          ? '<button class="linkBtn callconnectTranscriptOpen" type="button" data-call-id="'+esc(x.id)+'">全文を開く</button>'
+          : x.has_recording
+            ? '<button class="linkBtn callconnectTranscriptOpen" type="button" data-call-id="'+esc(x.id)+'">文字起こし待ち</button>'
+            : '<span class="muted">録音なし</span>')+'</td>'+
         '<td>'+(needMatch?'<span class="hold">'+esc(matchText[x.match_state]||x.match_state)+'</span>':'<span class="pill good">'+esc(matchText[x.match_state]||x.match_state)+'</span>')+
           (x.matched_customer_name?'<br><span class="muted">'+esc(x.matched_customer_name)+'</span>':'')+'</td>'+
         '<td>'+(x.support_ticket_id
@@ -13945,7 +13950,7 @@
       (!supportView&&dash?.api_key_configured&&!dash?.contacts_create_api_url_configured?'<div class="notice error"><strong>着信時の顧客表示はまだ未完成です。</strong><br>CallConnect側に顧客を同期するため、Contacts Create API URLの設定が必要です。Webhookによる通話履歴保存・電話番号照合は動作しています。</div>':'')+
       '<div id="callconnectPageSyncMsg" class="notice hidden"></div>'+
       '<section class="card section"><div class="row between"><div><h2>通話履歴</h2><p class="sectionDesc">電話番号で顧客を確認し、内容を聞いてから新規問い合わせを登録します。登録後はそのまま対応画面へ進めます。</p></div><div class="field" style="margin:0;min-width:260px"><label>履歴を検索</label><input id="callconnectHistorySearch" placeholder="電話番号・会社名・担当者"></div></div>'+
-        '<div id="callconnectHistoryTable">'+dataTable(['日時','種別','電話番号','CallConnect担当','通話','顧客照合','案件','操作'],rows)+'</div>'+
+        '<div id="callconnectHistoryTable">'+dataTable(['日時','種別','電話番号','CallConnect担当','通話','文字起こし','顧客照合','案件','操作'],rows)+'</div>'+
       '</section>';
 
     const callconnectPageSyncRecords=$('#callconnectPageSyncRecords');
@@ -13977,6 +13982,61 @@
         });
       };
     }
+
+    // Transcripts are sensitive call content. Load text only when an authorized
+    // staff member explicitly opens a record, never in the whole history list.
+    document.querySelectorAll('.callconnectTranscriptOpen').forEach(btn=>btn.onclick=async()=>{
+      const call=calls.find(x=>String(x.id)===String(btn.dataset.callId));
+      if(!call) return;
+      btn.disabled=true;
+      mountAppModal(
+        '<div class="appModalHead"><div><h2>CallConnect 通話文字起こし</h2>'+
+        '<p>'+esc(dateTimeText(call.call_ended_at||call.received_at))+' / '+esc(call.matched_customer_name||call.contact_company||call.contact_name||'通話履歴')+'</p></div>'+
+        '<button id="callconnectTranscriptClose" class="ghost" type="button">閉じる</button></div>'+
+        '<div class="appModalBody"><div id="callconnectTranscriptBody" class="notice">文字起こしを読み込んでいます...</div></div>'+
+        '<div class="appModalFoot"><button id="callconnectTranscriptDone" class="primary" type="button">閉じる</button></div>',
+        true
+      );
+      $('#callconnectTranscriptClose').onclick=closeAppModal;
+      $('#callconnectTranscriptDone').onclick=closeAppModal;
+      const host=$('#callconnectTranscriptBody');
+      try{
+        const record=await rpc('callconnect_record_transcript',{p_call_id:call.id},{readOnly:true});
+        if(!host?.isConnected) return;
+        if(!record){
+          host.textContent='通話記録が見つからないか、表示権限がありません。';
+          return;
+        }
+        const transcript=String(record.transcript_text||'').trim();
+        if(record.status==='ready'&&transcript){
+          const recordedAt=record.transcript_synced_at?dateTimeText(record.transcript_synced_at):'日時未記録';
+          const provider=record.transcription_provider==='openai'?'OpenAI':'CallConnect';
+          host.innerHTML=
+            '<p class="muted" style="margin:0 0 12px">取得元：'+esc(provider)+' / 保存：'+esc(recordedAt)+'</p>'+
+            '<div style="white-space:pre-wrap;line-height:1.8;max-height:55vh;overflow:auto;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--card)">'+esc(transcript)+'</div>'+
+            '<div class="supportQuickActions" style="margin-top:12px"><button id="callconnectTranscriptCopy" class="ghost" type="button">文字起こし全文をコピー</button></div>';
+          $('#callconnectTranscriptCopy').onclick=async()=>{
+            try{
+              await navigator.clipboard.writeText(transcript);
+              toast('文字起こし全文をコピーしました');
+            }catch(_){
+              toast('コピーできませんでした。本文を選択してコピーしてください。');
+            }
+          };
+        }else{
+          const stateMessage={
+            no_recording:'録音がないため、文字起こしはありません。',
+            pending:'音声の文字起こしを取得できていません。CallConnect側で変換完了後、通話履歴を再同期してください。',
+            failed:'文字起こしに失敗しています。管理者に接続設定・録音データを確認してもらってください。'
+          };
+          host.textContent=stateMessage[record.status]||'文字起こしを取得できていません。';
+        }
+      }catch(err){
+        if(host?.isConnected) host.textContent='文字起こしの取得に失敗しました：'+String(err.message||err);
+      }finally{
+        if(btn.isConnected) btn.disabled=false;
+      }
+    });
 
     document.querySelectorAll('.callconnectTicketOpen').forEach(btn=>btn.onclick=async()=>{
       const role=bootData?.context?.role;
