@@ -14,6 +14,10 @@ const a=html.indexOf('  async function startCallConnectNotificationRealtime(){')
 const b=html.indexOf('  async function startSupportRealtime(){',a);
 assert.ok(a>=0&&b>a,'Production CallConnect function exists');
 const source=html.slice(a,b);
+const helperStart=html.indexOf("  let callconnectRealtimeState='idle';");
+const helperEnd=html.indexOf("  let callconnectTranscriptSyncTimer=null;",helperStart);
+assert.ok(helperStart>=0&&helperEnd>helperStart,'Connection status helper is in production code');
+const helperSource=html.slice(helperStart,helperEnd);
 const cleanupSource=html.slice(html.indexOf("if(event==='SIGNED_OUT')"),html.indexOf("if(event==='TOKEN_REFRESHED')"));
 assert.match(source,/if\(role!=='support_staff'\) return;/);
 assert.match(source,/CALLCONNECT_NOTIFICATION_FALLBACK_MS/);
@@ -34,6 +38,7 @@ function fixture(role='support_staff',firstItems=[]){
   let nextInterval=1;
   let unreadItems=firstItems;
   let resolveUnread=null;
+  const indicator={textContent:''};
   const document={
     hidden:false,
     addEventListener:(name,fn)=>documentListeners.set(name,fn),
@@ -94,17 +99,17 @@ function fixture(role='support_staff',firstItems=[]){
     async setupGlobalHeader(){},
     async renderSupportCallConnect(){},
     mountAppModal(){throw new Error('Unexpected fallback popup in this test');},
-    $:()=>({onclick:null}),
+    $:selector=>selector==='#callconnectRealtimeIndicator'?indicator:({onclick:null}),
     esc:input=>String(input),
     toast:message=>toasts.push(message),
     go:async()=>{},
     console:{error:(...a)=>errors.push(a.join(' ')),warn:(...a)=>errors.push(a.join(' '))}
   };
   vm.createContext(state);
-  vm.runInContext(source+'\n globalThis.startCallConnect=startCallConnectNotificationRealtime;',state);
+  vm.runInContext(helperSource+'\n'+source+'\n globalThis.startCallConnect=startCallConnectNotificationRealtime; globalThis.notificationStatus=callconnectRealtimeStatusText;',state);
   return {
     state,document,window,channels,supabase,intervals,documentListeners,
-    windowListeners,popups,toasts,unreadCalls,errors,
+    windowListeners,popups,toasts,unreadCalls,errors,indicator,
     setItems(items){unreadItems=items;},
     deferNext(){
       let release;
@@ -127,12 +132,14 @@ function fixture(role='support_staff',firstItems=[]){
   assert.equal(h.channels.length,0);
   assert.equal(h.intervals.size,0);
   assert.equal(h.documentListeners.size,0);
+  assert.match(h.state.notificationStatus(),/準備中/);
 }
 
 {
   const h=fixture('support_staff',[]);
   await h.state.startCallConnect();
   assert.equal(h.unreadCalls.length,1,'Initial unread check is performed');
+  assert.match(h.state.notificationStatus(),/接続を確認中/);
   assert.equal(h.channels.length,1,'WebSocket channel exists');
   assert.equal(h.intervals.size,1,'Exactly one fallback interval exists');
   assert.equal([...h.intervals.values()][0].ms,60000,'Fallback is once per minute');
@@ -178,6 +185,14 @@ function fixture(role='support_staff',firstItems=[]){
   h.channels.at(-1).status('SUBSCRIBED');
   await flush();
   assert.equal(h.unreadCalls.length,before+3,'Realtime reconnect catches missed events');
+  assert.match(h.state.notificationStatus(),/接続しています/);
+  assert.equal(h.indicator.textContent,h.state.notificationStatus());
+  h.channels.at(-1).status('CHANNEL_ERROR');
+  assert.match(h.state.notificationStatus(),/接続が不安定/);
+  assert.match(h.indicator.textContent,/60秒ごと/);
+  h.channels.at(-1).status('SUBSCRIBED');
+  await flush();
+  assert.match(h.state.notificationStatus(),/接続しています/);
 
   interval();
   await flush();
@@ -196,6 +211,7 @@ function fixture(role='support_staff',firstItems=[]){
   assert.equal(h.documentListeners.size,0,'Internal role clears old handlers');
   assert.equal(h.windowListeners.size,0,'Internal role clears old handlers');
   assert.equal(h.state.callconnectNotificationChannel,null);
+  assert.match(h.state.notificationStatus(),/準備中/);
 }
 {
   const h=fixture('support_staff');
@@ -209,6 +225,7 @@ function fixture(role='support_staff',firstItems=[]){
   assert.equal(h.intervals.size,0,'Signout while fetching must not re-arm timer');
   assert.equal(h.channels.length,0,'Signout while fetching must not re-subscribe');
   assert.equal(h.documentListeners.size,0);
+  assert.match(h.state.notificationStatus(),/準備中/);
 }
 {
   const h=fixture('support_staff',[]);
@@ -224,4 +241,5 @@ function fixture(role='support_staff',firstItems=[]){
     'Burst events during an in-flight RPC should be processed without overlap');
 }
 
-console.log('CallConnect realtime checks passed: no internal alerts, one-minute fallback, authorized payloads, realtime/foreground/network recovery, deduplication, teardown, logout race and burst coalescing.');
+assert.match(html,/id="callconnectRealtimeIndicator"/,'Support notification center should show connection status');
+console.log('CallConnect realtime checks passed: no internal alerts, secure events, connection/fallback status, one-minute recovery, deduplication, teardown, logout race and burst coalescing.');
