@@ -14025,12 +14025,34 @@
         (dash?.last_error?'<div class="notice error">最終エラー: '+esc(dash.last_error)+'</div>':'')+
       '</section>')+
       (!supportView&&dash?.api_key_configured&&!dash?.contacts_create_api_url_configured?'<div class="notice error"><strong>着信時の顧客表示はまだ未完成です。</strong><br>CallConnect側に顧客を同期するため、Contacts Create API URLの設定が必要です。Webhookによる通話履歴保存・電話番号照合は動作しています。</div>':'')+
-      (bootData?.context?.role==='internal_admin'?'<section class="card section"><div class="row between"><div><h2>連絡先と顧客の自動照合</h2><p class="sectionDesc">既存のCallConnect連絡先を電話番号で照合します。プレビューではCallConnectの顧客メモを書き換えません。</p></div><button id="callconnectAutoLinksPreview" class="primary" type="button">自動照合を確認</button></div><div id="callconnectAutoLinksResult" class="notice hidden"></div></section>':'')+
+      (bootData?.context?.role==='internal_admin'?'<section class="card section"><div class="row between"><div><h2>連絡先と顧客の自動照合</h2><p class="sectionDesc">既存のCallConnect連絡先を電話番号で照合します。プレビューではCallConnectの顧客メモを書き換えません。</p></div><div><button id="callconnectAutoLinkDiagnostic" type="button">API接続診断</button><button id="callconnectAutoLinksPreview" class="primary" type="button">自動照合を確認</button></div></div><div id="callconnectAutoLinkDiagnosticResult" class="notice hidden"></div><div id="callconnectAutoLinksResult" class="notice hidden"></div></section>':'')+
       '<div id="callconnectPageSyncMsg" class="notice hidden"></div>'+
       '<section class="card section"><div class="row between"><div><h2>通話履歴</h2><p class="sectionDesc">電話番号で顧客を確認し、内容を聞いてから新規問い合わせを登録します。登録後はそのまま対応画面へ進めます。</p></div><div class="field" style="margin:0;min-width:260px"><label>履歴を検索</label><input id="callconnectHistorySearch" placeholder="電話番号・会社名・担当者"></div></div>'+
         '<div id="callconnectHistoryTable">'+dataTable(['日時','種別','電話番号','CallConnect担当','連絡先リンク','通話','文字起こし','顧客照合','案件','操作'],rows)+'</div>'+
       '</section>';
 
+    const autoLinkDiagnostic=$('#callconnectAutoLinkDiagnostic');
+    if(autoLinkDiagnostic)autoLinkDiagnostic.onclick=async()=>{
+      autoLinkDiagnostic.disabled=true;
+      const label=autoLinkDiagnostic.textContent;
+      autoLinkDiagnostic.textContent='接続確認中...';
+      try{
+        const {data,error}=await supabase.functions.invoke('callconnect-contact-link-sync',{body:{mode:'diagnose'}});
+        if(error)throw error;
+        if(!data?.ok)throw new Error(data?.error||'診断ができませんでした');
+        const descriptions={ready_for_read_only_inspection:'取得項目の整合性を確認できました',
+          list_memo_missing:'一覧APIにメモ欄がありません',
+          detail_memo_missing:'詳細APIにメモ欄がありません',
+          detail_phone_mismatch:'一覧と詳細の電話番号が一致しません',
+          detail_id_mismatch:'一覧と詳細のIDが一致しません',
+          no_remote_contacts:'連絡先がありません'};
+        const output=$('#callconnectAutoLinkDiagnosticResult');
+        output.classList.remove('hidden');
+        output.textContent=(descriptions[data.status]||data.status||'要確認')+
+          '。対象連絡先 '+Number(data.contact_count||0)+'件。読み取り専用で診断しました。';
+      }catch(e){const output=$('#callconnectAutoLinkDiagnosticResult');output.classList.remove('hidden');output.textContent='接続診断エラー：'+String(e.message||e);}
+      finally{autoLinkDiagnostic.disabled=false;autoLinkDiagnostic.textContent=label;}
+    };
     const callconnectAutoLinksPreview=$('#callconnectAutoLinksPreview');
     if(callconnectAutoLinksPreview){
       callconnectAutoLinksPreview.onclick=async()=>{
