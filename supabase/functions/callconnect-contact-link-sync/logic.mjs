@@ -150,6 +150,29 @@ export function verifiedContactDetail(item,detail){
 
 // Read-only inspection of CallConnect list vs. detail data.
 // Never return telephone numbers, contact memo, or vendor credentials.
+// A non-destructive API probe: inspect one list contact and its detail.
+// Only return booleans/statuses; never include customer data or tokens.
+export function probeContactListAndDetail(listRow,detail){
+  if(!listRow||typeof listRow!=='object'||Array.isArray(listRow))
+    return {status:'list_record_invalid',list_memo_present:false,detail_memo_present:false,phone_matches:false};
+  const listId=String(listRow.id??'');
+  const detailId=String(detail?.id??'');
+  if(!/^[1-9][0-9]{0,17}$/.test(listId))
+    return {status:'id_format_unknown',list_memo_present:false,detail_memo_present:false,phone_matches:false};
+  const listMemo=Object.prototype.hasOwnProperty.call(listRow,'memo');
+  const detailMemo=detail&&typeof detail==='object'&&!Array.isArray(detail)&&
+    Object.prototype.hasOwnProperty.call(detail,'memo');
+  const a=remotePhones(listRow).sort();
+  const b=remotePhones(detail||{}).sort();
+  const phoneMatches=a.length===1&&b.length===1&&a[0]===b[0];
+  const status=listId!==detailId?'detail_id_mismatch':
+    !phoneMatches?'detail_phone_mismatch':
+    !detailMemo?'detail_memo_missing':
+    !listMemo?'list_memo_missing':
+    'ready_for_read_only_inspection';
+  return {status,list_memo_present:listMemo,detail_memo_present:Boolean(detailMemo),phone_matches:phoneMatches};
+}
+
 export function inspectContactDetail(item, detail){
   if(!item||!detail||typeof detail!=='object'||Array.isArray(detail)||
      String(detail.id??'')!==String(item.contact_id??''))return 'detail_id_mismatch';
