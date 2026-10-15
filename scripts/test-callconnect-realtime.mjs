@@ -19,7 +19,7 @@ const helperEnd=html.indexOf("  let callconnectTranscriptSyncTimer=null;",helper
 assert.ok(helperStart>=0&&helperEnd>helperStart,'Connection status helper is in production code');
 const helperSource=html.slice(helperStart,helperEnd);
 const cleanupSource=html.slice(html.indexOf("if(event==='SIGNED_OUT')"),html.indexOf("if(event==='TOKEN_REFRESHED')"));
-assert.match(source,/if\(role!=='support_staff'\) return;/);
+assert.match(source,/if\(role!=='support_staff'\)\s*\{/);
 assert.match(source,/CALLCONNECT_NOTIFICATION_FALLBACK_MS/);
 assert.match(source,/if\(checking\) return;/);
 assert.match(source,/if\(bootData\?\.context\?\.role!=='support_staff'\) return;/);
