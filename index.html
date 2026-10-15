@@ -10969,17 +10969,8 @@
     if(!customer){
       const closeBtn=$('#ticketCloseBtn');
       if(closeBtn) closeBtn.onclick=()=>{
-        const procedureState=readAssistStepState();
-        const pendingProcedure=procedureState.filter(x=>!x.done);
-        if(support && procedureState.length && pendingProcedure.length){
-          const firstPendingIndex=procedureState.findIndex(x=>!x.done);
-          const target=document.querySelector('[data-step-item="'+firstPendingIndex+'"]')||
-            document.querySelector('.ticketAssistStepCheck[data-step="'+firstPendingIndex+'"]');
-          window.QuoteFlowTicketTabs?.revealAndScroll(target,{behavior:'smooth',block:'center'});
-          setTimeout(()=>document.querySelector('.ticketAssistStepNote[data-step="'+firstPendingIndex+'"]')?.focus(),220);
-          toast('未完了の対応手順があります。手順を完了してから作業報告へ進んでください。');
-          return;
-        }
+        // Unfinished steps are shown in the work report's remaining-tasks section.
+        // Do not block access to the report before the operator can document them.
         mountAppModal(
           '<div class="appModalHead">'+
             '<div><h2>作業報告・最終確認</h2><p>実施した対応を自動でまとめています。結果を確認して完了してください。</p></div>'+
@@ -11098,6 +11089,11 @@
           }
         };
         buildWorkReportFromSteps(false);
+        if(!$('#workReportAction')?.value.trim()) {
+          $('#workReportEditDetails')?.setAttribute('open','');
+          notice('#workReportMsg','自動集約できる作業記録がありません。対応内容を入力してから完了してください。');
+          setTimeout(()=>$('#workReportAction')?.focus(),80);
+        }
         bindSupportDraftInputs(t.id,'work_report',{
           action:'#workReportAction',
           cause:'#workReportCause',
