@@ -7936,7 +7936,7 @@
       '</section>'+
       '<div id="ticketDetailHost"></div>';
 
-    $('#ticketWorkspaceBack').onclick=()=>go(backPage);
+    $('#ticketWorkspaceBack').onclick=()=>{if(window.QuoteFlowTicketTabs?.confirmLeave(ticketId)!==false) go(backPage);};
 
     if(role==='support_staff'){
       let autoClaimed=false;
@@ -7967,7 +7967,7 @@
     await renderTicketDetail(ticketId);
 
     const closeBtn=$('#ticketDetailClose');
-    if(closeBtn) closeBtn.onclick=()=>go(backPage);
+    if(closeBtn) closeBtn.onclick=()=>{if(window.QuoteFlowTicketTabs?.confirmLeave(ticketId)!==false) go(backPage);};
 
     if(role==='support_staff'){
       setTimeout(()=>{
@@ -8862,7 +8862,7 @@
       assignee:support?'サポート担当 '+supportAssigneeLabel(assignmentState):'自社担当 '+(t.assigned_internal_user_name||'未設定'),
       stage:supportStageLabel(supportStage||((t.status==='closed')?'completed':'unhandled'))
     });
-    $('#ticketDetailClose').onclick=()=>{activeTicketId=null;$('#ticketDetailHost').innerHTML='';};
+    $('#ticketDetailClose').onclick=()=>{if(window.QuoteFlowTicketTabs?.confirmLeave(t.id)===false) return;activeTicketId=null;$('#ticketDetailHost').innerHTML='';};
     if(!previouslyOpen) $('#ticketDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
     const ticketCallAiSummary=$('#ticketCallAiSummary');
     if(ticketCallAiSummary){
