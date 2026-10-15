@@ -23,6 +23,7 @@ Deno.serve(async(req:Request)=>{
  // Never allow a remote write from the page load, poller or an implicit action.
  // Only an internal administrator with MFA, an explicit selection and a
  // separate user confirmation can reach the update code below.
+ if(input.mode==="apply" && Deno.env.get("CALLCONNECT_CONTACT_WRITES_ENABLED")!=="true")return json(403,{error:"contact_writes_disabled_pending_vendor_verification"});
  if(input.mode==="apply" && (
    input.confirmed!==true||!Array.isArray(input.targets)||
    input.targets.length<1||input.targets.length>20
@@ -124,7 +125,7 @@ Deno.serve(async(req:Request)=>{
      results.push({contact_id:id,status:"preview_expired"});
      continue;
    }
-   const detailUrl=new URL(id,endpoint.toString().replace(/\/?$/,"/"));
+   const detailUrl=new URL(endpoint.origin+endpoint.pathname.replace(/\/+$/,"")+"/"+encodeURIComponent(id));
    const readDetail=async()=>{
      const response=await fetch(detailUrl.toString(),{
        headers:apiHeaders,signal:AbortSignal.timeout(15000)
