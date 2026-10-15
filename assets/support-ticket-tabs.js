@@ -249,6 +249,18 @@
       const button=event.target.closest('button[data-ticket-tab]');
       if(button) setTab(button.dataset.ticketTab,true);
     };
+    nav.onkeydown=event=>{
+      const current=event.target.closest('button[data-ticket-tab]');
+      if(!current || !['ArrowRight','ArrowLeft','Home','End'].includes(event.key)) return;
+      const keys=[...buttons.keys()];
+      const index=keys.indexOf(current.dataset.ticketTab);
+      if(index<0) return;
+      event.preventDefault();
+      const nextIndex=event.key==='Home'?0:event.key==='End'?keys.length-1:event.key==='ArrowRight'?(index+1)%keys.length:(index+keys.length-1)%keys.length;
+      const nextKey=keys[nextIndex];
+      setTab(nextKey,false);
+      buttons.get(nextKey)?.focus({preventScroll:true});
+    };
     function reveal(element){
       if(!host.contains(element)) return;
       const pane=element.closest('.ticketWorkspacePane');
