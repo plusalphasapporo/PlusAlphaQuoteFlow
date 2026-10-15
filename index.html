@@ -3623,7 +3623,7 @@
 
   async function renderCustomerCreate(){
     const options=await rpc('internal_customer_registration_options');
-    const parentOptions=(options?.parents||[]).map(x=>
+    const parentOptions=(options?.parents||[]).filter(x=>x.branch_type==='head_office').map(x=>
       '<option value="'+esc(x.id)+'">'+esc(x.customer_code||'—')+' / '+esc(x.name||'')+'</option>'
     ).join('');
     const supportOptions=(options?.support_companies||[]).map(x=>
@@ -4576,8 +4576,16 @@
         rpc('internal_customer_registration_options')
       ]);
       const c=base||{};
+      const hierarchy=await supabase.from('customers').select('id,customer_code,name,branch_type,parent_customer_id').or('id.eq.'+customerId+',parent_customer_id.eq.'+customerId);
+      if(hierarchy.error) throw hierarchy.error;
+      const related=hierarchy.data||[];
+      const headquarters=related.find(x=>x.id===c.parent_customer_id)||((registrationOptions?.parents||[]).find(x=>x.id===c.parent_customer_id));
+      const branches=related.filter(x=>x.parent_customer_id===customerId).sort((a,b)=>String(a.customer_code||'').localeCompare(String(b.customer_code||''),'ja'));
+      const relationshipHtml='<section class="card section" style="box-shadow:none;margin:0"><h3>本店・支店の紐づけ</h3><p class="sectionDesc">顧客番号を維持したまま本支店を管理します。</p>'+
+        (c.branch_type==='branch' ? '<div class="item"><strong>所属する本店</strong><p>'+(headquarters?'<button class="linkBtn customerRelatedOpen" type="button" data-id="'+esc(headquarters.id)+'">'+esc(headquarters.customer_code||'—')+' / '+esc(headquarters.name||'')+'</button>':'親本店が未設定です')+'</p></div>' : '<div class="item"><strong>本店</strong><p>'+esc(c.customer_code||'—')+' / '+esc(c.name||'')+'</p></div>')+
+        (branches.length?'<div class="item"><strong>紐づく支店 '+branches.length+'件</strong>'+branches.map(x=>'<p><button class="linkBtn customerRelatedOpen" type="button" data-id="'+esc(x.id)+'">'+esc(x.customer_code||'—')+' / '+esc(x.name||'')+'</button></p>').join('')+'</div>':'<div class="item"><span class="muted">紐づく支店はありません。</span></div>')+'</section>';
       const primary=(contacts||[]).find(x=>x.is_primary)||(contacts||[])[0]||null;
-      const parentOptions=(registrationOptions?.parents||[]).filter(x=>x.id!==c.id).map(x=>'<option value="'+esc(x.id)+'" '+(x.id===c.parent_customer_id?'selected':'')+'>'+esc(x.customer_code||'—')+' / '+esc(x.name||'')+'</option>').join('');
+      const parentOptions=(registrationOptions?.parents||[]).filter(x=>x.id!==c.id && x.branch_type==='head_office').map(x=>'<option value="'+esc(x.id)+'" '+(x.id===c.parent_customer_id?'selected':'')+'>'+esc(x.customer_code||'—')+' / '+esc(x.name||'')+'</option>').join('');
       const supportOptions=(registrationOptions?.support_companies||[]).map(x=>'<option value="'+esc(x.id)+'" '+(x.id===c.support_company_id?'selected':'')+'>'+esc(x.name||'')+'</option>').join('');
       const salesOwnerOptions=(registrationOptions?.sales_owners||[]).map(x=>'<option value="'+esc(x.user_id)+'" '+(x.user_id===c.sales_owner_user_id?'selected':'')+'>'+esc(x.display_name||'—')+'</option>').join('');
       const now=Date.now();
@@ -4776,6 +4784,7 @@
                 attentionHtml+
               '</section>'+
             '</div>'+
+            relationshipHtml+
             '<section class="section">'+
               '<div class="row between"><div><h3>直近活動</h3><p class="sectionDesc">見積・受注・発注・納品・問い合わせ・営業履歴などを新しい順に表示します。</p></div><button id="customerOverviewHistory" class="ghost" type="button">営業履歴</button></div>'+
               activityHtml+
@@ -4824,6 +4833,7 @@
       $('#customerOverviewNewQuote').onclick=()=>renderCustomerQuoteCreate(customerId);
       $('#customerOverviewTransactions').onclick=()=>renderCustomerDetail(customerId,'transactions');
       $('#customerOverviewHistory').onclick=()=>renderCustomerDetail(customerId,'history');
+      document.querySelectorAll('.customerRelatedOpen').forEach(btn=>btn.onclick=()=>renderCustomerDetail(btn.dataset.id,'overview'));
 
       const openCustomerSupportCreate=async(type)=>{
         await go('support');
@@ -5606,10 +5616,11 @@
       });
 
       updateListCount('customerList',filtered.length,(data||[]).length);
+      const lookup=new Map((data||[]).map(x=>[x.id,x]));
       const rows=filtered.map(c=>
         '<tr>'+
           '<td>'+esc(c.customer_code||'—')+'</td>'+
-          '<td><strong>'+esc(c.name)+'</strong>'+(c.trade_name?'<br><span class="muted">'+esc(c.trade_name)+'</span>':'')+'</td>'+
+          '<td><strong>'+esc(c.name)+'</strong>'+(c.trade_name?'<br><span class="muted">'+esc(c.trade_name)+'</span>':'')+(c.branch_type==='branch'?'<br><span class="pill">支店</span> <span class="muted">本店: '+esc(lookup.get(c.parent_customer_id)?.customer_code||'未登録')+'</span>':'<br><span class="pill">本店</span>')+'</td>'+
           '<td>'+esc(({corporation:'法人',sole_proprietor:'個人事業主',individual:'個人',public:'公共',other:'その他'}[c.customer_type]||c.customer_type||'—'))+(c.industry?'<br><span class="muted">'+esc(c.industry)+'</span>':'')+'</td>'+
           '<td>'+esc(c.sales_owner_name||'未設定')+'</td>'+
           '<td>'+esc(c.phone||c.mobile||'—')+(c.email?'<br><span class="muted">'+esc(c.email)+'</span>':'')+'</td>'+
