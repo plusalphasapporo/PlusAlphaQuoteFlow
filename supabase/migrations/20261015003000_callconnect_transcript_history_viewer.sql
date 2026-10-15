@@ -94,8 +94,7 @@ begin
 
   return v_result;
 end;
-$function$
-
+$function$;
 
 -- No transcript text is included in the dashboard result. It is fetched
 -- only on an explicit request with the same access rules as callconnect_dashboard.
