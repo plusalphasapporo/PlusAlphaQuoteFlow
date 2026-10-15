@@ -91,7 +91,7 @@ if (!fs.existsSync('assets/support-ticket-tabs.js')) {
     ['draft snapshot before refresh', "const ticketInProgressSnapshot=window.QuoteFlowTicketTabs?.captureInProgress(t.id)"],
     ['draft restoration after refresh', "window.QuoteFlowTicketTabs?.restoreInProgress(t.id,ticketInProgressSnapshot)"],
     ['message-realtime protection', "window.QuoteFlowTicketTabs?.hasUnsentEdits(msg.ticket_id)"],
-    ['back navigation guard', "window.QuoteFlowTicketTabs?.confirmLeave(ticketId)"],
+    ['back navigation uses shared route', "$('#ticketWorkspaceBack').onclick=()=>go(backPage)"],
     ['ticket close guard', "window.QuoteFlowTicketTabs?.confirmLeave(t.id)"],
     ['sidebar navigation guard', "window.QuoteFlowTicketTabs?.confirmLeave(activeTicketId)"],
     ['cross-ticket unsent draft guard', "window.QuoteFlowTicketTabs?.hasUnsentEdits(previousId)"]
