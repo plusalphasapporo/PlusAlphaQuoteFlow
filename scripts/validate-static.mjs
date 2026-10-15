@@ -71,6 +71,28 @@ if (!fs.existsSync('assets/support-ticket-tabs.js')) {
 } else {
   const check=spawnSync(process.execPath,['--check','assets/support-ticket-tabs.js'],{encoding:'utf8'});
   if(check.status!==0) failures.push('Support tab script syntax error: '+(check.stderr||check.stdout));
+  const tabsSource=fs.readFileSync('assets/support-ticket-tabs.js','utf8');
+  const navigationContracts=[
+    ['tab navigation', "button.dataset.ticketTab"],
+    ['workflow-aware selection', "workflowAdvanced"],
+    ['workflow progress labels', "function computeStepState("],
+    ['step status refresh', "function refreshStepStates("],
+    ['draft capture', "function captureInProgress("],
+    ['draft restoration', "function restoreInProgress("],
+    ['new-message editing guard', "function hasUnsentEdits("],
+    ['pending message notification', "function showPendingMessage("],
+    ['attachment input restoration', "input.dispatchEvent(new Event('change'"]
+  ];
+  for (const [name,needle] of navigationContracts) {
+    if(!tabsSource.includes(needle)) failures.push('Support ticket UI contract missing: '+name);
+  }
+  for (const [name,needle] of [
+    ['draft snapshot before refresh', "const ticketInProgressSnapshot=window.QuoteFlowTicketTabs?.captureInProgress(t.id)"],
+    ['draft restoration after refresh', "window.QuoteFlowTicketTabs?.restoreInProgress(t.id,ticketInProgressSnapshot)"],
+    ['message-realtime protection', "window.QuoteFlowTicketTabs?.hasUnsentEdits(msg.ticket_id)"]
+  ]) {
+    if(!html.includes(needle)) failures.push('Ticket refresh integration missing: '+name);
+  }
 }
 
 if (failures.length) {
