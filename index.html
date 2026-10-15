@@ -10370,7 +10370,7 @@
                 setTimeout(()=>{
                   const idx=Number(next.dataset.step||0);
                   const item=document.querySelector('[data-step-item="'+idx+'"]');
-                  (item||next).scrollIntoView({behavior:'smooth',block:'center'});
+                  window.QuoteFlowTicketTabs?.revealAndScroll(item||next,{behavior:'smooth',block:'center'});
                   document.querySelector('.ticketAssistStepNote[data-step="'+idx+'"]')?.focus({preventScroll:true});
                 },180);
               }
@@ -10450,7 +10450,7 @@
           if(!pending) return;
           const idx=Number(pending.dataset.step||0);
           const item=document.querySelector('[data-step-item="'+idx+'"]');
-          (item||pending).scrollIntoView({behavior:'smooth',block:'center'});
+          window.QuoteFlowTicketTabs?.revealAndScroll(item||pending,{behavior:'smooth',block:'center'});
           setTimeout(()=>document.querySelector('.ticketAssistStepNote[data-step="'+idx+'"]')?.focus(),220);
         };
 
