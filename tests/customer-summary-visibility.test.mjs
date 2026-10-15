@@ -40,6 +40,7 @@ function makeEnvironment(){
    updateListCount:(prefix,shown,total)=>$('#customerListCount').textContent=shown+' / '+total,
    dataTable:(headers,rows)=>'<table><thead>'+headers.join('|')+'</thead><tbody>'+rows.join('')+'</tbody></table>',
    statusText:s=>s==='active'?'有効':s,
+   dateText:s=>String(s||'').slice(0,10)||'—',
    compareText:(a,b)=>String(a||'').localeCompare(String(b||''),'ja'),
    timeValue:s=>new Date(s||0).getTime(),
    bindListToolbar:(prefix,renderRows)=>{ $('#customerListSearch').oninput=renderRows; $('#customerListSort').onchange=renderRows; },
