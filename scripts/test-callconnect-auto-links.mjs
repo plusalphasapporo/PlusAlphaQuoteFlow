@@ -5,8 +5,8 @@ import { webcrypto } from 'node:crypto';
 const src=fs.readFileSync('supabase/functions/callconnect-contact-link-sync/logic.mjs','utf8');
 const tmp=src.replaceAll('export ','');
 const scope={URL,Set,Map,TextEncoder,crypto:webcrypto};vm.createContext(scope);
-vm.runInContext(tmp+'\n globalThis.api={normalizePhone,buildPlan,prepareMemo,summarize,parseContactsPage,decideContactsPage,fingerprintPlanItem,otherContactFieldsEqual,verifiedContactDetail};',scope);
-const {normalizePhone,buildPlan,prepareMemo,summarize,parseContactsPage,decideContactsPage,fingerprintPlanItem,otherContactFieldsEqual,verifiedContactDetail}=scope.api;
+vm.runInContext(tmp+'\n globalThis.api={normalizePhone,buildPlan,prepareMemo,summarize,parseContactsPage,decideContactsPage,fingerprintPlanItem,otherContactFieldsEqual,verifiedContactDetail,inspectContactDetail};',scope);
+const {normalizePhone,buildPlan,prepareMemo,summarize,parseContactsPage,decideContactsPage,fingerprintPlanItem,otherContactFieldsEqual,verifiedContactDetail,inspectContactDetail}=scope.api;
 const id='91000000-0000-4000-8000-000000000001',other='92000000-0000-4000-8000-000000000002';
 assert.equal(normalizePhone('011-123-4567'),'0111234567');
 assert.equal(normalizePhone('+81 11 123 4567'),'0111234567');
@@ -55,6 +55,13 @@ assert.equal(otherContactFieldsEqual({id:10,phone:'0111234567',memo:'before'},{i
 assert.equal(buildPlan([{id:'10',number:'0111234567'}],[customer],[])[0].status,'memo_unavailable');
 assert.equal(verifiedContactDetail(buildPlan([{id:'10',number:'0111234567',memo:'既存のメモ'}],[customer],[])[0],{id:'10',phone:'0111234567',memo:'既存のメモ'}),'verified');
 
+const inspected=buildPlan([{id:'10',phone:'0111234567',memo:'original'}],[customer],[])[0];
+assert.equal(inspectContactDetail(inspected,{id:'10',phone:'0111234567',memo:'original'}),'detail_consistent');
+assert.equal(inspectContactDetail(inspected,{id:'10',phone:'0111234568',memo:'original'}),'detail_phone_mismatch');
+assert.equal(inspectContactDetail(inspected,{id:'10',phone:'0111234567'}),'detail_memo_missing');
+assert.equal(inspectContactDetail(inspected,{id:'10',phone:'0111234567',memo:'different'}),'detail_memo_changed_since_list');
+assert.equal(inspectContactDetail(inspected,{id:'11',phone:'0111234567',memo:'original'}),'detail_id_mismatch');
+assert.equal(inspectContactDetail(buildPlan([{id:'10',phone:'0111234567'}],[customer],[])[0],{id:'10',phone:'0111234567',memo:''}),'list_memo_missing');
 const edge=fs.readFileSync('supabase/functions/callconnect-contact-link-sync/index.ts','utf8');
 // Approval hashes bind the selected CallConnect contact, customer, phone and
 // original memo to the preview. A changed memo must have a different token.
@@ -69,6 +76,9 @@ assert.notEqual(await fingerprintPlanItem({...selected,phones:['09011112222']}),
 assert.match(edge,/!["']preview["'],["']apply["']|(?:\["preview","apply"\])/);
 assert.match(edge,/requires_explicit_confirmation:true/);
 assert.match(edge,/input\.confirmed!==true/);
+assert.match(edge,/input\.mode==="inspect"/);
+assert.match(edge,/inspectContactDetail\(item,detail\)/);
+assert.match(edge,/write_enabled:false/);
 assert.match(edge,/fingerprintPlanItem\(item\)/);
 assert.match(edge,/before=await readDetail\(\)/);
 assert.match(edge,/verifiedContactDetail\(item,before\)/);
