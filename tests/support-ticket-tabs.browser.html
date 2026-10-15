@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>QuoteFlow Support Workflow - Browser Test</title>
+</head>
+<body data-test-result="pending">
+  <main id="ticketDetailHost"></main>
+  <pre id="browserCheckResult" aria-live="polite">Running browser checks</pre>
+  <script src="../assets/support-ticket-tabs.js"></script>
+  <script>
+    (async function runBrowserChecks() {
+      'use strict';
+      const host = document.getElementById('ticketDetailHost');
+      const output = document.getElementById('browserCheckResult');
+      const api = window.QuoteFlowTicketTabs;
+      let assertions = 0;
+
+      function check(condition, label) {
+        assertions++;
+        if (!condition) throw new Error('Assertion ' + assertions + ': ' + label);
+      }
+
+      function setupFixture() {
+        host.className = '';
+        host.replaceChildren();
+        host.innerHTML =
+          '<section class="card section">' +
+            '<header class="quoteDetailHead"><h2>Support Test Ticket</h2></header>' +
+            '<section class="section"><h3>受付・対応</h3>' +
+              '<div class="supportLinearFlow">' +
+                '<section id="supportLinearIntake" class="supportLinearCard active"><h4>受付内容</h4></section>' +
+                '<section id="supportKnowledgeWorkspace" class="supportLinearCard"><h4>AI・ナレッジ</h4>' +
+                  '<input type="checkbox" class="ticketAssistStepCheck"></section>' +
+                '<section id="supportRemoteWorkspace" class="supportLinearCard"><h4>TeamViewer</h4></section>' +
+                '<section id="supportReportWorkspace" class="supportLinearCard"><h4>作業報告</h4></section>' +
+              '</div><textarea id="ticketRemoteAction"></textarea></section>' +
+            '<section id="supportTicketCustomerContext" class="section"><h3>顧客・機器</h3></section>' +
+            '<section class="section"><h3>対応履歴・メッセージ</h3>' +
+              '<textarea id="ticketMessageBody"></textarea>' +
+              '<input id="ticketMessageFiles" type="file" multiple>' +
+              '<div id="ticketMessageReplyContext" class="hidden"></div>' +
+            '</section>' +
+            '<section class="formSection"><h3>案件管理</h3>' +
+              '<textarea id="ticketProfileInternalNote"></textarea>' +
+              '<select id="ticketProfilePriority"><option value="normal">通常</option><option value="urgent">緊急</option></select>' +
+              '<input id="ticketProfileAssigned"><input id="ticketProfileAsset">' +
+              '<input id="ticketProfileContract"><input id="ticketFirstResponseDue">' +
+              '<input id="ticketResolutionDue">' +
+            '</section>' +
+          '</section>';
+      }
+
+      function edit(id, value, type) {
+        const field = document.getElementById(id);
+        field.value = value;
+        field.dispatchEvent(new Event(type || 'input', { bubbles: true }));
+        return field;
+      }
+
+      function mount(ticketId, nextTarget, role) {
+        api.mount({
+          role: role || 'internal_admin',
+          ticketId: ticketId,
+          nextTarget: nextTarget || 'content',
+          title: 'テスト顧客',
+          ticket: 'T-0001',
+          subject: '動作確認',
+          assignee: '担当者',
+          stage: '対応中'
+        });
+      }
+
+      try {
+        check(!!api, 'real workspace script is loaded');
+        setupFixture();
+        mount('ticket-browser-1');
+
+        // Actual browser DOM/CSS and native click events, not the Node fake DOM.
+        const cards = [
+          'supportLinearIntake', 'supportKnowledgeWorkspace',
+          'supportRemoteWorkspace', 'supportReportWorkspace'
+        ].map(id => document.getElementById(id));
+        const navigation = document.querySelectorAll('.ticketWorkspaceStepButton');
+        const footer = document.querySelector('.ticketWorkspaceStepFooter');
+        check(navigation.length === 4, 'four workflow screens exist');
+        check(!!footer && !!document.getElementById('ticketWorkspaceTab_messages'),
+          'navigation and message tab are created');
+        check(cards[0].offsetParent !== null, 'first screen is visible');
+        check(cards[1].offsetParent === null, 'other screen is not visible');
+        const previous = footer.querySelector('button:first-child');
+        const next = footer.querySelector('button:last-child');
+        check(previous.disabled, 'back disabled at first screen');
+        for (let index = 1; index < cards.length; index++) {
+          next.click();
+          check(cards[index].offsetParent !== null, 'next opens screen ' + index);
+          check(cards[index - 1].offsetParent === null, 'previous screen hidden');
+        }
+        check(next.disabled, 'next disabled at final screen');
+        previous.click();
+        check(cards[2].offsetParent !== null, 'previous returns one screen');
+
+        edit('ticketRemoteAction', '遠隔操作の下書き');
+        const messagesTab = document.getElementById('ticketWorkspaceTab_messages');
+        messagesTab.click();
+        check(!document.getElementById('ticketWorkspacePane_messages').hidden,
+          'messages tab becomes visible');
+        check(document.getElementById('ticketWorkspacePane_work').hidden,
+          'work panel becomes hidden');
+        check(document.getElementById('ticketRemoteAction').value === '遠隔操作の下書き',
+          'tab navigation keeps work draft');
+
+        const customerTab = document.getElementById('ticketWorkspaceTab_customer');
+        customerTab.click();
+        check(customerTab.getAttribute('aria-selected') === 'true', 'ARIA tab state updated');
+        customerTab.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'ArrowRight', bubbles: true, cancelable: true
+        }));
+        check(messagesTab.getAttribute('aria-selected') === 'true',
+          'keyboard arrow navigates to next tab');
+
+        api.revealAndScroll(cards[1], { behavior: 'instant', block: 'start' });
+        check(!document.getElementById('ticketWorkspacePane_work').hidden,
+          'reveal brings hidden work tab forward');
+        check(cards[1].offsetParent !== null, 'reveal opens requested workflow step');
+
+        const checkbox = cards[1].querySelector('.ticketAssistStepCheck');
+        checkbox.click();
+        check(document.querySelectorAll('.ticketWorkspaceStepState')[1].textContent === '手順チェック済み',
+          'step status updates after checkbox click');
+
+        // Snapshot unsaved inputs and actual File objects, then remount a new DOM.
+        edit('ticketProfileInternalNote', '未保存メモ');
+        edit('ticketProfilePriority', 'urgent', 'change');
+        edit('ticketFirstResponseDue', '2026-10-20T12:00', 'change');
+        const dt = new DataTransfer();
+        dt.items.add(new File(['test bytes'], 'photo.png', { type: 'image/png' }));
+        document.getElementById('ticketMessageFiles').files = dt.files;
+        const snapshot = api.captureInProgress('ticket-browser-1');
+        check(snapshot.fields.ticketProfileInternalNote === '未保存メモ',
+          'case profile data included in snapshot');
+        check(snapshot.fields.ticketFirstResponseDue === '2026-10-20T12:00',
+          'deadline data included in snapshot');
+        check(snapshot.files.length === 1, 'real File stored in snapshot');
+        setupFixture();
+        mount('ticket-browser-1');
+        api.restoreInProgress('ticket-browser-1', snapshot);
+        check(document.getElementById('ticketProfileInternalNote').value === '未保存メモ',
+          'profile draft restored after DOM replacement');
+        check(document.getElementById('ticketProfilePriority').value === 'urgent',
+          'select input restored after DOM replacement');
+        check(document.getElementById('ticketFirstResponseDue').value === '2026-10-20T12:00',
+          'deadline restored after DOM replacement');
+        check(document.getElementById('ticketMessageFiles').files[0].name === 'photo.png',
+          'attached file restored after DOM replacement');
+        check(api.hasUnsentEdits('ticket-browser-1'), 'unsaved data detected');
+
+        api.clearSavedEdits('ticket-browser-1', { ticketProfileInternalNote: '未保存メモ' });
+        check(!document.getElementById('ticketProfileInternalNote').dataset.ticketUnsaved,
+          'saved profile data no longer counted as dirty');
+        edit('ticketProfilePriority', 'normal', 'change');
+        api.clearSavedEdits('ticket-browser-1', { ticketProfilePriority: 'urgent' });
+        check(document.getElementById('ticketProfilePriority').dataset.ticketUnsaved === '1',
+          'in-flight newer edit still counted as dirty');
+
+        // Actual browser confirm and pending-message refresh behavior.
+        let confirms = 0, refreshes = 0;
+        window.confirm = function () { confirms++; return false; };
+        check(api.confirmLeave('ticket-browser-1') === false,
+          'leave is blocked if the operator declines');
+        api.showPendingMessage('ticket-browser-1', '顧客の返信', async function () { refreshes++; });
+        const banner = document.getElementById('ticketPendingNewMessage');
+        check(!!banner, 'pending message warning rendered');
+        check(document.getElementById('ticketWorkspaceTab_messages').textContent.includes('●'),
+          'message tab gets pending indicator');
+        await banner.querySelector('button').onclick();
+        check(refreshes === 0, 'declined refresh does not overwrite edits');
+        window.confirm = function () { confirms++; return true; };
+        await banner.querySelector('button').onclick();
+        check(refreshes === 1, 'confirmed refresh callback fires');
+        check(confirms >= 3, 'confirm dialogs were invoked');
+
+        setupFixture();
+        mount('ticket-browser-2', 'remote');
+        check(document.getElementById('supportRemoteWorkspace').offsetParent !== null,
+          'current workflow opens on TeamViewer step');
+
+        setupFixture();
+        mount('ticket-browser-customer', 'content', 'customer_user');
+        check(!host.classList.contains('ticketTabsEnabled'),
+          'customer role does not receive internal workspace navigation');
+        check(!document.querySelector('.ticketWorkspaceStepButton'),
+          'customer role is not remounted');
+
+        document.body.dataset.testResult = 'pass';
+        output.textContent = JSON.stringify({ status: 'PASS', assertions: assertions });
+      } catch (error) {
+        document.body.dataset.testResult = 'fail';
+        output.textContent = String(error && (error.stack || error.message) || error);
+      }
+    })();
+  </script>
+</body>
+</html>
