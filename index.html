@@ -2168,7 +2168,7 @@
                 await rpc('claim_support_ticket',{p_ticket_id:item.id});
                 await openTicketWorkspace(item.id);
                 setTimeout(()=>{
-                  $('#supportRemoteWorkspace')?.scrollIntoView({behavior:'smooth',block:'start'});
+                  window.QuoteFlowTicketTabs?.revealAndScroll($('#supportRemoteWorkspace'),{behavior:'smooth',block:'start'});
                 },150);
                 if(supporterLink){
                   if(tvWindow) tvWindow.location.href=supporterLink;
@@ -2320,7 +2320,7 @@
         if(isActive){
           try{
             await renderTicketDetail(msg.ticket_id);
-            setTimeout(()=>$('#ticketMessageList')?.scrollIntoView({behavior:'smooth',block:'end'}),120);
+            setTimeout(()=>{const list=$('#ticketMessageList');if(list?.closest('.ticketWorkspacePane')?.hidden){toast(label+'：新しいメッセージがあります（連絡・返信タブで確認）');}else{window.QuoteFlowTicketTabs?.revealAndScroll(list,{behavior:'smooth',block:'end'});}},120);
           }catch(err){
             console.error('Realtime message refresh failed',err);
           }
@@ -3120,7 +3120,7 @@
           if(assigned&&!mine){
             toast(assignee+' が返信対応中です');
             await openTicketWorkspace(btn.dataset.id);
-            setTimeout(()=>$('#ticketReplyLockNotice')?.scrollIntoView({behavior:'smooth',block:'center'}),180);
+            setTimeout(()=>window.QuoteFlowTicketTabs?.revealAndScroll($('#ticketReplyLockNotice'),{behavior:'smooth',block:'center'}),180);
             return;
           }
           if(!assigned){
@@ -3128,7 +3128,7 @@
             toast('返信担当を確保しました');
           }
           await openTicketWorkspace(btn.dataset.id);
-          setTimeout(()=>{const el=$('#ticketMessageBody');el?.scrollIntoView({behavior:'smooth',block:'center'});el?.focus();},180);
+          setTimeout(()=>{const el=$('#ticketMessageBody');window.QuoteFlowTicketTabs?.revealAndScroll(el,{behavior:'smooth',block:'center'});el?.focus({preventScroll:true});},180);
         }catch(err){toast(err.message||String(err));}
         finally{btn.disabled=false;}
       });
@@ -3142,7 +3142,7 @@
         btn.disabled=true;
         try{
           await openTicketWorkspace(btn.dataset.id);
-          setTimeout(()=>$('#supportRemoteWorkspace')?.scrollIntoView({behavior:'smooth',block:'start'}),150);
+          setTimeout(()=>window.QuoteFlowTicketTabs?.revealAndScroll($('#supportRemoteWorkspace'),{behavior:'smooth',block:'start'}),150);
         }catch(err){toast(err.message||String(err));}
         finally{btn.disabled=false;}
       });
@@ -3260,7 +3260,7 @@
           await refreshSupportUnreadBadge();
           await go('support_cases');
           await renderTicketDetail(btn.dataset.ticketId);
-          setTimeout(()=>$('#supportAssistWorkspace')?.scrollIntoView({behavior:'smooth',block:'start'}),150);
+          setTimeout(()=>window.QuoteFlowTicketTabs?.revealAndScroll($('#supportAssistWorkspace'),{behavior:'smooth',block:'start'}),150);
         }catch(err){toast(err.message||String(err));}
         finally{btn.disabled=false;}
       });
@@ -7992,6 +7992,7 @@
   }
 
   async function renderTicketDetail(ticketId){
+    const previouslyOpen=String(activeTicketId||'')===String(ticketId||'')&&!!document.querySelector('#ticketDetailHost .quoteDetailHead');
     activeTicketId=ticketId||null;
     if(teamviewerStatusTimer){
       clearInterval(teamviewerStatusTimer);
@@ -8856,7 +8857,7 @@
       stage:supportStageLabel(supportStage||((t.status==='closed')?'completed':'unhandled'))
     });
     $('#ticketDetailClose').onclick=()=>{activeTicketId=null;$('#ticketDetailHost').innerHTML='';};
-    $('#ticketDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
+    if(!previouslyOpen) $('#ticketDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
     const ticketCallAiSummary=$('#ticketCallAiSummary');
     if(ticketCallAiSummary){
       ticketCallAiSummary.onclick=async()=>{
@@ -11887,11 +11888,11 @@
             if(action==='primary'){
               setTimeout(()=>$('#supportPrimaryNext')?.click(),220);
             }else if(action==='history'){
-              setTimeout(()=>$('#ticketMessageList')?.scrollIntoView({behavior:'smooth',block:'start'}),220);
+              setTimeout(()=>window.QuoteFlowTicketTabs?.revealAndScroll($('#ticketMessageList'),{behavior:'smooth',block:'start'}),220);
             }else if(btn.dataset.start==='1'){
               setTimeout(()=>{
                 const target=$('#ticketKnowledgeSearch')||$('#supportAssistWorkspace');
-                target?.scrollIntoView({behavior:'smooth',block:'start'});
+                window.QuoteFlowTicketTabs?.revealAndScroll(target,{behavior:'smooth',block:'start'});
                 $('#ticketKnowledgeSearch')?.focus();
               },220);
             }
@@ -12018,7 +12019,7 @@
           openBtn.disabled=true;
           try{
             await openTicketWorkspace(openBtn.dataset.ticketId);
-            setTimeout(()=>$('#ticketMessageList')?.scrollIntoView({behavior:'smooth',block:'start'}),200);
+            setTimeout(()=>window.QuoteFlowTicketTabs?.revealAndScroll($('#ticketMessageList'),{behavior:'smooth',block:'start'}),200);
           }catch(err){toast(err.message||String(err));}
           finally{openBtn.disabled=false;}
         });
@@ -12040,7 +12041,7 @@
       btn.disabled=true;
       try{
         await openTicketWorkspace(btn.dataset.id);
-        setTimeout(()=>$('#supportRemoteWorkspace')?.scrollIntoView({behavior:'smooth',block:'start'}),150);
+        setTimeout(()=>window.QuoteFlowTicketTabs?.revealAndScroll($('#supportRemoteWorkspace'),{behavior:'smooth',block:'start'}),150);
       }catch(err){toast(err.message||String(err));}
       finally{btn.disabled=false;}
     });
