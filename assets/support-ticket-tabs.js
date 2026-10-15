@@ -41,7 +41,12 @@
     #ticketDetailHost .ticketWorkspaceStepNav{margin:12px 0;border:1px solid #bfdbfe;background:#f8fbff;border-radius:12px;padding:10px}
     #ticketDetailHost .ticketWorkspaceStepHead{font-size:12px;color:#1e40af;font-weight:800;margin-bottom:8px}
     #ticketDetailHost .ticketWorkspaceStepRow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
-    #ticketDetailHost .ticketWorkspaceStepButton{display:flex;align-items:center;justify-content:center;gap:6px;min-height:40px;border:1px solid #dbe4f0;border-radius:9px;background:#fff;color:#334155;padding:7px 5px;font-size:12px;font-weight:750;box-shadow:none}
+    #ticketDetailHost .ticketWorkspaceStepButton{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:56px;border:1px solid #dbe4f0;border-radius:9px;background:#fff;color:#334155;padding:7px 5px;font-size:12px;font-weight:750;box-shadow:none}
+    #ticketDetailHost .ticketWorkspaceStepState{font-size:10px;line-height:1.3;font-weight:750;color:#667085}
+    #ticketDetailHost .ticketWorkspaceStepState[data-state="done"]{color:#047857}
+    #ticketDetailHost .ticketWorkspaceStepState[data-state="active"]{color:#1d4ed8}
+    #ticketDetailHost .ticketWorkspaceStepState[data-state="checked"]{color:#047857}
+    #ticketDetailHost .ticketWorkspaceStepButton[aria-pressed="true"] .ticketWorkspaceStepState{color:#fff}
     #ticketDetailHost .ticketWorkspaceStepButton[aria-pressed="true"]{background:#1d4ed8;border-color:#1d4ed8;color:#fff}
     #ticketDetailHost .ticketWorkspaceStepFooter{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:12px 0;padding:10px 0;border-top:1px solid #dfe6f1}
     #ticketDetailHost .ticketWorkspaceStepFootHint{font-size:11px;color:#667085;text-align:center}
@@ -69,6 +74,7 @@
   function panelCategory(element){
     if(element.id==='supportTicketCustomerContext') return 'customer';
     if(element.id==='ticketCallTranscriptSection') return 'history';
+    if(element.id==='supportTopOverview'||element.classList.contains('internalTicketOverviewGrid')) return 'customer';
     if(element.id==='ticketAiIncidentSection') return 'ai';
     if(element.classList.contains('formSection')) return element.id==='supportAssistWorkspace'?'work':'manage';
     const title=headingText(element);
@@ -122,7 +128,7 @@
       panes.set(key,pane);
       deck.append(pane);
     }
-    const pinnedSelector='.quoteDetailHead,.supportTicketTopbar,.internalTicketTopbar,.supportTicketFacts,.internalTicketOverviewGrid,.internalTicketQuick,#supportTopOverview';
+    const pinnedSelector='.quoteDetailHead,.supportTicketTopbar,.internalTicketTopbar,.supportTicketFacts,.internalTicketQuick';
     for(const child of [...root.children]){
       if(child.matches(pinnedSelector)) continue;
       (panes.get(panelCategory(child))||panes.get('work')).append(child);
@@ -159,13 +165,40 @@
       remote:'supportRemoteWorkspace',
       report:'supportReportWorkspace'
     };
-    const guessedStep=stepForTarget[opts.nextTarget]||'supportLinearIntake';
-    let activeTab=panes.has(prior.tab)?prior.tab:(opts.nextTarget==='history'?'history':'work');
+    const nextTarget=String(opts.nextTarget||'');
+    const guessedStep=stepForTarget[nextTarget]||'supportLinearIntake';
+    const targetTab=nextTarget==='history'?'history':['customer_reply','customer_wait'].includes(nextTarget)?'messages':'work';
+    const workflowAdvanced=typeof prior.nextTarget==='string'&&prior.nextTarget!==nextTarget;
+    let activeTab=!workflowAdvanced&&panes.has(prior.tab)?prior.tab:targetTab;
     if(!panes.has(activeTab)) activeTab='work';
-    let activeStep=steps.some(([id])=>id===prior.step)?prior.step:guessedStep;
+    let activeStep=!workflowAdvanced&&steps.some(([id])=>id===prior.step)?prior.step:guessedStep;
     let stepButtons=[],previous=null,next=null,progress=null;
     function persist(){
-      preferenceByTicket.set(ticketId,{tab:activeTab,step:activeStep});
+      preferenceByTicket.set(ticketId,{tab:activeTab,step:activeStep,nextTarget});
+    }
+    function computeStepState(node){
+      if(!node) return {name:'未着手',key:'pending'};
+      if(node.classList.contains('done')) return {name:'完了',key:'done'};
+      const checks=[...node.querySelectorAll('.ticketAssistStepCheck')];
+      if(checks.length&&checks.every(x=>x.checked)) return {name:'手順チェック済み',key:'checked'};
+      if(node.classList.contains('active')) return {name:'対応中',key:'active'};
+      if(node.classList.contains('optional')) return {name:'必要時のみ',key:'optional'};
+      return {name:'未着手',key:'pending'};
+    }
+    function refreshStepStates(){
+      steps.forEach(([id,label],index)=>{
+        const node=flow.querySelector('#'+id);
+        const state=computeStepState(node);
+        const button=stepButtons[index];
+        const status=button?.querySelector('.ticketWorkspaceStepState');
+        if(status){status.textContent=state.name;status.dataset.state=state.key;}
+        if(button) button.setAttribute('aria-label',(index+1)+'. '+label+' / '+state.name);
+      });
+      const index=steps.findIndex(([id])=>id===activeStep);
+      if(progress&&index>=0){
+        const state=computeStepState(flow.querySelector('#'+activeStep));
+        progress.textContent='表示中：'+(index+1)+' / '+steps.length+'　'+steps[index][1]+' ｜ '+state.name;
+      }
     }
     function setTab(key,scroll){
       if(!panes.has(key)) key='work';
@@ -193,7 +226,7 @@
         stepButtons[i]?.setAttribute('aria-pressed',selected?'true':'false');
       });
       const index=steps.findIndex(([stepId])=>stepId===id);
-      if(progress) progress.textContent='表示中：'+(index+1)+' / '+steps.length+'　'+steps[index][1];
+      refreshStepStates();
       if(previous) previous.disabled=index===0;
       if(next) next.disabled=index===steps.length-1;
       persist();
@@ -211,7 +244,11 @@
         const button=document.createElement('button');
         button.type='button';
         button.className='ticketWorkspaceStepButton';
-        button.textContent=(index+1)+'. '+label;
+        const name=document.createElement('strong');
+        name.textContent=(index+1)+'. '+label;
+        const state=document.createElement('span');
+        state.className='ticketWorkspaceStepState';
+        button.append(name,state);
         button.setAttribute('aria-pressed','false');
         button.onclick=()=>{setStep(id,false);setTab('work',true);};
         stepRow.append(button);
@@ -244,6 +281,9 @@
       };
       footer.append(previous,hint,next);
       flow.after(footer);
+      flow.addEventListener('change',event=>{
+        if(event.target.matches('.ticketAssistStepCheck')) refreshStepStates();
+      });
     }
     nav.onclick=event=>{
       const button=event.target.closest('button[data-ticket-tab]');
