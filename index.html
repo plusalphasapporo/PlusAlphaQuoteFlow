@@ -3819,6 +3819,76 @@
     $('#appModalLayer').onclick=e=>{ if(e.target.id==='appModalLayer') closeAppModal(); };
   }
 
+  // Shared create/edit dialog used by customer, inventory, contracts,
+  // procurement and knowledge workflows. All callers use onSubmit plus
+  // closeModal(); keep these helpers in the same scope as mountAppModal().
+  function closeModal(){
+    closeAppModal();
+  }
+
+  function openModal({title='',description='',body='',confirmLabel='保存',wide=false,onSubmit}={}){
+    if(typeof onSubmit!=='function') throw new Error('登録処理が設定されていません。');
+    mountAppModal(
+      '<div class="appModalHead">'+
+        '<div><h2>'+esc(title)+'</h2>'+(description?'<p>'+esc(description)+'</p>':'')+'</div>'+
+        '<button id="sharedModalClose" class="ghost" type="button" aria-label="閉じる">×</button>'+
+      '</div>'+
+      '<form id="sharedModalForm" class="appModalForm">'+
+        '<div class="appModalBody">'+body+
+          '<div id="sharedModalMsg" class="notice hidden" role="alert"></div>'+
+        '</div>'+
+        '<div class="appModalFoot">'+
+          '<button id="sharedModalCancel" class="ghost" type="button">キャンセル</button>'+
+          '<button id="sharedModalSave" class="primary" type="submit">'+esc(confirmLabel)+'</button>'+
+        '</div>'+
+      '</form>',
+      Boolean(wide)
+    );
+    const layer=$('#appModalLayer');
+    const form=layer.querySelector('#sharedModalForm');
+    const save=layer.querySelector('#sharedModalSave');
+    const message=layer.querySelector('#sharedModalMsg');
+    const close=()=>{
+      if($('#appModalLayer')===layer&&!save.disabled) closeAppModal();
+    };
+    layer.querySelector('#sharedModalClose').onclick=close;
+    layer.querySelector('#sharedModalCancel').onclick=close;
+    layer.onclick=e=>{if(e.target===layer)close();};
+    layer.addEventListener('keydown',e=>{
+      if(e.key==='Escape'){
+        e.preventDefault();
+        e.stopPropagation();
+        close();
+      }
+    });
+    form.onsubmit=async e=>{
+      e.preventDefault();
+      if(save.disabled||!form.reportValidity())return;
+      save.disabled=true;
+      message.classList.add('hidden');
+      message.classList.remove('error');
+      message.textContent='';
+      try{
+        await onSubmit();
+        // Legacy handlers often call closeModal() themselves. Do not close
+        // a different dialog opened by a successful completion handler.
+        if($('#appModalLayer')===layer) closeAppModal();
+      }catch(err){
+        if($('#appModalLayer')===layer){
+          message.textContent=err?.message||String(err);
+          message.classList.add('error');
+          message.classList.remove('hidden');
+        }else{
+          toast(err?.message||String(err));
+        }
+      }finally{
+        if($('#appModalLayer')===layer)save.disabled=false;
+      }
+    };
+    layer.querySelector('input:not([type=hidden]):not(:disabled),select:not(:disabled),textarea:not(:disabled)')?.focus();
+    return layer;
+  }
+
   function localDateValue(date=new Date()){
     const x=new Date(date.getTime()-date.getTimezoneOffset()*60000);
     return x.toISOString().slice(0,10);
