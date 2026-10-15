@@ -5,7 +5,8 @@ const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]
 const REMOTE_ID=/^[1-9][0-9]{0,17}$/;
 const LINK_MARKER='QuoteFlow 顧客カルテ:';
 const CODE_MARKER='QuoteFlow 顧客番号:';
-const MAX_MEMO_LENGTH=1800;
+// CallConnect CSV imports cap memo at 1000 characters; stay within that conservative bound.
+const MAX_MEMO_LENGTH=1000;
 
 export function normalizePhone(value){
   let digits=String(value??'').replace(/[^0-9]/g,'');
@@ -31,6 +32,13 @@ export function customerLink(id,origin=STAGING_ORIGIN){
 }
 function uniquePhones(values){
   return [...new Set(values.map(normalizePhone).filter(Boolean))];
+}
+export function parseContactsPage(raw){
+  if(Array.isArray(raw))return raw;
+  if(Array.isArray(raw?.contacts))return raw.contacts;
+  if(Array.isArray(raw?.data))return raw.data;
+  if(Array.isArray(raw?.data?.contacts))return raw.data.contacts;
+  return null;
 }
 export function remotePhones(c){
   const sources=[c.friendly_number,c.number,c.phone,c.mobile];
@@ -101,6 +109,8 @@ export function buildPlan(remoteContacts,customers,localContacts,origin=STAGING_
     };
     if(!REMOTE_ID.test(c.id)){item.status='invalid_contact_id';return item;}
     if(!c.numbers.length){item.status='no_phone';return item;}
+    // A remote contact with unrelated multiple numbers can mask an incorrect match.
+    if(c.numbers.length>1){item.status='multiple_remote_phones';return item;}
     if(c.numbers.some(p=>(remoteNumberOwners.get(p)?.size||0)>1)){
       item.status='duplicate_remote_phone';return item;
     }
@@ -126,7 +136,8 @@ export function publicPlanItem(x){
 }
 export function summarize(plan){
   const counts={eligible:0,already_linked:0,conflict_link:0,ambiguous_customer:0,
-    duplicate_remote_phone:0,unmatched:0,no_phone:0,invalid_contact_id:0,memo_too_long:0};
+    duplicate_remote_phone:0,multiple_remote_phones:0,unmatched:0,no_phone:0,
+    invalid_contact_id:0,memo_too_long:0};
   for(const item of plan)counts[item.status]=(counts[item.status]||0)+1;
   return counts;
 }
