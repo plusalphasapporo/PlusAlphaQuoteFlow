@@ -81,6 +81,7 @@ if (!fs.existsSync('assets/support-ticket-tabs.js')) {
     ['draft restoration', "function restoreInProgress("],
     ['new-message editing guard', "function hasUnsentEdits("],
     ['pending message notification', "function showPendingMessage("],
+    ['leave confirmation', "function confirmLeave("],
     ['attachment input restoration', "input.dispatchEvent(new Event('change'"]
   ];
   for (const [name,needle] of navigationContracts) {
@@ -89,7 +90,9 @@ if (!fs.existsSync('assets/support-ticket-tabs.js')) {
   for (const [name,needle] of [
     ['draft snapshot before refresh', "const ticketInProgressSnapshot=window.QuoteFlowTicketTabs?.captureInProgress(t.id)"],
     ['draft restoration after refresh', "window.QuoteFlowTicketTabs?.restoreInProgress(t.id,ticketInProgressSnapshot)"],
-    ['message-realtime protection', "window.QuoteFlowTicketTabs?.hasUnsentEdits(msg.ticket_id)"]
+    ['message-realtime protection', "window.QuoteFlowTicketTabs?.hasUnsentEdits(msg.ticket_id)"],
+    ['back navigation guard', "window.QuoteFlowTicketTabs?.confirmLeave(ticketId)"],
+    ['ticket close guard', "window.QuoteFlowTicketTabs?.confirmLeave(t.id)"]
   ]) {
     if(!html.includes(needle)) failures.push('Ticket refresh integration missing: '+name);
   }
