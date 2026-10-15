@@ -123,3 +123,8 @@ body[data-role="support_staff"] #navMenu .navBtn.active{background:#fff1e9;color
   .qf-step-toggle{min-width:54px;padding:7px}
 }
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
+
+/* Keep the internal-ticket primary action legible on its dark top bar. */
+#appView .internalTicketTopbar .supportQuickActions button{background:#fff;color:#16355f;border:1px solid #c9d8ec;min-height:41px}
+#appView .internalTicketTopbar .supportQuickActions button:hover{background:#eaf2ff;color:#102d51}
+#appView .internalTicketTopbar .supportQuickActions button:focus-visible{outline:3px solid #f59e0b;outline-offset:2px}
