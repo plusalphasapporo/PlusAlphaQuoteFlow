@@ -367,6 +367,21 @@
     .section{margin-top:18px}.section h2{margin:0 0 6px}.sectionDesc{margin:0 0 14px;color:var(--muted);font-size:13px}
     .item{border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:10px}
     .item h3{margin:0 0 5px;font-size:14px}.item p{margin:4px 0;font-size:13px;color:#475569}
+    .customerDirectoryToolbar{margin-bottom:12px;gap:12px;flex-wrap:wrap}
+    .customerDirectoryGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:14px}
+    .customerDirectoryCard{background:#fff;border:1px solid var(--line);border-radius:16px;padding:16px;box-shadow:0 4px 18px rgba(15,23,42,.04);min-width:0}
+    .customerDirectoryCardTop{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+    .customerDirectoryCard h3{font-size:17px;margin:7px 0 5px;overflow-wrap:anywhere}
+    .customerDirectoryCode{font-size:12px;font-weight:800;color:#2563eb;letter-spacing:.03em}
+    .customerDirectoryRelation{font-size:12px;color:#475569;line-height:1.6}
+    .customerDirectoryFacts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:14px 0}
+    .customerDirectoryFacts>div{min-width:0}
+    .customerDirectoryFacts small{display:block;color:#64748b;font-weight:700;font-size:11px;margin-bottom:4px}
+    .customerDirectoryFacts strong{font-size:13px;font-weight:700;white-space:normal;overflow-wrap:anywhere}
+    .customerDirectoryCardFoot{display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px solid var(--line);padding-top:12px}
+    .customerIdentitySummary{background:#f8fbff;border:1px solid #cfe0fb;border-radius:16px;padding:16px;margin:14px 0}
+    .customerIdentitySummary h3{margin:0}
+    @media(max-width:620px){.customerDirectoryFacts{grid-template-columns:1fr}.customerDirectoryCardFoot{align-items:stretch;flex-direction:column}.customerDirectoryCardFoot button{width:100%}}
     .tableWrap{overflow:auto;border:1px solid var(--line);border-radius:14px;background:#fff}
     table{width:100%;border-collapse:collapse;min-width:720px}
     th,td{padding:11px 12px;border-bottom:1px solid #edf1f6;text-align:left;font-size:13px;vertical-align:middle}
@@ -4734,6 +4749,16 @@
           '</div>'+
           unifiedTabs(tabs,tab,'customer')+
           '<div id="customerUnifiedTabBody">'+
+            '<section class="customerIdentitySummary"><div class="row between"><div><h3>顧客基本情報</h3><p class="sectionDesc">カルテを開いたら、最初に基本情報を確認できます。</p></div></div><div class="customerDirectoryFacts">'+
+              '<div><small>顧客番号</small><strong>'+esc(c.customer_code||'—')+'</strong></div>'+ 
+              '<div><small>区分</small><strong>'+esc(c.branch_type==='branch'?'支店・営業所':'本店・本社')+'</strong></div>'+ 
+              '<div><small>代表者</small><strong>'+esc(c.representative_name||'未登録')+'</strong></div>'+ 
+              '<div><small>所在地</small><strong>'+esc([c.postal_code,c.address1,c.address2].filter(Boolean).join(' ')||'未登録')+'</strong></div>'+ 
+              '<div><small>電話</small><strong>'+esc(c.phone||c.mobile||'未登録')+'</strong></div>'+ 
+              '<div><small>メール</small><strong>'+esc(c.email||'未登録')+'</strong></div>'+ 
+              '<div><small>主担当者</small><strong>'+esc(primary?.name||'未登録')+'</strong></div>'+ 
+              '<div><small>所属する本店</small><strong>'+esc(c.branch_type==='branch'?(headquarters?.customer_code||'未登録')+' / '+(headquarters?.name||'未登録'):'本店・本社')+'</strong></div>'+ 
+            '</div></section>'+ 
             (c.manual_hold?'<div class="notice error"><strong>手動ホールド中</strong><br>新規取引を進める前にホールド理由・解除可否を確認してください。</div>':'')+
             kpis([
               ['対応中',openSupportTickets.length],
@@ -4890,6 +4915,7 @@
         const box=$('#customerOverviewEditBox');
         box.classList.toggle('hidden');
         $('#customerOverviewEditToggle').textContent=box.classList.contains('hidden')?'基本情報を編集':'編集を閉じる';
+        if(!box.classList.contains('hidden')) box.scrollIntoView({behavior:'smooth',block:'start'});
       };
       bindUnifiedTabs(t=>renderCustomerDetail(customerId,t));
 
@@ -5595,8 +5621,9 @@
         ['code_asc','顧客コード順']
       ])+
       '<div id="customerDetailHost"></div>'+
-      '<section class="section"><div id="customerListHost"></div></section>';
+      '<section class="section"><div class="row between customerDirectoryToolbar"><strong>顧客の基本情報</strong><div class="row"><button id="customerViewCards" class="primary" type="button">カード表示</button><button id="customerViewTable" class="ghost" type="button">一覧表示</button></div></div><div id="customerListHost"></div></section>';
 
+    let customerView='cards';
     const renderRows=()=>{
       const state=listToolbarState('customerList');
       let filtered=(data||[]).filter(c=>{
@@ -5617,6 +5644,21 @@
 
       updateListCount('customerList',filtered.length,(data||[]).length);
       const lookup=new Map((data||[]).map(x=>[x.id,x]));
+      const cards=filtered.map(c=>{
+        const parent=lookup.get(c.parent_customer_id);
+        const branchCount=(data||[]).filter(x=>x.parent_customer_id===c.id).length;
+        const relation=c.branch_type==='branch'?'支店｜本店 '+(parent?.customer_code||'未設定')+' / '+(parent?.name||'未設定'):'本店・本社｜支店 '+branchCount+'件';
+        const address=[c.postal_code,c.address1,c.address2].filter(Boolean).join(' ');
+        return '<article class="customerDirectoryCard">'+
+          '<div class="customerDirectoryCardTop"><div><span class="customerDirectoryCode">'+esc(c.customer_code||'—')+'</span><h3>'+esc(c.name||'名称未登録')+'</h3><div class="customerDirectoryRelation">'+esc(relation)+'</div></div><span class="pill">'+esc(statusText(c.status))+'</span></div>'+ 
+          '<div class="customerDirectoryFacts">'+
+            '<div><small>所在地</small><strong>'+esc(address||'未登録')+'</strong></div>'+ 
+            '<div><small>電話</small><strong>'+esc(c.phone||c.mobile||'未登録')+'</strong></div>'+ 
+            '<div><small>メール</small><strong>'+esc(c.email||'未登録')+'</strong></div>'+ 
+            '<div><small>代表者</small><strong>'+esc(c.representative_name||'未登録')+'</strong></div>'+ 
+            '<div><small>営業担当</small><strong>'+esc(c.sales_owner_name||'未設定')+'</strong></div>'+ 
+          '</div><div class="customerDirectoryCardFoot"><span class="muted">最終更新 '+esc(dateText(c.updated_at))+'</span><button class="primary customerDetail" type="button" data-id="'+esc(c.id)+'">顧客カルテを開く</button></div></article>';
+      });
       const rows=filtered.map(c=>
         '<tr>'+
           '<td>'+esc(c.customer_code||'—')+'</td>'+
@@ -5624,6 +5666,7 @@
           '<td>'+esc(({corporation:'法人',sole_proprietor:'個人事業主',individual:'個人',public:'公共',other:'その他'}[c.customer_type]||c.customer_type||'—'))+(c.industry?'<br><span class="muted">'+esc(c.industry)+'</span>':'')+'</td>'+
           '<td>'+esc(c.sales_owner_name||'未設定')+'</td>'+
           '<td>'+esc(c.phone||c.mobile||'—')+(c.email?'<br><span class="muted">'+esc(c.email)+'</span>':'')+'</td>'+
+          '<td>'+esc([c.postal_code,c.address1,c.address2].filter(Boolean).join(' ')||'—')+'</td>'+
           '<td>'+esc(statusText(c.status))+'</td>'+
           '<td>'+(c.manual_hold?'<span class="hold">手動ホールド中</span>':'<span class="normal">通常</span>')+'</td>'+
           '<td>'+esc(dateText(c.updated_at))+'</td>'+
@@ -5631,9 +5674,11 @@
         '</tr>'
       );
 
-      $('#customerListHost').innerHTML=dataTable(
-        ['顧客コード','顧客名','区分・業種','営業担当','連絡先','状態','取引状態','更新日','操作'],rows
-      );
+      $('#customerListHost').innerHTML=customerView==='cards'
+        ? (cards.length?'<div class="customerDirectoryGrid">'+cards.join('')+'</div>':'<div class="empty">該当する顧客はありません。</div>')
+        : dataTable(['顧客コード','顧客名','区分・業種','営業担当','連絡先','所在地','状態','取引状態','更新日','操作'],rows);
+      $('#customerViewCards').className=customerView==='cards'?'primary':'ghost';
+      $('#customerViewTable').className=customerView==='table'?'primary':'ghost';
 
       document.querySelectorAll('.customerDetail').forEach(btn=>{
         btn.onclick=async()=>{
@@ -5646,6 +5691,8 @@
     };
 
     $('#customerCreateOpen').onclick=renderCustomerCreate;
+    $('#customerViewCards').onclick=()=>{customerView='cards';renderRows();};
+    $('#customerViewTable').onclick=()=>{customerView='table';renderRows();};
     bindListToolbar('customerList',renderRows);
     renderRows();
   }
