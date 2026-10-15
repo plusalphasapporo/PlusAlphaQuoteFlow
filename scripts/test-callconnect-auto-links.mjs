@@ -73,7 +73,7 @@ assert.notEqual(await fingerprintPlanItem(changedMemo),selectedToken);
 assert.notEqual(await fingerprintPlanItem({...selected,customer_id:other}),selectedToken);
 assert.notEqual(await fingerprintPlanItem({...selected,phones:['09011112222']}),selectedToken);
 
-assert.match(edge,/!["']preview["'],["']apply["']|(?:\["preview","apply"\])/);
+assert.match(edge,/\["preview","apply","inspect"\]/);
 assert.match(edge,/requires_explicit_confirmation:true/);
 assert.match(edge,/input\.confirmed!==true/);
 assert.match(edge,/input\.mode==="inspect"/);
