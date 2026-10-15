@@ -1,6 +1,4 @@
--- Expose only numeric CallConnect contact identifiers to the existing
--- role-filtered dashboard, for safe links to the CallConnect contact console.
--- No CallConnect credentials or unscoped customer data are exposed.
+-- Add role-filtered numeric CallConnect contact ID to dashboard history.
 CREATE OR REPLACE FUNCTION app_private.callconnect_dashboard_impl()
  RETURNS jsonb
  LANGUAGE plpgsql
