@@ -27,5 +27,8 @@ jobs:
       - name: Test support-ticket navigation and drafts
         run: node --test tests/support-ticket-tabs.test.mjs
 
+      - name: Chrome browser workflow checks
+        run: node scripts/validate-browser.mjs
+
       - name: Build staging preview
         run: node scripts/build-staging-preview.mjs
