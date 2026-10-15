@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import {createClient} from "https://esm.sh/@supabase/supabase-js@2.95.0";
-import {buildPlan,publicPlanItem,summarize,STAGING_ORIGIN,parseContactsPage} from "./logic.mjs";
+import {buildPlan,publicPlanItem,summarize,STAGING_ORIGIN,parseContactsPage,decideContactsPage} from "./logic.mjs";
 const headers={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"authorization, x-client-info, apikey, content-type","Access-Control-Allow-Methods":"POST, OPTIONS","Cache-Control":"no-store"};
 const json=(status:number,body:unknown)=>new Response(JSON.stringify(body),{status,headers:{...headers,"Content-Type":"application/json"}});
 Deno.serve(async(req:Request)=>{
@@ -64,11 +64,9 @@ Deno.serve(async(req:Request)=>{
      ids.add(id);
      list.push(row);
    }
-   const n=Number(raw?.total??raw?.total_count??raw?.pagination?.total??raw?.meta?.total);
-   const countKnown=Number.isInteger(n)&&n>=0;
-   const hasNext=Boolean(raw?.next_page||raw?.has_more===true||raw?.pagination?.next_page||raw?.pagination?.has_next);
-   if(batch.length<100&&!hasNext){
-     if(countKnown&&list.length<n)return json(409,{error:"contacts_pagination_incomplete",expected_total:n,received:list.length});
+   const decision=decideContactsPage(raw,batch.length,list.length);
+   if(decision.error)return json(409,{error:decision.error,page,received:list.length});
+   if(decision.done){
      finished=true;
      break;
    }
