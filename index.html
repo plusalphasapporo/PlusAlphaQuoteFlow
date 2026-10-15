@@ -14388,6 +14388,28 @@
     await renderSupport();
   }
 
+  async function showSupportCustomerDetail(customerId){
+    const host=$('#supportCustomerDetail');
+    if(!host) throw new Error('サポート会社の顧客画面を読み込めませんでした。');
+    // The RPC enforces the support-company assignment and AAL2 MFA.
+    const ctx=await rpc('support_customer_context',{p_customer_id:customerId});
+    if(!ctx?.customer||String(ctx.customer.id)!==String(customerId)){
+      throw new Error('顧客情報がありません、または権限がありません。');
+    }
+    const assetRows=(ctx.assets||[]).map(a=>
+      '<tr><td>'+esc(a.asset_number||'—')+'</td><td>'+esc(a.model_name||'—')+'</td><td>'+esc(a.serial_number||'—')+'</td><td>'+esc(statusText(a.status))+'</td></tr>'
+    );
+    const ticketRows=(ctx.tickets||[]).map(t=>
+      '<tr><td>'+esc(t.ticket_number||'—')+'</td><td>'+esc(t.subject||'')+'</td><td>'+esc(statusText(t.status))+'</td><td>'+esc(t.priority||'normal')+'</td></tr>'
+    );
+    host.innerHTML='<div class="card section" style="box-shadow:none">'+
+      '<h2>'+esc(ctx.customer.name||'')+'</h2><p class="muted">電話 '+esc(ctx.customer.phone||'—')+'</p>'+
+      '<h3>登録機器</h3>'+dataTable(['機器番号','機種','シリアル','状態'],assetRows)+
+      '<h3>問い合わせ履歴</h3>'+dataTable(['番号','件名','状態','優先度'],ticketRows)+'</div>';
+    host.scrollIntoView({behavior:'smooth',block:'start'});
+    return ctx;
+  }
+
   async function renderSupportCustomers(){
     const data=await rpc('support_customer_directory');
     const rows=(data||[]).map(c=>
@@ -14397,10 +14419,10 @@
       pageIntro('顧客・機器','電話番号を中心に、担当顧客・機器・契約・問い合わせ履歴を確認します。')+
       '<section class="card section"><div class="field" style="max-width:520px"><label>電話番号・顧客番号・顧客名</label><input id="supportCustomerSearch" inputmode="search" placeholder="まず電話番号を入力"></div><div id="supportCustomerDetail"></div><div id="supportCustomerTable">'+dataTable(['顧客番号','顧客名','電話','機器','契約','対応中','操作'],rows)+'</div></section>';
     const bind=()=>document.querySelectorAll('.supportCustomerOpen').forEach(btn=>btn.onclick=async()=>{
-      const ctx=await rpc('support_customer_context',{p_customer_id:btn.dataset.id});
-      const assetRows=(ctx.assets||[]).map(a=>'<tr><td>'+esc(a.asset_number||'—')+'</td><td>'+esc(a.model_name||'—')+'</td><td>'+esc(a.serial_number||'—')+'</td><td>'+esc(statusText(a.status))+'</td></tr>');
-      const ticketRows=(ctx.tickets||[]).map(t=>'<tr><td>'+esc(t.ticket_number||'—')+'</td><td>'+esc(t.subject||'')+'</td><td>'+esc(statusText(t.status))+'</td><td>'+esc(t.priority||'normal')+'</td></tr>');
-      $('#supportCustomerDetail').innerHTML='<div class="card section" style="box-shadow:none"><h2>'+esc(ctx.customer?.name||'')+'</h2><p class="muted">電話 '+esc(ctx.customer?.phone||'—')+'</p><h3>登録機器</h3>'+dataTable(['機器番号','機種','シリアル','状態'],assetRows)+'<h3>問い合わせ履歴</h3>'+dataTable(['番号','件名','状態','優先度'],ticketRows)+'</div>';
+      btn.disabled=true;
+      try{await showSupportCustomerDetail(btn.dataset.id);}
+      catch(err){toast('顧客カルテを開けませんでした。権限・通信状態を確認してください。');}
+      finally{btn.disabled=false;}
     });
     bind();
     $('#supportCustomerSearch').oninput=()=>{
@@ -15712,6 +15734,8 @@
       await startCallConnectTranscriptAutoSync();
       await startDeadlineWatch();
       await go('home');
+      // For a contact URL opened before sign-in, wait until login + MFA.
+      await openCallconnectCustomerDeepLink();
     }catch(err){
       console.error('QuoteFlow post-login initialization failed',err);
       $('#home').innerHTML=
