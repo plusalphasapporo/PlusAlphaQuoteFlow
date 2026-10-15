@@ -9,8 +9,8 @@ const MAX_MEMO_LENGTH=1800;
 
 export function normalizePhone(value){
   let digits=String(value??'').replace(/[^0-9]/g,'');
-  if(digits.startsWith('0081')&&(digits.length===14||digits.length===15))digits='0'+digits.slice(4);
-  else if(digits.startsWith('81')&&(digits.length===12||digits.length===13))digits='0'+digits.slice(2);
+  if(digits.startsWith('0081')&&(digits.length===13||digits.length===14))digits='0'+digits.slice(4);
+  else if(digits.startsWith('81')&&(digits.length===11||digits.length===12))digits='0'+digits.slice(2);
   if(!/^0[0-9]{9,10}$/.test(digits))return null;
   return digits;
 }
