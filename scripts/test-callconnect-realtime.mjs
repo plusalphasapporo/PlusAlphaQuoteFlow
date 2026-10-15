@@ -194,9 +194,10 @@ function fixture(role='support_staff',firstItems=[]){
   await flush();
   assert.match(h.state.notificationStatus(),/接続しています/);
 
+  const beforeFallback=h.unreadCalls.length;
   interval();
   await flush();
-  assert.equal(h.unreadCalls.length,before+4,'Slow fallback remains operational');
+  assert.equal(h.unreadCalls.length,beforeFallback+1,'Slow fallback remains operational');
 
   const oldChannel=h.channels.at(-1);
   await h.state.startCallConnect();
