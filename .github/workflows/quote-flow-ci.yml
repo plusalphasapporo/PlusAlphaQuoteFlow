@@ -21,6 +21,9 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Deployment base-path regression checks
+        run: node --test tests/deployment-base-path.test.mjs
+
       - name: Validate production HTML
         run: node scripts/validate-static.mjs
 
