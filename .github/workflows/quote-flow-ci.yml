@@ -27,6 +27,9 @@ jobs:
       - name: Test support-ticket navigation and drafts
         run: node --test tests/support-ticket-tabs.test.mjs
 
+      - name: Work report access regression tests
+        run: node --test tests/work-report-access.test.mjs
+
       - name: Chrome browser workflow checks
         run: node scripts/validate-browser.mjs
 
