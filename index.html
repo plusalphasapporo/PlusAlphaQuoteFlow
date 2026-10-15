@@ -7923,6 +7923,16 @@
   }
 
   async function openTicketWorkspace(ticketId){
+    // Opening another ticket replaces the current editor and its selected files.
+    const previousId=activeTicketId;
+    const previousOpen=!!document.querySelector('#ticketDetailHost .quoteDetailHead');
+    if(previousOpen && previousId && window.QuoteFlowTicketTabs?.hasUnsentEdits(previousId)){
+      if(String(previousId)===String(ticketId)){
+        document.querySelector('#ticketDetailHost .ticketWorkspaceBar')?.scrollIntoView({behavior:'smooth',block:'start'});
+        return;
+      }
+      if(window.QuoteFlowTicketTabs?.confirmLeave(previousId)===false) return;
+    }
     const role=bootData?.context?.role;
     const backPage=role==='support_staff'?'support_cases':'support';
     currentPage=backPage;
@@ -7936,7 +7946,7 @@
       '</section>'+
       '<div id="ticketDetailHost"></div>';
 
-    $('#ticketWorkspaceBack').onclick=()=>{if(window.QuoteFlowTicketTabs?.confirmLeave(ticketId)!==false) go(backPage);};
+    $('#ticketWorkspaceBack').onclick=()=>go(backPage);
 
     if(role==='support_staff'){
       let autoClaimed=false;
@@ -7967,7 +7977,7 @@
     await renderTicketDetail(ticketId);
 
     const closeBtn=$('#ticketDetailClose');
-    if(closeBtn) closeBtn.onclick=()=>{if(window.QuoteFlowTicketTabs?.confirmLeave(ticketId)!==false) go(backPage);};
+    if(closeBtn) closeBtn.onclick=()=>go(backPage);
 
     if(role==='support_staff'){
       setTimeout(()=>{
@@ -14800,6 +14810,8 @@
   }
 
   async function go(page){
+    // Sidebar navigation also replaces the ticket DOM. Confirm before losing unsent edits.
+    if(activeTicketId && window.QuoteFlowTicketTabs?.confirmLeave(activeTicketId)===false) return;
     const role=bootData?.context?.role;
     const allowed=(pageSets[role]||[]).map(x=>x[0]);
     const supplementalAllowed=role==='support_staff'
