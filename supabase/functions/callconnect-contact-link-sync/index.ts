@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import {createClient} from "https://esm.sh/@supabase/supabase-js@2.95.0";
-import {buildPlan,publicPlanItem,summarize,STAGING_ORIGIN} from "./logic.mjs";
+import {buildPlan,publicPlanItem,summarize,STAGING_ORIGIN,parseContactsPage} from "./logic.mjs";
 const headers={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"authorization, x-client-info, apikey, content-type","Access-Control-Allow-Methods":"POST, OPTIONS","Cache-Control":"no-store"};
 const json=(status:number,body:unknown)=>new Response(JSON.stringify(body),{status,headers:{...headers,"Content-Type":"application/json"}});
 Deno.serve(async(req:Request)=>{
@@ -37,14 +37,43 @@ Deno.serve(async(req:Request)=>{
  }catch{return json(400,{error:"contacts_url_invalid"});}
  // Preview is intentionally bounded and read-only until complete, reliable
  // pagination and the vendor's non-destructive update API have been verified.
- const response=await fetch(endpoint.toString(),{headers:{"Accept":"application/json","X-Callconnect-Token":String(creds.api_key)},signal:AbortSignal.timeout(15000)});
- if(!response.ok)return json(502,{error:"contacts_lookup_failed",http_status:response.status});
- const raw:any=await response.json().catch(()=>null);
- const list=Array.isArray(raw)?raw:Array.isArray(raw?.contacts)?raw.contacts:Array.isArray(raw?.data)?raw.data:null;
- if(!list)return json(422,{error:"unknown_contacts_response_shape"});
- if(list.length>=100)return json(409,{error:"contacts_may_be_paginated_review_required"});
- if(list.some((item:any)=>!item||!String(item.id||"").match(/^[1-9][0-9]{0,17}$/)))
-   return json(422,{error:"contact_id_format_unverified"});
+ // The CallConnect REST API supports per_page/page for contacts.
+ // Scan every page; never show a partial match result as a complete inventory.
+ // Keep a hard cap to bound the request and fail closed if it is exceeded.
+ const list:any[]=[];
+ const ids=new Set<string>();
+ let finished=false;
+ for(let page=1;page<=10;page++){
+   const pageUrl=new URL(endpoint.toString());
+   pageUrl.searchParams.set("per_page","100");
+   pageUrl.searchParams.set("page",String(page));
+   const response=await fetch(pageUrl.toString(),{
+     headers:{"Accept":"application/json","X-Callconnect-Token":String(creds.api_key)},
+     signal:AbortSignal.timeout(15000)
+   }).catch(()=>null);
+   if(!response)return json(502,{error:"contacts_lookup_timeout",page});
+   if(!response.ok)return json(502,{error:"contacts_lookup_failed",http_status:response.status,page});
+   const raw:any=await response.json().catch(()=>null);
+   const batch=parseContactsPage(raw);
+   if(!batch)return json(422,{error:"unknown_contacts_response_shape",page});
+   if(batch.length>100)return json(422,{error:"unexpected_contacts_page_size",page});
+   for(const row of batch){
+     const id=String(row?.id??'').trim();
+     if(!/^[1-9][0-9]{0,17}$/.test(id))return json(422,{error:"contact_id_format_unverified",page});
+     if(ids.has(id))return json(409,{error:"contact_pagination_duplicate",page});
+     ids.add(id);
+     list.push(row);
+   }
+   const n=Number(raw?.total??raw?.total_count??raw?.pagination?.total??raw?.meta?.total);
+   const countKnown=Number.isInteger(n)&&n>=0;
+   const hasNext=Boolean(raw?.next_page||raw?.has_more===true||raw?.pagination?.next_page||raw?.pagination?.has_next);
+   if(batch.length<100&&!hasNext){
+     if(countKnown&&list.length<n)return json(409,{error:"contacts_pagination_incomplete",expected_total:n,received:list.length});
+     finished=true;
+     break;
+   }
+ }
+ if(!finished)return json(409,{error:"contacts_exceed_safe_scan_limit",limit:1000});
  const origin=Deno.env.get("QUOTEFLOW_CUSTOMER_LINK_ORIGIN")||STAGING_ORIGIN;
  let plan;
  try{plan=buildPlan(list,customers,contacts,origin);}catch{return json(422,{error:"contact_preview_validation_failed"});}
