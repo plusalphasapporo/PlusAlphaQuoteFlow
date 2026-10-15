@@ -6299,11 +6299,12 @@
     const role=bootData.context?.role;
     if(role!=='internal_admin') throw new Error('管理者のみ利用できます。');
 
-    const [company,cfg,docProfile,demoStatus,callconnectApi,openaiApi,teamviewerApi]=await Promise.all([
+    const [company,cfg,docProfile,demoStatus,demoCleanupPreview,callconnectApi,openaiApi,teamviewerApi]=await Promise.all([
       rpc('internal_company_settings'),
       rpc('internal_numbering_settings'),
       rpc('internal_document_profile'),
       rpc('internal_demo_seed_status'),
+      rpc('internal_demo_cleanup_preview'),
       rpc('callconnect_api_settings'),
       rpc('openai_settings'),
       rpc('teamviewer_api_settings')
@@ -6485,7 +6486,16 @@
       body=
         '<section class="card section">'+
           '<div class="formSectionHead"><span class="sectionNo">05</span><h2>デモデータ</h2></div>'+
-          '<p class="sectionDesc">機能確認用のデモデータです。削除してもログイン用デモアカウントと本データは残ります。</p>'+
+          '<p class="sectionDesc">既存シード以外のデモ顧客・問い合わせも含めた残存状況です。削除前に確認してください。</p>'+ 
+          '<div class="notice">DEMO-CUSTOMER / DEMO-HOKKAIDO / DEMO-MIRAI を含む全デモ顧客が対象です。旧データ98顧客・200商品は保持します。CallConnectの通話履歴は消さず、誤ったデモ顧客への紐づけだけを解除する必要があります。</div>'+ 
+          '<div class="grid" id="demoCleanupPreview">'+
+            '<div class="kpi"><div class="label">残存デモ顧客</div><div class="value">'+esc(demoCleanupPreview?.demo_customers??'—')+'</div></div>'+
+            '<div class="kpi"><div class="label">残存デモ商品</div><div class="value">'+esc(demoCleanupPreview?.demo_products??'—')+'</div></div>'+
+            '<div class="kpi"><div class="label">残存デモ案件</div><div class="value">'+esc(demoCleanupPreview?.demo_support_tickets??'—')+'</div></div>'+
+            '<div class="kpi"><div class="label">デモ専用ログイン</div><div class="value">'+esc(demoCleanupPreview?.demo_customer_users??'—')+'</div></div>'+
+            '<div class="kpi"><div class="label">移行済み顧客（保護）</div><div class="value">'+esc(demoCleanupPreview?.imported_customers??'—')+'</div></div>'+
+            '<div class="kpi"><div class="label">移行済み商品（保護）</div><div class="value">'+esc(demoCleanupPreview?.imported_products??'—')+'</div></div>'+
+          '</div>'+ 
           '<div class="grid">'+
             '<div class="kpi"><div class="label">顧客</div><div class="value">'+esc(demoStatus?.customers||0)+'</div></div>'+
             '<div class="kpi"><div class="label">見積</div><div class="value">'+esc(demoStatus?.quotes||0)+'</div></div>'+
@@ -6495,8 +6505,8 @@
             '<div class="kpi"><div class="label">問い合わせ</div><div class="value">'+esc(demoStatus?.support_tickets||0)+'</div></div>'+
           '</div>'+
           (demoStatus?.exists
-            ? '<div class="notice">Seed: '+esc(demoStatus.seed_key||'')+'<br>削除対象を確認してから実行してください。</div><button id="deleteDemoSeedBtn" class="orange" type="button">デモデータを一括削除</button>'
-            : '<div class="notice">現在、削除対象のデモデータはありません。</div>')+
+            ? '<div class="notice">旧シード: '+esc(demoStatus.seed_key||'')+'<br>この操作は旧シードの一部のみを削除します。全デモデータの削除ではありません。</div><button id="deleteDemoSeedBtn" class="orange" type="button">旧シードのみ削除</button>'
+            : '<div class="notice">旧シードはありません。上の全デモ件数で残存状態を確認してください。</div>')+
           '<div id="demoSeedMsg" class="notice hidden"></div>'+
         '</section>';
     }
@@ -6794,13 +6804,13 @@
     const deleteDemoBtn=$('#deleteDemoSeedBtn');
     if(deleteDemoBtn){
       deleteDemoBtn.onclick=async()=>{
-        const phrase=prompt('デモデータを削除します。確認のため「DELETE DEMO」と入力してください。');
+        const phrase=prompt('旧デモシードのみを削除します。DEMO-CUSTOMERや他のデモ案件・デモアカウントは残ります。確認のため「DELETE DEMO」と入力してください。');
         if(phrase!=='DELETE DEMO') return;
         deleteDemoBtn.disabled=true;
         try{
           await rpc('delete_demo_seed',{p_seed_key:demoStatus.seed_key});
-          notice('#demoSeedMsg','デモデータを削除しました。ログイン用デモアカウントと既存本データは残っています。',true);
-          toast('デモデータを削除しました');
+          notice('#demoSeedMsg','旧シードの一部を削除しました。全デモデータの削除は未完了です。',true);
+          toast('旧シードの一部を削除しました');
           setTimeout(()=>renderSettings('demo'),500);
         }catch(err){notice('#demoSeedMsg',err.message||String(err));}
         finally{deleteDemoBtn.disabled=false;}
