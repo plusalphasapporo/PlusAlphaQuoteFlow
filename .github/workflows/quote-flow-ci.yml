@@ -33,6 +33,9 @@ jobs:
       - name: Edge function preflight regression
         run: node --test tests/edge-functions.cors.test.mjs
 
+      - name: Demo cleanup preview regression
+        run: node --test tests/demo-cleanup-preview.test.mjs
+
       - name: Chrome browser workflow checks
         run: node scripts/validate-browser.mjs
 
