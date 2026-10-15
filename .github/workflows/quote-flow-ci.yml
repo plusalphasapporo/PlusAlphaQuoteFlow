@@ -36,6 +36,9 @@ jobs:
       - name: Demo cleanup preview regression
         run: node --test tests/demo-cleanup-preview.test.mjs
 
+      - name: Customer basics are immediately visible
+        run: node --test tests/customer-summary-visibility.test.mjs
+
       - name: Chrome browser workflow checks
         run: node scripts/validate-browser.mjs
 
