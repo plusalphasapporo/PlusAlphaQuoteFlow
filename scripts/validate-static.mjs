@@ -82,7 +82,10 @@ if (!fs.existsSync('assets/support-ticket-tabs.js')) {
     ['new-message editing guard', "function hasUnsentEdits("],
     ['pending message notification', "function showPendingMessage("],
     ['leave confirmation', "function confirmLeave("],
-    ['attachment input restoration', "input.dispatchEvent(new Event('change'"]
+    ['attachment input restoration', "input.dispatchEvent(new Event('change'"],
+    ['unsaved case-management fields captured', "'ticketProfileInternalNote','ticketProfilePriority','ticketProfileAssigned'"],
+    ['unsaved deadline fields captured', "'ticketProfileAsset','ticketProfileContract','ticketFirstResponseDue','ticketResolutionDue'"],
+    ['only committed edits cleared', "function clearSavedEdits(ticketId,values)"]
   ];
   for (const [name,needle] of navigationContracts) {
     if(!tabsSource.includes(needle)) failures.push('Support ticket UI contract missing: '+name);
@@ -94,7 +97,11 @@ if (!fs.existsSync('assets/support-ticket-tabs.js')) {
     ['back navigation uses shared route', "$('#ticketWorkspaceBack').onclick=()=>go(backPage)"],
     ['ticket close guard', "window.QuoteFlowTicketTabs?.confirmLeave(t.id)"],
     ['sidebar navigation guard', "window.QuoteFlowTicketTabs?.confirmLeave(activeTicketId)"],
-    ['cross-ticket unsent draft guard', "window.QuoteFlowTicketTabs?.hasUnsentEdits(previousId)"]
+    ['cross-ticket unsent draft guard', "window.QuoteFlowTicketTabs?.hasUnsentEdits(previousId)"],
+    ['case-management save clears saved edits', 'window.QuoteFlowTicketTabs?.clearSavedEdits(t.id,submittedProfile)'],
+    ['deadline save clears saved edits', 'window.QuoteFlowTicketTabs?.clearSavedEdits(t.id,submittedDeadlines)'],
+    ['restored first response due is preserved', "firstDue.dataset.ticketUnsaved!=='1'"],
+    ['restored resolution due is preserved', "resolutionDue.dataset.ticketUnsaved!=='1'"]
   ]) {
     if(!html.includes(needle)) failures.push('Ticket refresh integration missing: '+name);
   }
