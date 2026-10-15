@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import {createClient} from "https://esm.sh/@supabase/supabase-js@2.95.0";
-import {buildPlan,publicPlanItem,summarize,STAGING_ORIGIN,parseContactsPage,decideContactsPage} from "./logic.mjs";
+import {buildPlan,publicPlanItem,summarize,STAGING_ORIGIN,parseContactsPage,decideContactsPage,fingerprintPlanItem,remotePhones,prepareMemo} from "./logic.mjs";
 const headers={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"authorization, x-client-info, apikey, content-type","Access-Control-Allow-Methods":"POST, OPTIONS","Cache-Control":"no-store"};
 const json=(status:number,body:unknown)=>new Response(JSON.stringify(body),{status,headers:{...headers,"Content-Type":"application/json"}});
 Deno.serve(async(req:Request)=>{
@@ -19,7 +19,14 @@ Deno.serve(async(req:Request)=>{
  let claim:any={};try{claim=JSON.parse(atob(jwt.split(".")[1].replace(/-/g,"+").replace(/_/g,"/")));}catch{return json(401,{error:"invalid_session"});}
  if(claim.aal!=="aal2")return json(403,{error:"aal2_required"});
  let input:any={};try{input=await req.json();}catch{return json(400,{error:"invalid_json"});}
- if(input.mode!=="preview")return json(400,{error:"preview_only_no_writes"});
+ if(!["preview","apply"].includes(input.mode))return json(400,{error:"invalid_mode"});
+ // Never allow a remote write from the page load, poller or an implicit action.
+ // Only an internal administrator with MFA, an explicit selection and a
+ // separate user confirmation can reach the update code below.
+ if(input.mode==="apply" && (
+   input.confirmed!==true||!Array.isArray(input.targets)||
+   input.targets.length<1||input.targets.length>20
+ ))return json(400,{error:"explicit_confirmation_and_1_to_20_targets_required"});
  const [{data:cfg},{data:creds},{data:customers,error:ce},{data:contacts,error:pe}]=await Promise.all([
    admin.from("callconnect_config").select("contacts_api_url").eq("id","default").maybeSingle(),
    admin.rpc("callconnect_service_credentials"),
@@ -75,5 +82,99 @@ Deno.serve(async(req:Request)=>{
  const origin=Deno.env.get("QUOTEFLOW_CUSTOMER_LINK_ORIGIN")||STAGING_ORIGIN;
  let plan;
  try{plan=buildPlan(list,customers,contacts,origin);}catch{return json(422,{error:"contact_preview_validation_failed"});}
- return json(200,{ok:true,mode:"preview",write_enabled:false,contact_count:list.length,counts:summarize(plan),items:plan.map(publicPlanItem)});
+
+ if(input.mode==="preview"){
+   const items=await Promise.all(plan.map(async item=>{
+     const base=publicPlanItem(item);
+     return item.status==="eligible"
+       ? {...base,confirmation_token:await fingerprintPlanItem(item)}
+       : base;
+   }));
+   return json(200,{
+     ok:true,mode:"preview",write_enabled:true,requires_explicit_confirmation:true,
+     contact_count:list.length,counts:summarize(plan),items
+   });
+ }
+
+ // Approved contact IDs and hashes are untrusted hints. Recompute matches
+ // against fresh local and remote data, and re-GET each selected contact.
+ const selected=new Set<string>();
+ for(const target of input.targets){
+   const id=String(target?.contact_id??"").trim();
+   if(!/^[1-9][0-9]{0,17}$/.test(id)||
+      !/^[0-9a-f]{64}$/.test(String(target?.confirmation_token??""))||
+      selected.has(id))return json(400,{error:"invalid_or_duplicate_confirmation_target"});
+   selected.add(id);
+ }
+ const byId=new Map(plan.map(item=>[item.contact_id,item]));
+ const results:any[]=[];
+ const apiHeaders={
+   "Accept":"application/json",
+   "X-Callconnect-Token":String(creds.api_key)
+ };
+ for(const target of input.targets){
+   const id=String(target.contact_id);
+   const item=byId.get(id);
+   if(!item||item.status!=="eligible"||!item.next_memo||!item.customer_id){
+     results.push({contact_id:id,status:"not_eligible"});
+     continue;
+   }
+   const actualToken=await fingerprintPlanItem(item);
+   if(actualToken!==String(target.confirmation_token)){
+     results.push({contact_id:id,status:"preview_expired"});
+     continue;
+   }
+   const detailUrl=new URL(id,endpoint.toString().replace(/\/?$/,"/"));
+   const readDetail=async()=>{
+     const response=await fetch(detailUrl.toString(),{
+       headers:apiHeaders,signal:AbortSignal.timeout(15000)
+     }).catch(()=>null);
+     if(!response?.ok)return null;
+     const raw:any=await response.json().catch(()=>null);
+     const obj=raw?.contact??raw?.data??raw;
+     return obj&&typeof obj==="object"&&!Array.isArray(obj)&&String(obj.id)===id ? obj:null;
+   };
+   const before=await readDetail();
+   if(!before){
+     results.push({contact_id:id,status:"verification_failed"});
+     continue;
+   }
+   // Race/conflict check: only update if memo, phone and remote timestamp
+   // still match the full-inventory preview.
+   const currentPhones=remotePhones(before).sort();
+   const approvedPhones=[...(item.phones||[])].sort();
+   if(String(before.memo??"")!==String(item.existing_memo)||
+      JSON.stringify(currentPhones)!==JSON.stringify(approvedPhones)||
+      (item.remote_updated_at&&String(before.updated_at??"")!==item.remote_updated_at)){
+     results.push({contact_id:id,status:"remote_changed"});
+     continue;
+   }
+   if(prepareMemo(before.memo,{id:item.customer_id,customer_code:item.customer_code},item.link).status!=="eligible"){
+     results.push({contact_id:id,status:"memo_conflict"});
+     continue;
+   }
+   const form=new URLSearchParams();
+   form.set("memo",item.next_memo);
+   const response=await fetch(detailUrl.toString(),{
+     method:"PUT",
+     headers:{...apiHeaders,"Content-Type":"application/x-www-form-urlencoded"},
+     body:form.toString(),
+     signal:AbortSignal.timeout(15000)
+   }).catch(()=>null);
+   if(!response?.ok){
+     results.push({contact_id:id,status:"update_failed",http_status:response?.status||null});
+     continue;
+   }
+   const verified=await readDetail();
+   results.push({contact_id:id,status:verified&&String(verified.memo??"")===item.next_memo
+     ? "updated":"verification_pending"});
+ }
+ const counts:Record<string,number>={};
+ for(const item of results) counts[item.status]=(counts[item.status]||0)+1;
+ return json(200,{
+   ok:true,mode:"apply",contact_count:list.length,
+   updated_count:counts.updated||0,attempted_count:results.length,
+   counts,items:results
+ });
+
 });
