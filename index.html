@@ -2074,6 +2074,9 @@
 
     // Immediate startup, WebSocket notifications, and reconnect recovery.
     await checkUnread();
+    // Login can end while the first unread RPC is in flight. Do not reinstall
+    // polling/listeners/channels after sign-out cleanup has already run.
+    if(bootData?.context?.role!=='support_staff') return;
     callconnectNotificationResumeHandler=()=>{
       if(!document.hidden && bootData?.context?.role==='support_staff') void checkUnread();
     };
