@@ -989,6 +989,18 @@
   let callconnectNotificationResumeHandler=null;
   // Realtime delivers incoming calls; this slower poll is a fallback only.
   const CALLCONNECT_NOTIFICATION_FALLBACK_MS=60*1000;
+  let callconnectRealtimeState='idle';
+  function callconnectRealtimeStatusText(){
+    if(callconnectRealtimeState==='connected') return 'CallConnect：リアルタイム受信に接続しています。';
+    if(callconnectRealtimeState==='connecting') return 'CallConnect：リアルタイム接続を確認中です。';
+    if(callconnectRealtimeState==='fallback') return 'CallConnect：リアルタイム接続が不安定です。画面表示中は60秒ごとに未読を確認します。';
+    return 'CallConnect：通知受信の準備中です。';
+  }
+  function setCallconnectRealtimeState(next){
+    callconnectRealtimeState=next;
+    const indicator=$('#callconnectRealtimeIndicator');
+    if(indicator) indicator.textContent=callconnectRealtimeStatusText();
+  }
   let callconnectTranscriptSyncTimer=null;
   let callconnectTranscriptSyncRunning=false;
   let teamviewerStatusTimer=null;
@@ -2017,7 +2029,11 @@
     }
     const role=bootData?.context?.role;
     // The internal team does not receive CallConnect-originated alerts.
-    if(role!=='support_staff') return;
+    if(role!=='support_staff'){
+      setCallconnectRealtimeState('idle');
+      return;
+    }
+    setCallconnectRealtimeState('connecting');
 
     // A Realtime payload is only a signal. Get the actual notification from
     // the role-checked RPC before displaying any customer or phone details.
@@ -2076,7 +2092,10 @@
     await checkUnread();
     // Login can end while the first unread RPC is in flight. Do not reinstall
     // polling/listeners/channels after sign-out cleanup has already run.
-    if(bootData?.context?.role!=='support_staff') return;
+    if(bootData?.context?.role!=='support_staff'){
+      setCallconnectRealtimeState('idle');
+      return;
+    }
     callconnectNotificationResumeHandler=()=>{
       if(!document.hidden && bootData?.context?.role==='support_staff') void checkUnread();
     };
@@ -2100,8 +2119,12 @@
         if(currentPage==='support_callconnect') await renderSupportCallConnect();
       })
       .subscribe(status=>{
-        if(status==='SUBSCRIBED') void checkUnread();
-        else if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'||status==='CLOSED'){
+        if(bootData?.context?.role!=='support_staff') return;
+        if(status==='SUBSCRIBED'){
+          setCallconnectRealtimeState('connected');
+          void checkUnread();
+        }else if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'||status==='CLOSED'){
+          setCallconnectRealtimeState('fallback');
           console.warn('CallConnect Realtime status:',status);
           // Fallback polling plus foreground/online refresh cover interruptions.
         }
@@ -2538,6 +2561,7 @@
       host.innerHTML=
         '<div class="notice"><strong>未読・要対応</strong><p class="sectionDesc" style="margin:6px 0 0">'+esc(summary)+'</p>'+
           '<small>通知を選ぶと案件カルテに直接移動します。既読は案件を開いた時点で記録されます。</small></div>'+
+        (support?'<div id="callconnectRealtimeIndicator" role="status" class="notice" style="margin-top:10px">'+esc(callconnectRealtimeStatusText())+'</div>':'')+
         (display.length
           ? '<div class="col" style="display:grid;gap:9px;margin-top:12px">'+display.map((entry,index)=>
               '<button type="button" class="card unifiedNotificationOpen" data-index="'+index+'" style="display:block;width:100%;text-align:left;cursor:pointer;padding:14px">'+
@@ -15972,6 +15996,8 @@
           window.removeEventListener('online',callconnectNotificationResumeHandler);
           callconnectNotificationResumeHandler=null;
         }
+        setCallconnectRealtimeState('idle');
+        lastCallConnectPopupId='';
         if(deadlineWatchTimer){
           clearInterval(deadlineWatchTimer);
           deadlineWatchTimer=null;
