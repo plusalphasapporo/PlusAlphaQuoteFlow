@@ -23,3 +23,6 @@ jobs:
 
       - name: Validate production HTML
         run: node scripts/validate-static.mjs
+
+      - name: Build staging preview
+        run: node scripts/build-staging-preview.mjs
