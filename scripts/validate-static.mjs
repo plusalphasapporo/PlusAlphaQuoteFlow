@@ -38,6 +38,31 @@ if (!match) {
   }
 }
 
+// Ensure the brand image referenced by both entry points is actually deployed.
+const logoPath = 'assets/quoteflow-mark.png';
+const logoReferenceCount = (html.match(/src="\/assets\/quoteflow-mark\.png"/g) || []).length;
+if (logoReferenceCount < 2) {
+  failures.push('Logo must appear in both the application header and login screen');
+}
+if (!html.includes('rel="icon" type="image/png" href="/assets/quoteflow-mark.png"')) {
+  failures.push('QuoteFlow favicon reference is missing');
+}
+if (!fs.existsSync(logoPath)) {
+  failures.push('QuoteFlow logo asset is missing');
+} else {
+  const logo = fs.readFileSync(logoPath);
+  const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  if (logo.length < 24 || !logo.subarray(0, 8).equals(pngSignature)) {
+    failures.push('QuoteFlow logo asset is not a valid PNG header');
+  } else {
+    const width = logo.readUInt32BE(16);
+    const height = logo.readUInt32BE(20);
+    if (width < 64 || height < 64 || width > 4096 || height > 4096) {
+      failures.push('QuoteFlow logo dimensions are outside supported bounds');
+    }
+  }
+}
+
 if (failures.length) {
   console.error('\nQuoteFlow static validation failed:\n- ' + failures.join('\n- '));
   process.exit(1);
