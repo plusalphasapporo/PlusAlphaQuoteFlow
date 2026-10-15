@@ -2319,8 +2319,13 @@
 
         if(isActive){
           try{
-            await renderTicketDetail(msg.ticket_id);
-            setTimeout(()=>{const list=$('#ticketMessageList');if(list?.closest('.ticketWorkspacePane')?.hidden){toast(label+'：新しいメッセージがあります（連絡・返信タブで確認）');}else{window.QuoteFlowTicketTabs?.revealAndScroll(list,{behavior:'smooth',block:'end'});}},120);
+            if(window.QuoteFlowTicketTabs?.hasUnsentEdits(msg.ticket_id)){
+              window.QuoteFlowTicketTabs.showPendingMessage(msg.ticket_id,label,()=>renderTicketDetail(msg.ticket_id));
+              toast(label+'：入力途中の内容は保持しました。「連絡・返信」で確認できます。');
+            }else{
+              await renderTicketDetail(msg.ticket_id);
+              setTimeout(()=>{const list=$('#ticketMessageList');if(list?.closest('.ticketWorkspacePane')?.hidden){toast(label+'：新しいメッセージがあります（連絡・返信タブで確認）');}else{window.QuoteFlowTicketTabs?.revealAndScroll(list,{behavior:'smooth',block:'end'});}},120);
+            }
           }catch(err){
             console.error('Realtime message refresh failed',err);
           }
@@ -8746,6 +8751,7 @@
         '<div id="ticketActionMsg" class="notice hidden"></div>'
       : '';
 
+    const ticketInProgressSnapshot=window.QuoteFlowTicketTabs?.captureInProgress(t.id);
     $('#ticketDetailHost').innerHTML=
       '<section class="card section">'+
         '<div class="quoteDetailHead"><div><h2>サポート案件カルテ</h2><p class="sectionDesc">'+esc(t.ticket_number||'—')+' / '+supportRequestTypeLabel(t.request_type)+' / '+esc(t.subject||'')+'</p></div><button id="ticketDetailClose" class="ghost" type="button">閉じる</button></div>'+
@@ -10908,6 +10914,10 @@
           });
         }
         clearSupportDraft(t.id,'message');
+        // Prevent already-sent files from being restored during the next re-render.
+        messagePendingFiles=[];
+        syncMessageFileInput();
+        refreshMessageFileList();
         const destinationLabel=visibility==='customer'?'顧客':visibility==='support'?'サポート会社':'自社内メモ';
         notice('#ticketMessageMsg',destinationLabel+'へ'+(visibility==='internal'?'保存':'送信')+'しました。'+(useRelease?' 担当を解除しました。':'')+(files.length?' 添付 '+files.length+'件を追加しました。':''),true);
         toast(useRelease?'返信完了・担当を解除しました':destinationLabel+'へ'+(visibility==='internal'?'保存しました':'送信しました'));
@@ -11284,6 +11294,7 @@
       }
     }
 
+    window.QuoteFlowTicketTabs?.restoreInProgress(t.id,ticketInProgressSnapshot);
     if(internal){
       const deadlineSave=$('#ticketDeadlineSave');
       if(deadlineSave){
