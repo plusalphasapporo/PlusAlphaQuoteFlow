@@ -15,7 +15,8 @@ assert.ok(start>=0&&end>start,'Notification center source must be present');
 const body=source.slice(start,end);
 assert.match(source, /\$\('#notificationBtn'\)\.onclick=async\(\)=>\{\s*if\(\['support_staff','internal_admin','internal_staff'\]\.includes\(role\)\)\{\s*return openUnifiedNotificationCenter\(\)/);
 assert.match(source, /The internal team does not receive CallConnect-originated alerts\./);
-assert.match(source, /if\(role!=='support_staff'\) return;/);
+assert.match(source, /if\(role!=='support_staff'\)\s*\{/);
+assert.match(source, /setCallconnectRealtimeState\('idle'\);/);
 assert.match(source, /const checkUnread=async\(preferredId=null\)=>/);
 assert.doesNotMatch(source, /setInterval\(checkUnread,1000\)/);
 const migration=fs.readFileSync('supabase/migrations/20261014070500_internal_non_callconnect_ticket_notifications.sql','utf8');
@@ -52,6 +53,7 @@ function build(role, responses={}){
     document:doc,
     $:selector=>doc.querySelector(selector),
     esc,dateTimeText:v=>String(v||''),
+    callconnectRealtimeStatusText:()=> 'CallConnect：リアルタイム受信に接続しています。',
     mountAppModal:(html)=>{
       doc.querySelector('#appModalLayer')?.remove();
       doc.body.insertAdjacentHTML('beforeend','<div id="appModalLayer">'+html+'</div>');
@@ -105,6 +107,7 @@ function build(role, responses={}){
   assert.equal(h.doc.querySelector('#unifiedNotificationBody script'),null,'Notification text must be escaped');
   assert.ok(!h.rpcCalls.some(x=>x.name==='callconnect_unread_notifications'),'Internal never queries CallConnect alerts');
   assert.ok(!h.labels().some(x=>x.includes('CallConnect')),'Internal center has no CallConnect category');
+  assert.equal(h.doc.querySelector('#callconnectRealtimeIndicator'),null,'Internal users do not receive CallConnect status');
   await h.click('サポート引き継ぎ');
   assert.deepEqual(h.navigation.at(-1),{ticketId:id2});
   assert.ok(h.rpcCalls.some(x=>x.name==='mark_internal_handoff_read'&&x.args.p_handoff_id==='h1'));
@@ -137,6 +140,7 @@ function build(role, responses={}){
   });
   await h.ctx.openCenter();
   assert.equal(h.labels().length,4,'Support center combines all entry types');
+  assert.match(h.doc.querySelector('#callconnectRealtimeIndicator')?.textContent||'',/リアルタイム受信に接続しています/);
   assert.ok(h.labels().some(x=>x.includes('CallConnect')),'Support receives CallConnect alerts');
   assert.ok(h.labels().some(x=>x.includes('顧客A')));
   assert.ok(h.labels().some(x=>x.includes('顧客B')));
