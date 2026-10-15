@@ -8849,6 +8849,12 @@
         '</div><div id="ticketAttachmentGallery" class="attachmentGallery"></div>'+dataTable(['ファイル名','送信元','公開範囲','サイズ(bytes)','作成日'],attachmentRows)+'<div id="ticketAttachmentMsg" class="notice hidden"></div></section>'+
       '</section>';
 
+    window.QuoteFlowTicketTabs?.mount({
+      ticketId:t.id,role,nextTarget:supportPrimaryStep.target,
+      title:cust?.name||'顧客未登録',ticket:t.ticket_number||'—',subject:t.subject||'',
+      assignee:support?'サポート担当 '+supportAssigneeLabel(assignmentState):'自社担当 '+(t.assigned_internal_user_name||'未設定'),
+      stage:supportStageLabel(supportStage||((t.status==='closed')?'completed':'unhandled'))
+    });
     $('#ticketDetailClose').onclick=()=>{activeTicketId=null;$('#ticketDetailHost').innerHTML='';};
     $('#ticketDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
     const ticketCallAiSummary=$('#ticketCallAiSummary');
@@ -8941,7 +8947,7 @@
           await uploadSupportAttachments(t.id,files,internal?'internal':'support');
           toast('解析用写真を追加しました');
           await renderTicketDetail(t.id);
-          setTimeout(()=>$('#ticketAiIncidentSection')?.scrollIntoView({behavior:'smooth',block:'start'}),150);
+          setTimeout(()=>window.QuoteFlowTicketTabs?.revealAndScroll($('#ticketAiIncidentSection'),{behavior:'smooth',block:'start'}),150);
         }catch(err){
           notice('#ticketAiIncidentMsg',err.message||String(err));
         }
@@ -9220,7 +9226,7 @@
     $('#ticketMessageLatest')?.addEventListener('click',()=>{
       const cards=[...document.querySelectorAll('.ticketMessageCard:not(.hidden)')];
       const target=cards[cards.length-1]||document.querySelector('.ticketMessageCard:last-of-type');
-      target?.scrollIntoView({behavior:'smooth',block:'center'});
+      window.QuoteFlowTicketTabs?.revealAndScroll(target,{behavior:'smooth',block:'center'});
     });
     if(newestMessageAt){
       setTimeout(()=>setMessageSeenAt(t.id,new Date(newestMessageAt).toISOString()),600);
@@ -9244,7 +9250,7 @@
       updateMessageVisibilityBanner();
       messageVisibilityEl?.dispatchEvent(new Event('change',{bubbles:true}));
       messageBodyEl.focus();
-      messageBodyEl.scrollIntoView({behavior:'smooth',block:'center'});
+      window.QuoteFlowTicketTabs?.revealAndScroll(messageBodyEl,{behavior:'smooth',block:'center'});
       toast('返信先を設定しました');
     });
     document.querySelectorAll('.ticketMessageCopy').forEach(btn=>btn.onclick=async()=>{
@@ -9257,7 +9263,7 @@
     if(internal){
       const internalJump=(selector)=>{
         const el=$(selector);
-        if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
+        if(el) window.QuoteFlowTicketTabs?.revealAndScroll(el,{behavior:'smooth',block:'start'});
       };
       const primary=$('#internalTicketPrimaryAction');
       if(primary) primary.onclick=()=>{
@@ -9314,7 +9320,7 @@
     if(support){
       const jump=(selector)=>{
         const el=$(selector);
-        if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
+        if(el) window.QuoteFlowTicketTabs?.revealAndScroll(el,{behavior:'smooth',block:'start'});
       };
       const topPrimaryAction=$('#supportTopPrimaryAction');
       if(topPrimaryAction) topPrimaryAction.onclick=()=>$('#supportPrimaryNext')?.click();
@@ -9664,7 +9670,7 @@
           setTimeout(()=>{
             const note=document.querySelector('.ticketAssistStepNote[data-step="'+firstPending.dataset.step+'"]');
             (note||firstPending)?.focus();
-            firstPending.scrollIntoView({behavior:'smooth',block:'center'});
+            window.QuoteFlowTicketTabs?.revealAndScroll(firstPending,{behavior:'smooth',block:'center'});
           },250);
           return;
         }
@@ -9702,7 +9708,7 @@
         setTimeout(()=>{
           const first=isIncident?$('#classifyOccurredAt'):$('#classifyRequested');
           (first||$('#ticketClassificationSave'))?.focus();
-          panel.scrollIntoView({behavior:'smooth',block:'center'});
+          window.QuoteFlowTicketTabs?.revealAndScroll(panel,{behavior:'smooth',block:'center'});
         },120);
         $('#ticketClassificationSave').onclick=async()=>{
           const btn=$('#ticketClassificationSave'); btn.disabled=true;
@@ -9726,7 +9732,7 @@
           }catch(err){notice('#ticketClassificationMsg',err.message||String(err));}
           finally{btn.disabled=false;}
         };
-        panel.scrollIntoView({behavior:'smooth',block:'center'});
+        window.QuoteFlowTicketTabs?.revealAndScroll(panel,{behavior:'smooth',block:'center'});
       };
       if(actionIncident) actionIncident.onclick=()=>openClassification('incident');
       if(actionSetting) actionSetting.onclick=()=>openClassification('setting_request');
@@ -10218,7 +10224,7 @@
           if(remote && !remote.value.trim()){
             remote.value='有力な解決候補が見つからないため、TeamViewerで現象・設定・エラー内容を直接確認する';
           }
-          $('#supportRemoteWorkspace')?.scrollIntoView({behavior:'smooth',block:'start'});
+          window.QuoteFlowTicketTabs?.revealAndScroll($('#supportRemoteWorkspace'),{behavior:'smooth',block:'start'});
           setTimeout(()=>($('#ticketRemoteAction')||$('#ticketTeamViewerCreate'))?.focus(),250);
           toast('TeamViewer確認へ移動しました');
         };
@@ -10236,7 +10242,7 @@
             $('#ticketHandoffBox')?.classList.remove('hidden');
             if($('#handoffReason')) $('#handoffReason').value='再検索でも有力な解決候補が見つからないため';
             if($('#handoffNextAction')) $('#handoffNextAction').value='自社管理者で詳細確認し、追加調査または現地対応要否を判断';
-            $('#ticketHandoffBox')?.scrollIntoView({behavior:'smooth',block:'center'});
+            window.QuoteFlowTicketTabs?.revealAndScroll($('#ticketHandoffBox'),{behavior:'smooth',block:'center'});
           }
         };
 
@@ -10402,7 +10408,7 @@
             if(search){
               search.value=retryTerms;
               search.dispatchEvent(new Event('input',{bubbles:true}));
-              search.scrollIntoView({behavior:'smooth',block:'center'});
+              window.QuoteFlowTicketTabs?.revealAndScroll(search,{behavior:'smooth',block:'center'});
             }
             await rpc('post_ticket_message',{
               p_ticket_id:t.id,
@@ -10453,14 +10459,14 @@
           const pending=[...document.querySelectorAll('.ticketAssistStepCheck')].find(x=>!x.checked);
           if(pending){
             const idx=Number(pending.dataset.step||0);
-            document.querySelector('[data-step-item="'+idx+'"]')?.scrollIntoView({behavior:'smooth',block:'center'});
+            window.QuoteFlowTicketTabs?.revealAndScroll(document.querySelector('[data-step-item="'+idx+'"]'),{behavior:'smooth',block:'center'});
             toast('未完了の手順があります');
             return;
           }
           assistGoReport.disabled=true;
           try{
             await persistAssistStepState();
-            $('#supportReportWorkspace')?.scrollIntoView({behavior:'smooth',block:'center'});
+            window.QuoteFlowTicketTabs?.revealAndScroll($('#supportReportWorkspace'),{behavior:'smooth',block:'center'});
             setTimeout(()=>$('#ticketAssistSolved')?.click(),220);
           }catch(err){
             toast(err.message||String(err));
@@ -10504,7 +10510,7 @@
           }
           const nextAction=$('#ticketMessageNextAction');
           if(nextAction) nextAction.value='customer_reply_waiting';
-          body?.scrollIntoView({behavior:'smooth',block:'center'});
+          window.QuoteFlowTicketTabs?.revealAndScroll(body,{behavior:'smooth',block:'center'});
           setTimeout(()=>body?.focus(),250);
           toast('顧客向け返信欄に対応候補を下書きしました');
         };
@@ -10517,7 +10523,7 @@
             remote.dispatchEvent(new Event('input',{bubbles:true}));
           }
           const panel=$('#supportRemoteWorkspace');
-          panel?.scrollIntoView({behavior:'smooth',block:'start'});
+          window.QuoteFlowTicketTabs?.revealAndScroll(panel,{behavior:'smooth',block:'start'});
           setTimeout(()=>($('#ticketRemoteAction')||$('#ticketTeamViewerCreate'))?.focus(),250);
           toast(remote?'TeamViewerの対応内容に反映しました':'TeamViewer欄を開きました');
         };
@@ -10529,7 +10535,7 @@
           if(!body) return;
           body.value='【'+String(article.title||'ナレッジ')+'】\n'+String(article.body||'');
           body.focus();
-          body.scrollIntoView({behavior:'smooth',block:'center'});
+          window.QuoteFlowTicketTabs?.revealAndScroll(body,{behavior:'smooth',block:'center'});
           toast('返信欄にナレッジを下書きしました');
         });
 
@@ -10553,7 +10559,7 @@
         $('#ticketHandoffBox')?.classList.remove('hidden');
         if($('#handoffReason') && !$('#handoffReason').value) $('#handoffReason').value='AI・ナレッジ・マニュアルおよび遠隔対応で解決できないため';
         if($('#handoffNextAction') && !$('#handoffNextAction').value) $('#handoffNextAction').value='自社担当者で詳細調査・現地対応要否を判断';
-        $('#ticketHandoffBox')?.scrollIntoView({behavior:'smooth',block:'center'});
+        window.QuoteFlowTicketTabs?.revealAndScroll($('#ticketHandoffBox'),{behavior:'smooth',block:'center'});
         setTimeout(()=>$('#handoffReason')?.focus(),180);
       };
 
@@ -10925,7 +10931,7 @@
           const firstPendingIndex=procedureState.findIndex(x=>!x.done);
           const target=document.querySelector('[data-step-item="'+firstPendingIndex+'"]')||
             document.querySelector('.ticketAssistStepCheck[data-step="'+firstPendingIndex+'"]');
-          target?.scrollIntoView({behavior:'smooth',block:'center'});
+          window.QuoteFlowTicketTabs?.revealAndScroll(target,{behavior:'smooth',block:'center'});
           setTimeout(()=>document.querySelector('.ticketAssistStepNote[data-step="'+firstPendingIndex+'"]')?.focus(),220);
           toast('未完了の対応手順があります。手順を完了してから作業報告へ進んでください。');
           return;
@@ -11197,7 +11203,7 @@
             toast('引継ぎを受理しました。自社対応を開始します。');
             await renderTicketDetail(t.id);
             setTimeout(()=>{
-              $('#internalHandoffWorkspace')?.scrollIntoView({behavior:'smooth',block:'start'});
+              window.QuoteFlowTicketTabs?.revealAndScroll($('#internalHandoffWorkspace'),{behavior:'smooth',block:'start'});
               setTimeout(()=>$('#internalHandoffResult')?.focus(),220);
             },120);
           }catch(err){notice('#internalHandoffMsg',err.message||String(err));}
@@ -11208,7 +11214,7 @@
         if(primaryAccept) primaryAccept.onclick=()=>acceptInternalHandoff(primaryAccept,primaryAccept.dataset.id);
 
         document.querySelectorAll('.handoffWorkOpen').forEach(btn=>btn.onclick=()=>{
-          $('#internalHandoffWorkspace')?.scrollIntoView({behavior:'smooth',block:'start'});
+          window.QuoteFlowTicketTabs?.revealAndScroll($('#internalHandoffWorkspace'),{behavior:'smooth',block:'start'});
           setTimeout(()=>$('#internalHandoffResult')?.focus(),220);
         });
 
@@ -11303,6 +11309,7 @@
         };
       }
       await appendEntityAuditHistory('#ticketDetailHost','support_ticket',t.id);
+      window.QuoteFlowTicketTabs?.moveAudit(t.id);
     }
   }
 
@@ -15490,5 +15497,6 @@
   healthTimer=setInterval(checkHealth,60000);
   await boot();
 </script>
+<script src="/assets/support-ticket-tabs.js"></script>
 </body>
 </html>
