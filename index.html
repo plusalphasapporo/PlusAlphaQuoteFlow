@@ -14055,7 +14055,7 @@
               ?'<input class="callconnectAutoLinksSelect" type="checkbox" data-contact-id="'+esc(x.contact_id)+'" checked aria-label="'+esc(x.contact_name||'連絡先')+'の更新を選択">'
               :'<span class="muted">—</span>')+'</td>'+
             '<td>'+esc(x.contact_name||'—')+'</td><td>'+esc(x.masked_phone||'—')+'</td>'+
-            '<td>'+esc(x.customer_name||'—')+'</td><td>'+esc(names[x.status]||x.status)+'</td></tr>');
+            '<td>'+esc(x.customer_name||'—')+'</td><td>'+esc(names[x.status]||x.status)+' <button type="button" class="ghost callconnectAutoLinkInspect" data-contact-id="'+esc(x.contact_id)+'">詳細照合</button></td></tr>');
           host.innerHTML='<div class="notice"><strong>照合完了：この時点では更新していません</strong>'+
             '<p>取得 '+esc(data.contact_count||0)+' 件。電話番号が1社だけ一致し、既存メモに競合のない連絡先のみ候補にしています。</p></div>'+
             '<div class="modalGrid3">'+summary+'</div>'+
@@ -14066,6 +14066,30 @@
                 '<button type="button" class="primary" id="callconnectAutoLinksApply">選択した連絡先にURLを追記</button>'+
                 '<div id="callconnectAutoLinksApplyResult" role="status"></div></div>'
               :'');
+          host.querySelectorAll('.callconnectAutoLinkInspect').forEach(btn=>btn.onclick=async()=>{
+            const contactId=String(btn.dataset.contactId||'');
+            btn.disabled=true;
+            const prior=btn.textContent;
+            btn.textContent='確認中...';
+            try{
+              const {data:result,error}=await supabase.functions.invoke('callconnect-contact-link-sync',{
+                body:{mode:'inspect',contact_id:contactId}
+              });
+              if(error)throw error;
+              if(!result?.ok)throw new Error(result?.error||'診断結果を取得できませんでした');
+              const labels={detail_consistent:'一致（読み取り専用確認済み）',
+                detail_phone_mismatch:'一覧と詳細の電話番号が異なります',
+                detail_id_mismatch:'連絡先IDが一致しません',
+                detail_memo_missing:'詳細側にメモ欄がありません',
+                detail_updated_since_list:'一覧取得後に変更されています',
+                list_memo_missing:'一覧にメモ欄がありません',
+                detail_memo_changed_since_list:'一覧と詳細のメモが異なります',
+                detail_requires_manual_review:'要確認'};
+              btn.textContent=labels[result.status]||'要確認';
+            }catch(err){
+              btn.textContent='詳細確認に失敗';
+            }finally{btn.disabled=false;}
+          });
           const applyBtn=host.querySelector('#callconnectAutoLinksApply');
           if(applyBtn){
             applyBtn.onclick=async()=>{
