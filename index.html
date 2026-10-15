@@ -14045,15 +14045,59 @@
           if(!data?.ok) throw new Error(data?.error||'照合結果を確認できませんでした');
           const names={eligible:'URL追記候補',already_linked:'登録済み',conflict_link:'別リンク・競合',
             ambiguous_customer:'複数顧客と一致',duplicate_remote_phone:'CallConnect側の番号重複',
+            multiple_remote_phones:'複数番号のため確認待ち',
             unmatched:'該当なし',no_phone:'電話番号なし',invalid_contact_id:'連絡先ID形式不明',memo_too_long:'メモ長さ超過'};
           const c=data.counts||{};
           const summary=Object.entries(names).map(([k,v])=>'<div class="item"><strong>'+esc(v)+'</strong><span style="float:right">'+esc(c[k]||0)+' 件</span></div>').join('');
+          const eligible=(data.items||[]).filter(x=>x.status==='eligible'&&x.confirmation_token);
           const rows=(data.items||[]).map(x=>
-            '<tr><td>'+esc(x.contact_name||'—')+'</td><td>'+esc(x.masked_phone||'—')+'</td>'+
+            '<tr><td>'+(x.status==='eligible'&&x.confirmation_token
+              ?'<input class="callconnectAutoLinksSelect" type="checkbox" data-contact-id="'+esc(x.contact_id)+'" checked aria-label="'+esc(x.contact_name||'連絡先')+'の更新を選択">'
+              :'<span class="muted">—</span>')+'</td>'+
+            '<td>'+esc(x.contact_name||'—')+'</td><td>'+esc(x.masked_phone||'—')+'</td>'+
             '<td>'+esc(x.customer_name||'—')+'</td><td>'+esc(names[x.status]||x.status)+'</td></tr>');
-          host.innerHTML='<div class="notice"><strong>プレビューのみ：更新は行っていません</strong><p>取得 '+esc(data.contact_count||0)+' 件。顧客が1社だけ一致するものだけをURL追記候補にしています。</p></div>'+
+          host.innerHTML='<div class="notice"><strong>照合完了：この時点では更新していません</strong>'+
+            '<p>取得 '+esc(data.contact_count||0)+' 件。電話番号が1社だけ一致し、既存メモに競合のない連絡先のみ候補にしています。</p></div>'+
             '<div class="modalGrid3">'+summary+'</div>'+
-            '<div style="margin-top:12px">'+dataTable(['CallConnect連絡先','電話番号（末尾のみ）','QuoteFlow顧客','判定'],rows)+'</div>';
+            '<div style="margin-top:12px">'+dataTable(['選択','CallConnect連絡先','電話番号（末尾のみ）','QuoteFlow顧客','判定'],rows)+'</div>'+
+            (eligible.length&&data.write_enabled
+              ?'<div class="notice" style="margin-top:12px"><strong>実際のCallConnect連絡先を変更します</strong>'+
+                '<p>選択した連絡先の既存メモは残したままQuoteFlowのURLを追記します。画面上で確認してから実行してください。競合・重複は更新しません。</p>'+
+                '<button type="button" class="primary" id="callconnectAutoLinksApply">選択した連絡先にURLを追記</button>'+
+                '<div id="callconnectAutoLinksApplyResult" role="status"></div></div>'
+              :'');
+          const applyBtn=host.querySelector('#callconnectAutoLinksApply');
+          if(applyBtn){
+            applyBtn.onclick=async()=>{
+              const chosen=[...host.querySelectorAll('.callconnectAutoLinksSelect:checked')].map(box=>
+                eligible.find(x=>String(x.contact_id)===String(box.dataset.contactId))
+              ).filter(Boolean);
+              if(!chosen.length)return toast('更新する連絡先を選択してください。');
+              if(chosen.length>20)return toast('1回の更新は20件までです。');
+              if(!window.confirm('実際のCallConnectの顧客メモを'+chosen.length+
+                '件変更します。元のメモを維持してQuoteFlowのURLを追記します。実行しますか？'))return;
+              applyBtn.disabled=true;
+              const resultHost=host.querySelector('#callconnectAutoLinksApplyResult');
+              resultHost.textContent='選択した連絡先を確認して更新しています...';
+              try{
+                const targets=chosen.map(x=>({contact_id:x.contact_id,confirmation_token:x.confirmation_token}));
+                const {data:result,error:applyError}=await supabase.functions.invoke('callconnect-contact-link-sync',{
+                  body:{mode:'apply',confirmed:true,targets}
+                });
+                if(applyError)throw applyError;
+                if(!result?.ok)throw new Error(result?.error||'更新処理に失敗しました');
+                const updated=Number(result.updated_count||0);
+                const remaining=Number(result.attempted_count||0)-updated;
+                resultHost.textContent='更新完了 '+updated+'件 / 未更新・再確認 '+remaining+
+                  '件。CallConnect画面を確認し、照合結果を再取得してください。';
+                if(updated)toast('CallConnectの連絡先URLを'+updated+'件更新しました。');
+                host.querySelectorAll('.callconnectAutoLinksSelect').forEach(x=>x.disabled=true);
+              }catch(err){
+                resultHost.textContent='更新処理を確認できませんでした：'+String(err.message||err)+
+                  '。CallConnect側を確認してから再度プレビューしてください。';
+              }finally{applyBtn.disabled=false;}
+            };
+          }
         }catch(err){
           host.textContent='照合結果を取得できませんでした：'+String(err.message||err);
         }finally{
