@@ -3824,6 +3824,59 @@
     return x.toISOString().slice(0,10);
   }
 
+  // The customer URL is a navigation hint, not an access token.
+  const CALLCONNECT_CUSTOMER_QUERY='qf_customer';
+  const CALLCONNECT_STAGING_ORIGIN='https://quoteflow-cloud-staging-git-5459e1-nijiiroclassflat-s-projects.vercel.app';
+  const CALLCONNECT_CUSTOMER_ID_RE=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  function callconnectCustomerLink(customerId){
+    const id=String(customerId||'').trim();
+    if(!CALLCONNECT_CUSTOMER_ID_RE.test(id)) throw new Error('有効な顧客IDではありません。');
+    // Use the stable staging alias, not a per-commit Vercel preview URL.
+    const origin=window.location.hostname.startsWith('quoteflow-cloud-staging')
+      ? CALLCONNECT_STAGING_ORIGIN
+      : window.location.origin;
+    const url=new URL('/',origin);
+    url.searchParams.set(CALLCONNECT_CUSTOMER_QUERY,id);
+    return url.href;
+  }
+  function removeCallconnectCustomerQuery(){
+    const url=new URL(window.location.href);
+    url.searchParams.delete(CALLCONNECT_CUSTOMER_QUERY);
+    window.history.replaceState(window.history.state,'',url.pathname+url.search+url.hash);
+  }
+  async function openCallconnectCustomerDeepLink(){
+    const url=new URL(window.location.href);
+    if(!url.searchParams.has(CALLCONNECT_CUSTOMER_QUERY)) return false;
+    const id=String(url.searchParams.get(CALLCONNECT_CUSTOMER_QUERY)||'').trim();
+    const role=bootData?.context?.role;
+    // Login and MFA must succeed before accepting any navigation request.
+    if(!role) return false;
+    removeCallconnectCustomerQuery();
+    if(!CALLCONNECT_CUSTOMER_ID_RE.test(id)){
+      toast('CallConnectの顧客リンクが正しくありません。');
+      return false;
+    }
+    if(!['internal_admin','internal_staff','support_staff'].includes(role)){
+      toast('この顧客カルテを開く権限がありません。');
+      return false;
+    }
+    try{
+      if(role==='support_staff'){
+        await go('support_customers');
+        await showSupportCustomerDetail(id);
+      }else{
+        await go('customers');
+        if(!$('#customerDetailHost')) throw new Error('顧客一覧を読み込めませんでした。');
+        await renderCustomerDetail(id,'overview');
+      }
+      return true;
+    }catch(err){
+      toast('顧客カルテを開けませんでした。権限・通信状態を確認してください。');
+      console.warn('CallConnect customer link navigation failed',err);
+      return false;
+    }
+  }
+
   async function syncCustomerToCallConnect(customerId,{silent=false}={}){
     if(!customerId) return null;
     const {data,error}=await supabase.functions.invoke('callconnect-contact-sync',{
@@ -3837,7 +3890,7 @@
       if(data?.skipped&&data?.reason==='no_phone') toast('CallConnect同期：電話番号未登録のためスキップしました');
       else if(data?.failed_count>0) toast('CallConnect同期：一部失敗しました');
       else if(data?.created_count>0) toast('CallConnectへ顧客情報を同期しました');
-      else if(data?.duplicate_count>0) toast('CallConnect：登録済み電話番号を確認しました');
+      else if(data?.duplicate_count>0) toast('CallConnectは登録済みです。「CallConnect用リンクをコピー」から顧客メモへ貼り付けてください。');
     }
     return data||null;
   }
@@ -4954,7 +5007,8 @@
             '<div><h2>顧客カルテ</h2><p class="sectionDesc">'+esc(c.customer_code||'—')+' / '+esc(c.name||'')+(c.trade_name?' / '+esc(c.trade_name):'')+'</p></div>'+
             '<div class="row">'+
               '<button id="customerOverviewNewQuote" class="primary" type="button">＋ この顧客で見積作成</button>'+
-              '<button id="customerOverviewCallConnectSync" class="ghost" type="button">CallConnectへ同期</button>'+
+              '<button id="customerOverviewCallConnectSync" class="ghost" type="button">CallConnectへ同期</button>'+ 
+              '<button id="customerOverviewCallConnectCopy" class="ghost" type="button">CallConnect用リンクをコピー</button>'+
               '<button id="customerOverviewEditToggle" class="ghost" type="button">基本情報を編集</button>'+
               '<button id="customerDetailClose" class="ghost" type="button">閉じる</button>'+
             '</div>'+
@@ -5057,6 +5111,14 @@
 
       $('#customerDetailClose').onclick=()=>{host.innerHTML='';};
       $('#customerOverviewNewQuote').onclick=()=>renderCustomerQuoteCreate(customerId);
+      $('#customerOverviewCallConnectCopy').onclick=async()=>{
+        try{
+          await navigator.clipboard.writeText(callconnectCustomerLink(customerId));
+          toast('顧客カルテURLをコピーしました。CallConnectの顧客メモに貼り付けてください。');
+        }catch(err){
+          toast('URLをコピーできませんでした。ブラウザの権限を確認してください。');
+        }
+      };
       $('#customerOverviewTransactions').onclick=()=>renderCustomerDetail(customerId,'transactions');
       $('#customerOverviewHistory').onclick=()=>renderCustomerDetail(customerId,'history');
 
