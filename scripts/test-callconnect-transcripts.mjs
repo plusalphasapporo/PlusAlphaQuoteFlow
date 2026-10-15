@@ -33,7 +33,7 @@ const handler=html.slice(start,end);
 assert.match(handler, /rpc\('callconnect_record_transcript',\{p_call_id:call\.id\},\{readOnly:true\}\)/);
 assert.match(handler, /esc\(transcript\)/,'Always escape transcript text when rendering HTML');
 assert.match(handler, /navigator\.clipboard\.writeText\(transcript\)/,'Explicit copy control');
-assert.doesNotMatch(handler, /fetch\(|openai/i,'Reading a transcript must not trigger AI billing or remote download');
+assert.doesNotMatch(handler, /\bfetch\s*\(|supabase\.functions\.invoke\s*\(|\/v1\/audio\/transcriptions/i,'Reading a transcript must not trigger AI billing or remote download');
 
 const safeEscape=v=>String(v??'')
   .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
