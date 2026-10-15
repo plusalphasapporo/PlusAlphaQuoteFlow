@@ -24,5 +24,8 @@ jobs:
       - name: Validate production HTML
         run: node scripts/validate-static.mjs
 
+      - name: Test support-ticket navigation and drafts
+        run: node --test tests/support-ticket-tabs.test.mjs
+
       - name: Build staging preview
         run: node scripts/build-staging-preview.mjs
