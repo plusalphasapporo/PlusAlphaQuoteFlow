@@ -148,6 +148,28 @@ export function verifiedContactDetail(item,detail){
   return 'verified';
 }
 
+// Read-only inspection of CallConnect list vs. detail data.
+// Never return telephone numbers, contact memo, or vendor credentials.
+export function inspectContactDetail(item, detail){
+  if(!item||!detail||typeof detail!=='object'||Array.isArray(detail)||
+     String(detail.id??'')!==String(item.contact_id??''))return 'detail_id_mismatch';
+  const actual=remotePhones(detail).sort();
+  const expected=[...(item.phones||[])].sort();
+  if(!actual.length||JSON.stringify(actual)!==JSON.stringify(expected))
+    return 'detail_phone_mismatch';
+  if(!Object.prototype.hasOwnProperty.call(detail,'memo'))
+    return 'detail_memo_missing';
+  if(item.remote_updated_at&&String(detail.updated_at??'')!==String(item.remote_updated_at))
+    return 'detail_updated_since_list';
+  if(item.status==='memo_unavailable')
+    return 'list_memo_missing';
+  if(String(detail.memo??'')!==String(item.existing_memo??''))
+    return 'detail_memo_changed_since_list';
+  if(item.status==='eligible'||item.status==='already_linked')
+    return 'detail_consistent';
+  return 'detail_requires_manual_review';
+}
+
 export function buildPlan(remoteContacts,customers,localContacts,origin=STAGING_ORIGIN){
   const {byPhone,byCustomer}=buildIndex(customers,localContacts);
   const prepared=(remoteContacts||[]).map(c=>({
