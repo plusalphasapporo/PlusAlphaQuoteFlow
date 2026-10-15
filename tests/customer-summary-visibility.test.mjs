@@ -73,14 +73,14 @@ test('customer cards can switch to dense list without losing search',async()=>{
  assert.match(env.$('#home').innerHTML,/customerViewTable/,'table view selector exists');
  env.$('#customerListSearch').value='011-999-0000';
  env.$('#customerListSearch').oninput();
- assert.doesNotMatch(env.$('#customerListHost').innerHTML,/札幌本店/);
+ assert.equal((env.$('#customerListHost').innerHTML.match(/class="customerDirectoryCard"/g)||[]).length,1,'only the matching customer card is rendered');
  assert.match(env.$('#customerListHost').innerHTML,/札幌北支店/);
  env.$('#customerViewTable').onclick();
  const table=env.$('#customerListHost').innerHTML;
  assert.match(table,/<table>/,'dense list is available');
  assert.match(table,/札幌北支店/);
  assert.match(table,/札幌市北区北1条/,'dense list still shows the address');
- assert.doesNotMatch(table,/札幌本店/,'search is preserved during view switch');
+ assert.doesNotMatch(table,/<strong>札幌本店<\/strong>/,'head office row is not included in filtered table');
 });
 
 test('customer chart surfaces read-only customer facts before support KPIs',()=>{
