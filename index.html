@@ -986,6 +986,9 @@
   let callconnectNotificationChannel=null;
   let activeTicketId=null;
   let callconnectNotificationPollTimer=null;
+  let callconnectNotificationResumeHandler=null;
+  // Realtime delivers incoming calls; this slower poll is a fallback only.
+  const CALLCONNECT_NOTIFICATION_FALLBACK_MS=60*1000;
   let callconnectTranscriptSyncTimer=null;
   let callconnectTranscriptSyncRunning=false;
   let teamviewerStatusTimer=null;
@@ -2007,43 +2010,78 @@
       clearInterval(callconnectNotificationPollTimer);
       callconnectNotificationPollTimer=null;
     }
+    if(callconnectNotificationResumeHandler){
+      document.removeEventListener('visibilitychange',callconnectNotificationResumeHandler);
+      window.removeEventListener('online',callconnectNotificationResumeHandler);
+      callconnectNotificationResumeHandler=null;
+    }
     const role=bootData?.context?.role;
     // The internal team does not receive CallConnect-originated alerts.
     if(role!=='support_staff') return;
 
-    const checkUnread=async()=>{
+    // A Realtime payload is only a signal. Get the actual notification from
+    // the role-checked RPC before displaying any customer or phone details.
+    // A single in-flight check prevents burst events from piling up requests.
+    let checking=false;
+    const pendingIds=new Set();
+    const checkUnread=async(preferredId=null)=>{
+      if(preferredId) pendingIds.add(String(preferredId));
+      if(checking) return;
+      checking=true;
       try{
-        const unread=await refreshCallConnectUnread();
-        const item=(unread.items||[])[0];
-        if(item && item.id!==lastCallConnectPopupId){
-          try{
-            await showCallConnectIncomingPopup(item);
-            lastCallConnectPopupId=item.id;
-          }catch(err){
-            mountAppModal(
-              '<div class="appModalHead"><div><h2>CallConnect 着信</h2><p>顧客カルテ表示でエラーが発生したため簡易表示しています。</p></div><button id="callconnectFallbackClose" class="ghost" type="button">×</button></div>'+
-              '<div class="appModalBody">'+
-                '<div class="notice ok"><strong>'+esc(item.matched_customer_name||item.contact_company||item.contact_name||'顧客未照合')+'</strong><br>電話 '+esc(item.contact_number||'—')+'</div>'+
-                '<div class="modalGrid2">'+
-                  '<div class="item"><strong>顧客照合</strong><p>'+esc(item.matched_customer_id?'一致':'未照合')+'</p></div>'+
-                  '<div class="item"><strong>案件</strong><p>'+esc(item.support_ticket_id?'作成済み':'未作成')+'</p></div>'+
+        do{
+          if(bootData?.context?.role!=='support_staff') break;
+          const requested=[...pendingIds];
+          pendingIds.clear();
+          const unread=await refreshCallConnectUnread();
+          if(bootData?.context?.role!=='support_staff') break;
+          const items=Array.isArray(unread.items)?unread.items:[];
+          const item=requested.length
+            ? requested.map(id=>items.find(x=>String(x.id)===id)).find(Boolean)
+            : items[0];
+          if(item && item.id!==lastCallConnectPopupId){
+            try{
+              await showCallConnectIncomingPopup(item);
+              lastCallConnectPopupId=item.id;
+            }catch(err){
+              console.error('CallConnect verified popup failed',err);
+              mountAppModal(
+                '<div class="appModalHead"><div><h2>CallConnect 着信</h2><p>顧客カルテ表示でエラーが発生したため簡易表示しています。</p></div><button id="callconnectFallbackClose" class="ghost" type="button">×</button></div>'+
+                '<div class="appModalBody">'+
+                  '<div class="notice ok"><strong>'+esc(item.matched_customer_name||item.contact_company||item.contact_name||'顧客未照合')+'</strong><p>電話 '+esc(item.contact_number||'—')+'</p></div>'+
+                  '<div class="modalGrid2">'+
+                    '<div class="item"><strong>顧客照合</strong><p>'+esc(item.matched_customer_id?'一致':'未照合')+'</p></div>'+
+                    '<div class="item"><strong>案件</strong><p>'+esc(item.support_ticket_id?'作成済み':'未作成')+'</p></div>'+
+                  '</div>'+
                 '</div>'+
-              '</div>'+
-              '<div class="appModalFoot"><button id="callconnectFallbackOpen" class="primary" type="button">CallConnectを開く</button></div>'
-            );
-            $('#callconnectFallbackClose').onclick=closeAppModal;
-            $('#callconnectFallbackOpen').onclick=async()=>{closeAppModal();await go('support_callconnect');};
-            lastCallConnectPopupId=item.id;
+                '<div class="appModalFoot"><button id="callconnectFallbackOpen" class="primary" type="button">CallConnectを開く</button></div>'
+              );
+              $('#callconnectFallbackClose').onclick=closeAppModal;
+              $('#callconnectFallbackOpen').onclick=async()=>{closeAppModal();await go('support_callconnect');};
+              lastCallConnectPopupId=item.id;
+            }
+            const type={201:'着信',401:'不在着信',402:'営業時間外着信'}[item.record_status]||'入電';
+            toast('CallConnect '+type+'：'+(item.matched_customer_name||item.contact_company||item.contact_name||'顧客未照合'));
+            await setupGlobalHeader();
           }
-          await setupGlobalHeader();
-        }
+        }while(pendingIds.size);
       }catch(err){
         console.error('CallConnect notification check failed',err);
+      }finally{
+        checking=false;
       }
     };
 
+    // Immediate startup, WebSocket notifications, and reconnect recovery.
     await checkUnread();
-    callconnectNotificationPollTimer=setInterval(checkUnread,1000);
+    callconnectNotificationResumeHandler=()=>{
+      if(!document.hidden && bootData?.context?.role==='support_staff') void checkUnread();
+    };
+    document.addEventListener('visibilitychange',callconnectNotificationResumeHandler);
+    window.addEventListener('online',callconnectNotificationResumeHandler);
+    callconnectNotificationPollTimer=setInterval(()=>{
+      if(!document.hidden) void checkUnread();
+    },CALLCONNECT_NOTIFICATION_FALLBACK_MS);
 
     callconnectNotificationChannel=supabase
       .channel('callconnect-incoming-live')
@@ -2052,40 +2090,22 @@
         schema:'public',
         table:'callconnect_notifications'
       },async payload=>{
-        const fastItem=payload.new||{};
-        if(!fastItem?.id) return;
-
-        const type={201:'着信',401:'不在着信',402:'営業時間外着信'}[fastItem.record_status]||'入電';
-        const who=fastItem.matched_customer_name||fastItem.contact_company||fastItem.contact_name||fastItem.contact_number||'電話番号未取得';
-
-        try{
-          // WebSocket受信直後に、そのまま即表示。RPC待ちをしない。
-          await showCallConnectIncomingPopup(fastItem);
-          lastCallConnectPopupId=fastItem.id;
-          toast('CallConnect '+type+'：'+who);
-        }catch(err){
-          console.error('CallConnect fast popup failed',err);
-        }
-
-        // 詳細情報は後追いで取得して画面を更新。
-        try{
-          const unread=await refreshCallConnectUnread();
-          const item=(unread.items||[]).find(x=>x.id===fastItem.id);
-          if(item){
-            await showCallConnectIncomingPopup(item);
-            lastCallConnectPopupId=item.id;
-          }
-        }catch(err){
-          console.error('CallConnect popup enrichment failed',err);
-        }
-
+        const notificationId=payload.new?.id;
+        if(!notificationId) return;
+        // Do not display payload.new: it is not a verified recipient record.
+        await checkUnread(notificationId);
         if(currentPage==='support_callconnect') await renderSupportCallConnect();
-        await setupGlobalHeader();
       })
-      .subscribe();
+      .subscribe(status=>{
+        if(status==='SUBSCRIBED') void checkUnread();
+        else if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'||status==='CLOSED'){
+          console.warn('CallConnect Realtime status:',status);
+          // Fallback polling plus foreground/online refresh cover interruptions.
+        }
+      });
   }
 
-  async function startSupportRealtime(){
+    async function startSupportRealtime(){
     if(supportRealtimeChannel){
       try{await supabase.removeChannel(supportRealtimeChannel);}catch(_){}
       supportRealtimeChannel=null;
@@ -15943,6 +15963,11 @@
         if(callconnectNotificationPollTimer){
           clearInterval(callconnectNotificationPollTimer);
           callconnectNotificationPollTimer=null;
+        }
+        if(callconnectNotificationResumeHandler){
+          document.removeEventListener('visibilitychange',callconnectNotificationResumeHandler);
+          window.removeEventListener('online',callconnectNotificationResumeHandler);
+          callconnectNotificationResumeHandler=null;
         }
         if(deadlineWatchTimer){
           clearInterval(deadlineWatchTimer);
