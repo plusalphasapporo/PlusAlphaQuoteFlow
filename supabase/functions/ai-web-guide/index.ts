@@ -10,9 +10,11 @@ const isUuid = (value: unknown): value is string =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 
 function safeQuery(value: unknown): string {
-  return String(value ?? '')
+  return String(value ?? '').normalize('NFKC')
     .replace(/https?:\/\/[^\s]+/gi, '[URL省略]')
     .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[メール省略]')
+    .replace(/(?:\d{1,3}\.){3}\d{1,3}/g, '[IP省略]')
+    .replace(/(?:[A-Za-z]:\\|\\\\)[^\s]+/g, '[パス省略]')
     .replace(/\b(?:\+?\d[\d ()-]{8,}\d)\b/g, '[番号省略]')
     .replace(/\b[A-Za-z0-9]{24,}\b/g, '[識別子省略]')
     .replace(/\s+/g, ' ').trim().slice(0, 300)
@@ -98,22 +100,144 @@ export default {
     // permit callers to ask the AI to inspect a ticket they cannot access.
     const { data: ticket, error: ticketError } = await ctx.supabase
       .from('support_tickets')
-      .select('id,subject,customer_id,asset_id')
+      .select('id,customer_id')
       .eq('id', ticketId).single()
     if (ticketError || !ticket) return reply({ error: 'TICKET_NOT_FOUND_OR_FORBIDDEN' }, 404)
 
-    let assetModel = ''
-    if (ticket.asset_id) {
-      const { data: asset } = await ctx.supabase
-        .from('assets').select('model_name').eq('id', ticket.asset_id).maybeSingle()
-      assetModel = String(asset?.model_name || '')
+    // Read-only connection diagnostics for authenticated support users.
+    // This never calls a paid AI model and never inserts/updates a record.
+    // Do not return the API key, customer data, document IDs or error details.
+    if (body.diagnostics === true) {
+      const results = await Promise.allSettled([
+        ctx.supabaseAdmin.from('knowledge_articles').select('id')
+          .eq('category', 'Web詳細調査').limit(1),
+        ctx.supabaseAdmin.rpc('openai_service_credentials'),
+      ])
+      const knowledgeReady = results[0].status === 'fulfilled' && !results[0].value.error
+      const aiConfigured = results[1].status === 'fulfilled' &&
+        !results[1].value.error && !!String(results[1].value.data?.api_key || '').trim()
+      // Optional, non-generating access check against OpenAI's GET /models/{model}.
+      // It cannot verify billing credit, rate-limit availability or successful
+      // Responses/web_search requests. No API key or raw provider body is returned.
+      const checkProvider = body.checkProvider === true
+      let modelAccessible: boolean | null = null
+      let modelStatus = checkProvider ? 'not_configured' : 'not_checked'
+      if (checkProvider && aiConfigured) {
+        const creds = results[1].status === 'fulfilled' ? results[1].value.data : null
+        const model = String(creds?.analysis_model || '').trim()
+        if (!/^[a-zA-Z0-9_.:-]{1,100}$/.test(model)) {
+          modelAccessible = false
+          modelStatus = 'invalid_model_setting'
+        } else {
+          const controller = new AbortController()
+          const timeout = setTimeout(() => controller.abort(), 9000)
+          try {
+            const upstream = await fetch('https://api.openai.com/v1/models/' + encodeURIComponent(model), {
+              method: 'GET',
+              headers: { Authorization: 'Bearer ' + String(creds?.api_key || '') },
+              cache: 'no-store',
+              signal: controller.signal,
+            })
+            modelAccessible = upstream.ok
+            modelStatus = upstream.ok ? 'ok' : upstream.status === 401 ? 'invalid_api_key'
+              : upstream.status === 403 ? 'model_forbidden'
+              : upstream.status === 404 ? 'model_not_found'
+              : upstream.status === 429 ? 'provider_limited'
+              : upstream.status >= 500 ? 'provider_unavailable'
+              : 'provider_error'
+          } catch (_err) {
+            modelAccessible = false
+            modelStatus = 'connection_failed'
+          } finally {
+            clearTimeout(timeout)
+          }
+        }
+      }
+      return reply({
+        diagnostics: true,
+        ready: knowledgeReady && aiConfigured && (!checkProvider || modelAccessible === true),
+        checkedAt: new Date().toISOString(),
+        checks: {
+          authentication: true,
+          ticketAccess: true,
+          knowledgeRead: knowledgeReady,
+          aiConfigured,
+          modelAccessible,
+          modelStatus,
+        },
+        // Explicitly do not imply that model lookup proves billing or generation.
+        billingVerified: false,
+        generationVerified: false,
+      })
     }
 
-    // This is a PUBLIC technical search, never customer folders, passwords,
-    // call transcripts, attachments, messages, or entire ticket details.
-    const query = safeQuery(body.query || [assetModel, ticket.subject].filter(Boolean).join(' '))
-    if (query.length < 4) return reply({ error: 'TECHNICAL_QUERY_REQUIRED' }, 400)
-    const normalized = query.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ')
+    // Reopen previously researched steps even when OpenAI is unavailable.
+    // Both read paths are scoped to a ticket that RLS already allowed and to
+    // that ticket's customer. Never expose other customers' private drafts.
+    const customerTag = 'customer:' + String(ticket.customer_id)
+    const savedQuery = (record: any): string => {
+      const content = String(record?.body || '')
+      const line = content.match(/(?:^|\n)症状・依頼\s*[:：]\s*([^\r\n]*)/)?.[1] || ''
+      const title = String(record?.title || '').replace(/^Web調査\s*[:：]\s*/, '')
+      return safeQuery(line || title)
+    }
+    if (body.listRecent === true) {
+      const { data: history, error: historyError } = await ctx.supabaseAdmin
+        .from('knowledge_articles')
+        .select('id,title,body,tags,created_at,is_active')
+        .eq('category', 'Web詳細調査')
+        .contains('tags', [customerTag])
+        .order('created_at', { ascending: false }).limit(24)
+      if (historyError) return reply({ error: 'SAVED_GUIDES_UNAVAILABLE' }, 503)
+      const seen = new Set<string>()
+      const articles: Array<{ id: string; query: string; checkedAt: string; published: boolean }> = []
+      for (const item of history || []) {
+        if ((item.tags || []).includes('却下')) continue
+        const query = savedQuery(item)
+        if (query.length < 4) continue
+        const normalized = query.toLowerCase()
+        if (seen.has(normalized)) continue
+        seen.add(normalized)
+        articles.push({
+          id: String(item.id), query, checkedAt: String(item.created_at || ''),
+          published: item.is_active === true,
+        })
+        if (articles.length >= 8) break
+      }
+      return reply({ recent: true, articles, noExternalCall: true })
+    }
+    if (body.reopenId !== undefined) {
+      if (!isUuid(body.reopenId)) return reply({ error: 'INVALID_SAVED_GUIDE_ID' }, 400)
+      const { data: article, error: articleError } = await ctx.supabaseAdmin
+        .from('knowledge_articles')
+        .select('id,title,body,tags,created_at,is_active')
+        .eq('id', body.reopenId)
+        .eq('category', 'Web詳細調査')
+        .contains('tags', [customerTag])
+        .maybeSingle()
+      if (articleError) return reply({ error: 'SAVED_GUIDES_UNAVAILABLE' }, 503)
+      if (!article || (article.tags || []).includes('却下')) {
+        return reply({ error: 'SAVED_GUIDE_NOT_FOUND' }, 404)
+      }
+      const lastChecked = new Date(article.created_at).getTime()
+      const needsRefresh = !Number.isFinite(lastChecked) ||
+        Date.now() - lastChecked > 30 * 24 * 60 * 60 * 1000
+      const parts = cachedParts(String(article.body || ''))
+      return reply({
+        ...parts, query: savedQuery(article), fromCache: true, saved: true,
+        needsRefresh, knowledgeId: article.id, checkedAt: article.created_at,
+        verifiedByStaff: article.is_active === true, noExternalCall: true,
+      })
+    }
+
+    // Public web search must require an explicit technical query. Never use
+    // the ticket subject, customer name, asset record, internal notes, calls,
+    // credentials or attachments as an automatic search fallback.
+    if (typeof body.query !== 'string') return reply({ error: 'TECHNICAL_QUERY_REQUIRED' }, 400)
+    const query = safeQuery(body.query)
+    const meaningful = query.replace(/\[[^\]]+省略\]/g, '').trim()
+    if (meaningful.length < 4) return reply({ error: 'TECHNICAL_QUERY_REQUIRED' }, 400)
+    const normalized = query.toLowerCase().replace(/\s+/g, ' ')
     const cacheKey = 'web-cache:' + (await fingerprint(String(ticket.customer_id) + '\n' + normalized)).slice(0, 32)
 
     const { data: found, error: cacheError } = await ctx.supabaseAdmin
@@ -165,7 +289,30 @@ export default {
         }),
         signal: controller.signal,
       })
-      if (!upstream.ok) return reply({ error: 'WEB_RESEARCH_FAILED', httpStatus: upstream.status }, 502)
+      if (!upstream.ok) {
+        // 429 is ambiguous: rate-limited and depleted API credit can share it.
+        // Classify only the documented allowlisted error codes; never expose
+        // the provider response body, credentials, or user search text in errors.
+        if (upstream.status === 429) {
+          const providerError = await upstream.json().catch(() => null)
+          const code = String(providerError?.error?.code || providerError?.error?.type || '').toLowerCase()
+          const quotaCodes = new Set([
+            'insufficient_quota', 'credit_balance_exhausted',
+            'organization_spend_limit_exceeded', 'project_spend_limit_exceeded',
+            'organization_usage_limit_exceeded',
+          ])
+          const reason = quotaCodes.has(code) ? 'WEB_QUOTA_EXCEEDED'
+            : code === 'rate_limit_exceeded' ? 'WEB_RATE_LIMITED'
+            : 'WEB_PROVIDER_LIMITED'
+          return reply({ error: reason }, 429)
+        }
+        if (upstream.status === 401 || upstream.status === 403) {
+          return reply({ error: 'WEB_PROVIDER_AUTH_ERROR' }, 503)
+        }
+        if (upstream.status === 404) return reply({ error: 'WEB_MODEL_UNAVAILABLE' }, 503)
+        if (upstream.status >= 500) return reply({ error: 'WEB_PROVIDER_UNAVAILABLE' }, 503)
+        return reply({ error: 'WEB_RESEARCH_FAILED' }, 502)
+      }
       const response = await upstream.json()
       const text = outputText(response).slice(0, 14000)
       const sources = responseSources(response)

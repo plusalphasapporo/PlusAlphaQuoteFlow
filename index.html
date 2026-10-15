@@ -450,6 +450,7 @@
       .appModalLayer{padding:8px}.appModal{max-height:calc(100vh - 16px);border-radius:14px}.appModalHead,.appModalBody,.appModalFoot{padding-left:14px;padding-right:14px}.modalGrid2,.modalGrid3,.amountSummary{grid-template-columns:1fr}
     }
   </style>
+  <link rel="stylesheet" href="./ui/workspace-redesign.css">
 </head>
 <body>
 <header>
@@ -799,6 +800,14 @@
       support_or_internal_role_required:'この操作は担当スタッフのみ実行できます。',
       ai_role_not_allowed:'AI機能を利用する権限がありません。',
       ai_not_configured:'AIのAPIキーが設定されていません。管理者が連携設定を確認してください。',
+      web_rate_limited:'Web調査の一時的な利用制限です。時間をおいて再操作してください。過去に保存した手順は「保存済みの手順を見る」から利用できます。',
+      web_provider_limited:'Web調査サービスから利用制限が返されました。残高・予算上限か一時制限か確認できないため、管理者がOpenAI APIの利用状況を確認してください。',
+      web_quota_exceeded:'Web調査用OpenAI APIの利用枠または残高が不足しています。管理者が請求・予算設定を確認してください。',
+      web_provider_auth_error:'Web調査用OpenAI APIの認証またはモデル権限を確認してください。',
+      web_model_unavailable:'Web調査用AIモデルが利用できません。管理者がモデル設定を確認してください。',
+      web_provider_unavailable:'Web調査サービスで障害が発生しました。保存済み手順を利用してください。',
+      ai_rate_limited:'OpenAI APIのリクエスト制限に達しました。時間をおいてから再操作してください。案件内容は残っています。',
+      ai_quota_exceeded:'OpenAI APIの残高または利用予算上限に達している可能性があります。管理者がOpenAI APIの利用状況・請求設定を確認してください。時間をおいても自動復旧しない場合があります。',
       ai_temporarily_unavailable:'AIサービスが一時的に利用できません。少し時間をおいて再試行してください。',
       ai_request_failed:'AIサービスの呼び出しに失敗しました。モデル設定とAPIキーを確認してください。',
       ai_empty_response:'AIから回答を取得できませんでした。再度お試しください。',
@@ -977,6 +986,21 @@
   let callconnectNotificationChannel=null;
   let activeTicketId=null;
   let callconnectNotificationPollTimer=null;
+  let callconnectNotificationResumeHandler=null;
+  // Realtime delivers incoming calls; this slower poll is a fallback only.
+  const CALLCONNECT_NOTIFICATION_FALLBACK_MS=60*1000;
+  let callconnectRealtimeState='idle';
+  function callconnectRealtimeStatusText(){
+    if(callconnectRealtimeState==='connected') return 'CallConnect：リアルタイム受信に接続しています。';
+    if(callconnectRealtimeState==='connecting') return 'CallConnect：リアルタイム接続を確認中です。';
+    if(callconnectRealtimeState==='fallback') return 'CallConnect：リアルタイム接続が不安定です。画面表示中は60秒ごとに未読を確認します。';
+    return 'CallConnect：通知受信の準備中です。';
+  }
+  function setCallconnectRealtimeState(next){
+    callconnectRealtimeState=next;
+    const indicator=$('#callconnectRealtimeIndicator');
+    if(indicator) indicator.textContent=callconnectRealtimeStatusText();
+  }
   let callconnectTranscriptSyncTimer=null;
   let callconnectTranscriptSyncRunning=false;
   let teamviewerStatusTimer=null;
@@ -1998,42 +2022,88 @@
       clearInterval(callconnectNotificationPollTimer);
       callconnectNotificationPollTimer=null;
     }
+    if(callconnectNotificationResumeHandler){
+      document.removeEventListener('visibilitychange',callconnectNotificationResumeHandler);
+      window.removeEventListener('online',callconnectNotificationResumeHandler);
+      callconnectNotificationResumeHandler=null;
+    }
     const role=bootData?.context?.role;
-    if(!['internal_admin','internal_staff','support_staff'].includes(role)) return;
+    // The internal team does not receive CallConnect-originated alerts.
+    if(role!=='support_staff'){
+      setCallconnectRealtimeState('idle');
+      return;
+    }
+    setCallconnectRealtimeState('connecting');
 
-    const checkUnread=async()=>{
+    // A Realtime payload is only a signal. Get the actual notification from
+    // the role-checked RPC before displaying any customer or phone details.
+    // A single in-flight check prevents burst events from piling up requests.
+    let checking=false;
+    const pendingIds=new Set();
+    const checkUnread=async(preferredId=null)=>{
+      if(preferredId) pendingIds.add(String(preferredId));
+      if(checking) return;
+      checking=true;
       try{
-        const unread=await refreshCallConnectUnread();
-        const item=(unread.items||[])[0];
-        if(item && item.id!==lastCallConnectPopupId){
-          try{
-            await showCallConnectIncomingPopup(item);
-            lastCallConnectPopupId=item.id;
-          }catch(err){
-            mountAppModal(
-              '<div class="appModalHead"><div><h2>CallConnect 着信</h2><p>顧客カルテ表示でエラーが発生したため簡易表示しています。</p></div><button id="callconnectFallbackClose" class="ghost" type="button">×</button></div>'+
-              '<div class="appModalBody">'+
-                '<div class="notice ok"><strong>'+esc(item.matched_customer_name||item.contact_company||item.contact_name||'顧客未照合')+'</strong><br>電話 '+esc(item.contact_number||'—')+'</div>'+
-                '<div class="modalGrid2">'+
-                  '<div class="item"><strong>顧客照合</strong><p>'+esc(item.matched_customer_id?'一致':'未照合')+'</p></div>'+
-                  '<div class="item"><strong>案件</strong><p>'+esc(item.support_ticket_id?'作成済み':'未作成')+'</p></div>'+
+        do{
+          if(bootData?.context?.role!=='support_staff') break;
+          const requested=[...pendingIds];
+          pendingIds.clear();
+          const unread=await refreshCallConnectUnread();
+          if(bootData?.context?.role!=='support_staff') break;
+          const items=Array.isArray(unread.items)?unread.items:[];
+          const item=requested.length
+            ? requested.map(id=>items.find(x=>String(x.id)===id)).find(Boolean)
+            : items[0];
+          if(item && item.id!==lastCallConnectPopupId){
+            try{
+              await showCallConnectIncomingPopup(item);
+              lastCallConnectPopupId=item.id;
+            }catch(err){
+              console.error('CallConnect verified popup failed',err);
+              mountAppModal(
+                '<div class="appModalHead"><div><h2>CallConnect 着信</h2><p>顧客カルテ表示でエラーが発生したため簡易表示しています。</p></div><button id="callconnectFallbackClose" class="ghost" type="button">×</button></div>'+
+                '<div class="appModalBody">'+
+                  '<div class="notice ok"><strong>'+esc(item.matched_customer_name||item.contact_company||item.contact_name||'顧客未照合')+'</strong><p>電話 '+esc(item.contact_number||'—')+'</p></div>'+
+                  '<div class="modalGrid2">'+
+                    '<div class="item"><strong>顧客照合</strong><p>'+esc(item.matched_customer_id?'一致':'未照合')+'</p></div>'+
+                    '<div class="item"><strong>案件</strong><p>'+esc(item.support_ticket_id?'作成済み':'未作成')+'</p></div>'+
+                  '</div>'+
                 '</div>'+
-              '</div>'+
-              '<div class="appModalFoot"><button id="callconnectFallbackOpen" class="primary" type="button">CallConnectを開く</button></div>'
-            );
-            $('#callconnectFallbackClose').onclick=closeAppModal;
-            $('#callconnectFallbackOpen').onclick=async()=>{closeAppModal();await go('support_callconnect');};
-            lastCallConnectPopupId=item.id;
+                '<div class="appModalFoot"><button id="callconnectFallbackOpen" class="primary" type="button">CallConnectを開く</button></div>'
+              );
+              $('#callconnectFallbackClose').onclick=closeAppModal;
+              $('#callconnectFallbackOpen').onclick=async()=>{closeAppModal();await go('support_callconnect');};
+              lastCallConnectPopupId=item.id;
+            }
+            const type={201:'着信',401:'不在着信',402:'営業時間外着信'}[item.record_status]||'入電';
+            toast('CallConnect '+type+'：'+(item.matched_customer_name||item.contact_company||item.contact_name||'顧客未照合'));
+            await setupGlobalHeader();
           }
-          await setupGlobalHeader();
-        }
+        }while(pendingIds.size);
       }catch(err){
         console.error('CallConnect notification check failed',err);
+      }finally{
+        checking=false;
       }
     };
 
+    // Immediate startup, WebSocket notifications, and reconnect recovery.
     await checkUnread();
-    callconnectNotificationPollTimer=setInterval(checkUnread,1000);
+    // Login can end while the first unread RPC is in flight. Do not reinstall
+    // polling/listeners/channels after sign-out cleanup has already run.
+    if(bootData?.context?.role!=='support_staff'){
+      setCallconnectRealtimeState('idle');
+      return;
+    }
+    callconnectNotificationResumeHandler=()=>{
+      if(!document.hidden && bootData?.context?.role==='support_staff') void checkUnread();
+    };
+    document.addEventListener('visibilitychange',callconnectNotificationResumeHandler);
+    window.addEventListener('online',callconnectNotificationResumeHandler);
+    callconnectNotificationPollTimer=setInterval(()=>{
+      if(!document.hidden) void checkUnread();
+    },CALLCONNECT_NOTIFICATION_FALLBACK_MS);
 
     callconnectNotificationChannel=supabase
       .channel('callconnect-incoming-live')
@@ -2042,40 +2112,26 @@
         schema:'public',
         table:'callconnect_notifications'
       },async payload=>{
-        const fastItem=payload.new||{};
-        if(!fastItem?.id) return;
-
-        const type={201:'着信',401:'不在着信',402:'営業時間外着信'}[fastItem.record_status]||'入電';
-        const who=fastItem.matched_customer_name||fastItem.contact_company||fastItem.contact_name||fastItem.contact_number||'電話番号未取得';
-
-        try{
-          // WebSocket受信直後に、そのまま即表示。RPC待ちをしない。
-          await showCallConnectIncomingPopup(fastItem);
-          lastCallConnectPopupId=fastItem.id;
-          toast('CallConnect '+type+'：'+who);
-        }catch(err){
-          console.error('CallConnect fast popup failed',err);
-        }
-
-        // 詳細情報は後追いで取得して画面を更新。
-        try{
-          const unread=await refreshCallConnectUnread();
-          const item=(unread.items||[]).find(x=>x.id===fastItem.id);
-          if(item){
-            await showCallConnectIncomingPopup(item);
-            lastCallConnectPopupId=item.id;
-          }
-        }catch(err){
-          console.error('CallConnect popup enrichment failed',err);
-        }
-
+        const notificationId=payload.new?.id;
+        if(!notificationId) return;
+        // Do not display payload.new: it is not a verified recipient record.
+        await checkUnread(notificationId);
         if(currentPage==='support_callconnect') await renderSupportCallConnect();
-        await setupGlobalHeader();
       })
-      .subscribe();
+      .subscribe(status=>{
+        if(bootData?.context?.role!=='support_staff') return;
+        if(status==='SUBSCRIBED'){
+          setCallconnectRealtimeState('connected');
+          void checkUnread();
+        }else if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'||status==='CLOSED'){
+          setCallconnectRealtimeState('fallback');
+          console.warn('CallConnect Realtime status:',status);
+          // Fallback polling plus foreground/online refresh cover interruptions.
+        }
+      });
   }
 
-  async function startSupportRealtime(){
+    async function startSupportRealtime(){
     if(supportRealtimeChannel){
       try{await supabase.removeChannel(supportRealtimeChannel);}catch(_){}
       supportRealtimeChannel=null;
@@ -2205,16 +2261,14 @@
     const role=bootData?.context?.role;
     if(!(role==='internal_admin'||role==='internal_staff')) return {count:0,items:[]};
     try{
-      const [biz,unread,deadlineStates,callUnread]=await Promise.all([
-        rpc('internal_business_dashboard'),
+      const [unread,deadlineStates]=await Promise.all([
         rpc('internal_unread_handoff_notifications'),
-        rpc('support_deadline_states'),
-        rpc('callconnect_unread_notifications')
+        rpc('support_deadline_states')
       ]);
       const deadlineAttention=(deadlineStates||[]).filter(x=>x.deadline_state==='overdue'||x.deadline_state==='due_today');
       const overdueCount=deadlineAttention.filter(x=>x.deadline_state==='overdue').length;
       const dueTodayCount=deadlineAttention.filter(x=>x.deadline_state==='due_today').length;
-      const count=Number(biz?.kpis?.urgent_open_tickets||0)+Number(unread?.count||0)+overdueCount+dueTodayCount+Number(callUnread?.count||0);
+      const count=Number(unread?.ticket_count||0)+Number(unread?.count||0)+overdueCount+dueTodayCount;
       if(count>0){
         $('#notificationCount').textContent=count>99?'99+':String(count);
         $('#notificationCount').classList.remove('hidden');
@@ -2345,6 +2399,20 @@
     if(!(role==='internal_admin'||role==='internal_staff')) return;
     internalHandoffRealtimeChannel=supabase
       .channel('internal-handoff-live')
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'support_tickets'},async payload=>{
+        // Never announce CallConnect-originated new cases to internal roles.
+        // The role-secured unread RPC is the final authority on eligibility.
+        const ticket=payload.new||{};
+        const from=String(ticket.request_details?.source||'').toLowerCase();
+        if(from.includes('callconnect')||ticket.request_details?.callconnect_call_id||
+          /^【受付経路】CallConnect/i.test(String(ticket.description||''))) return;
+        const unread=await refreshInternalUnreadHandoffBadge();
+        const eligible=(unread.ticket_items||[]).find(x=>String(x.ticket_id)===String(ticket.id));
+        if(eligible){
+          toast('新着案件：'+(eligible.customer_name||'')+' '+(eligible.subject||''));
+          if(currentPage==='home') await renderHome();
+        }
+      })
       .on('postgres_changes',{event:'UPDATE',schema:'public',table:'support_tickets'},async payload=>{
         const progress=payload.new?.request_details?.support_procedure_progress||null;
         const oldProgress=payload.old?.request_details?.support_procedure_progress||null;
@@ -2371,6 +2439,196 @@
       .subscribe();
   }
 
+  async function openUnifiedNotificationCenter(){
+    const role=bootData?.context?.role;
+    const internal=role==='internal_admin'||role==='internal_staff';
+    const support=role==='support_staff';
+    if(!internal&&!support) return go(role==='customer_user'?'customer_status':'home');
+    mountAppModal(
+      '<div class="appModalHead"><div><h2>通知センター</h2><p>自分に届いた未読案件・引き継ぎ・対応アラートを確認します。</p></div><button id="unifiedNotificationClose" class="ghost" type="button">×</button></div>'+
+      '<div id="unifiedNotificationBody" class="appModalBody"><div class="notice">最新の通知を取得しています...</div></div>'+
+      '<div class="appModalFoot"><button id="unifiedNotificationRefresh" class="ghost" type="button">更新</button><button id="unifiedNotificationDone" class="primary" type="button">閉じる</button></div>',
+      true
+    );
+    $('#unifiedNotificationClose').onclick=closeAppModal;
+    $('#unifiedNotificationDone').onclick=closeAppModal;
+    $('#unifiedNotificationRefresh').onclick=()=>openUnifiedNotificationCenter();
+    const host=$('#unifiedNotificationBody');
+
+    try{
+      const data=internal
+        ? await Promise.all([
+            rpc('internal_unread_handoff_notifications'),
+            rpcOptional('support_deadline_states',{},[])
+          ]).then(([notifications,deadlines])=>({
+            notifications:notifications||{},
+            deadlines:Array.isArray(deadlines)?deadlines:[]
+          }))
+        : await Promise.all([
+            rpc('support_unread_notifications'),
+            rpcOptional('support_unread_handoff_updates',{}, {items:[],count:0}),
+            rpcOptional('callconnect_unread_notifications',{}, {items:[],count:0}),
+            rpcOptional('support_deadline_states',{}, []),
+            rpcOptional('support_next_action_states',{}, []),
+            rpcOptional('support_unanswered_messages',{}, {items:[],count:0})
+          ]).then(([notifications,handoffs,calls,deadlines,queue,unanswered])=>({
+            notifications:notifications||{},
+            handoffs:handoffs||{},
+            calls:calls||{},
+            deadlines:Array.isArray(deadlines)?deadlines:[],
+            queue:Array.isArray(queue)?queue:[],
+            unanswered:unanswered||{}
+          }));
+      if(!host?.isConnected) return;
+      const entries=[];
+      const seenTickets=new Set();
+      const add=(kind,category,item,ticketId,title,details,occurredAt,priority='normal')=>{
+        entries.push({
+          kind,category,item,ticketId:ticketId||null,
+          title:String(title||'内容未登録'),
+          details:String(details||''),
+          occurredAt:String(occurredAt||''),
+          priority:String(priority||'normal')
+        });
+      };
+      const describe=t=>[t.customer_name,t.ticket_number,t.source_label].filter(Boolean).join(' / ');
+      if(internal){
+        for(const t of (data.notifications.ticket_items||[])){
+          if(!t.ticket_id) continue;
+          seenTickets.add(String(t.ticket_id));
+          add('ticket','新着案件',t,t.ticket_id,t.subject,describe(t),t.activity_at||t.created_at,t.priority);
+        }
+        for(const h of (data.notifications.items||[])){
+          if(!h.ticket_id||!h.handoff_id) continue;
+          seenTickets.add(String(h.ticket_id));
+          add('internal_handoff','自社への引き継ぎ',h,h.ticket_id,h.subject,
+            [h.customer_name,h.ticket_number,h.reason].filter(Boolean).join(' / '),h.created_at,h.priority);
+        }
+      }else{
+        for(const t of (data.notifications.items||[])){
+          if(!t.id) continue;
+          seenTickets.add(String(t.id));
+          add('ticket','障害・問い合わせ・設定依頼',t,t.id,t.subject,
+            describe(t),t.latest_message_at||t.created_at,t.priority);
+        }
+        for(const h of (data.handoffs.items||[])){
+          if(!h.ticket_id||!h.handoff_id) continue;
+          seenTickets.add(String(h.ticket_id));
+          add('support_handoff','引き継ぎ状況',h,h.ticket_id,h.subject,
+            [h.customer_name,h.ticket_number,h.handoff_state==='accepted'?'自社が受付済み':'自社対応完了'].filter(Boolean).join(' / '),
+            h.updated_at,h.priority);
+        }
+        for(const c of (data.calls.items||[])){
+          if(!c.id) continue;
+          if(c.support_ticket_id&&seenTickets.has(String(c.support_ticket_id))) continue;
+          add('callconnect','CallConnect',c,c.support_ticket_id,
+            c.matched_customer_name||c.contact_company||c.contact_name||'新しい電話受付',
+            [c.customer_code,c.contact_number,'電話・着信記録'].filter(Boolean).join(' / '),c.created_at,'normal');
+        }
+        for(const a of (data.queue||[])){
+          if(!a.ticket_id||!['warning','critical'].includes(a.alert_level)||a.notification_active===false) continue;
+          if(seenTickets.has(String(a.ticket_id))) continue;
+          seenTickets.add(String(a.ticket_id));
+          add('ticket','対応滞留',a,a.ticket_id,a.subject||'対応の確認が必要です',
+            a.alert_level==='critical'?'緊急：対応滞留':'注意：対応滞留',a.support_next_action_changed_at||a.updated_at,
+            a.alert_level==='critical'?'urgent':'high');
+        }
+        for(const a of (data.unanswered.items||[])){
+          if(!a.ticket_id||!['attention','warning','critical'].includes(a.wait_level)) continue;
+          if(seenTickets.has(String(a.ticket_id))) continue;
+          seenTickets.add(String(a.ticket_id));
+          add('ticket','顧客への未返信',a,a.ticket_id,a.subject||'顧客への回答が必要です',
+            a.customer_name||'対応待ち',a.last_customer_message_at,a.wait_level==='critical'?'urgent':'high');
+        }
+      }
+      for(const d of data.deadlines){
+        if(!d.ticket_id||!['overdue','due_today'].includes(d.deadline_state)) continue;
+        if(seenTickets.has(String(d.ticket_id))) continue;
+        seenTickets.add(String(d.ticket_id));
+        add('ticket','対応期限',d,d.ticket_id,d.subject||'対応期限を確認してください',
+          d.deadline_state==='overdue'?'期限超過':'本日期限',d.resolution_due_at||d.first_response_due_at,
+          d.deadline_state==='overdue'?'urgent':'high');
+      }
+      const priorityRank={urgent:0,high:1,normal:2,low:3};
+      entries.sort((a,b)=>
+        (priorityRank[a.priority]??2)-(priorityRank[b.priority]??2)
+        || (Date.parse(b.occurredAt)||0)-(Date.parse(a.occurredAt)||0)
+      );
+      const summary=internal
+        ? '案件 '+Number(data.notifications.ticket_count||0)+'件 / 引き継ぎ '+Number(data.notifications.count||0)+'件'
+        : '案件 '+Number(data.notifications.count||0)+'件 / 引き継ぎ '+Number(data.handoffs.count||0)+'件 / CallConnect '+Number(data.calls.count||0)+'件';
+      const display=entries.slice(0,60);
+      host.innerHTML=
+        '<div class="notice"><strong>未読・要対応</strong><p class="sectionDesc" style="margin:6px 0 0">'+esc(summary)+'</p>'+
+          '<small>通知を選ぶと案件カルテに直接移動します。既読は案件を開いた時点で記録されます。</small></div>'+
+        (support?'<div id="callconnectRealtimeIndicator" role="status" class="notice" style="margin-top:10px">'+esc(callconnectRealtimeStatusText())+'</div>':'')+
+        (display.length
+          ? '<div class="col" style="display:grid;gap:9px;margin-top:12px">'+display.map((entry,index)=>
+              '<button type="button" class="card unifiedNotificationOpen" data-index="'+index+'" style="display:block;width:100%;text-align:left;cursor:pointer;padding:14px">'+
+                '<div class="row between" style="margin-bottom:7px;gap:8px"><span class="pill '+(entry.priority==='urgent'?'bad':'')+'">'+esc(entry.category)+'</span>'+
+                '<small class="muted">'+esc(entry.occurredAt?dateTimeText(entry.occurredAt):'')+'</small></div>'+
+                '<strong style="display:block;margin-bottom:5px">'+esc(entry.title)+'</strong>'+
+                '<small class="muted">'+esc(entry.details)+'</small>'+
+              '</button>'
+            ).join('')+'</div>'
+          : '<div class="empty" style="margin-top:12px">現在、新しい通知はありません。</div>')+
+        (entries.length>display.length?'<small class="muted">新しい通知を最大60件表示しています。</small>':'');
+      host.querySelectorAll('.unifiedNotificationOpen').forEach(btn=>{
+        btn.onclick=async()=>{
+          const entry=display[Number(btn.dataset.index)];
+          if(!entry) return;
+          btn.disabled=true;
+          closeAppModal();
+          try{
+            // A notification must not be marked read until its destination
+            // actually opens; otherwise network failures silently hide it.
+            if(entry.ticketId){
+              const opened=await openTicketWorkspace(entry.ticketId);
+              if(opened===false) throw new Error('案件カルテを開けませんでした');
+            }else if(entry.kind==='callconnect'){
+              await go('support_callconnect');
+            }
+
+            const markSafe=async(name,args)=>{
+              try{await rpc(name,args);}catch(err){
+                console.warn('Notification read acknowledgement failed',name,err);
+              }
+            };
+            if(entry.kind==='internal_handoff'){
+              await markSafe('mark_internal_handoff_read',{p_handoff_id:entry.item.handoff_id});
+            }else if(entry.kind==='support_handoff'){
+              await markSafe('mark_support_handoff_update_read',{p_handoff_id:entry.item.handoff_id});
+            }
+            // CallConnect and a ticket it created may both have unread
+            // records. The UI shows only one card, and acknowledges both
+            // records after the corresponding workspace opens.
+            if(support){
+              const callIds=new Set(
+                (data.calls?.items||[])
+                  .filter(call=>call.id&&entry.ticketId&&String(call.support_ticket_id||'')===String(entry.ticketId))
+                  .map(call=>String(call.id))
+              );
+              if(entry.kind==='callconnect'&&entry.item?.id) callIds.add(String(entry.item.id));
+              for(const id of callIds){
+                await markSafe('mark_callconnect_notification_read',{p_notification_id:id});
+              }
+            }
+            if(internal) await refreshInternalUnreadHandoffBadge();
+            else await refreshSupportUnreadBadge();
+          }catch(err){
+            toast('通知から案件を開けませんでした：'+String(err.message||err));
+          }finally{btn.disabled=false;}
+        };
+      });
+    }catch(err){
+      if(host?.isConnected){
+        host.innerHTML='<div class="notice error">通知の取得に失敗しました：'+esc(err.message||String(err))+'</div>'+
+          '<button id="unifiedNotificationRetry" class="primary" type="button">再試行</button>';
+        $('#unifiedNotificationRetry').onclick=()=>openUnifiedNotificationCenter();
+      }
+    }
+  }
+
   async function setupGlobalHeader(){
     const role=bootData?.context?.role;
     const context=bootData?.context||{};
@@ -2380,14 +2638,12 @@
     let count=0;
     try{
       if(role==='internal_admin'||role==='internal_staff'){
-        const [biz,unreadHandoffs,deadlineStates,callUnread]=await Promise.all([
-          rpc('internal_business_dashboard'),
+        const [unreadHandoffs,deadlineStates]=await Promise.all([
           rpc('internal_unread_handoff_notifications'),
-          rpc('support_deadline_states'),
-          rpc('callconnect_unread_notifications')
+          rpc('support_deadline_states')
         ]);
         const deadlineCount=(deadlineStates||[]).filter(x=>x.deadline_state==='overdue'||x.deadline_state==='due_today').length;
-        count=Number(biz?.kpis?.urgent_open_tickets||0)+Number(unreadHandoffs?.count||0)+deadlineCount+Number(callUnread?.count||0);
+        count=Number(unreadHandoffs?.ticket_count||0)+Number(unreadHandoffs?.count||0)+deadlineCount;
       }else if(role==='support_staff'){
         const [unread,unanswered,nextActionStates,handoffUpdates,deadlineStates,callUnread]=await Promise.all([
           rpc('support_unread_notifications'),
@@ -2432,16 +2688,7 @@
     }
     $('#notificationBtn').onclick=async()=>{
       if(['support_staff','internal_admin','internal_staff'].includes(role)){
-        const cc=await refreshCallConnectUnread();
-        if(Number(cc?.count||0)>0) return go('support_callconnect');
-        if(role==='support_staff'){
-          const nextActions=await rpc('support_next_action_states').catch(()=>[]);
-          if((nextActions||[]).some(x=>(x.alert_level==='warning'||x.alert_level==='critical')&&x.notification_active!==false)){
-            supportQueueView='attention';
-            return go('support_cases');
-          }
-        }
-        return go('home');
+        return openUnifiedNotificationCenter();
       }
       return go(role==='customer_user'?'customer_status':'support');
     };
@@ -3572,9 +3819,136 @@
     $('#appModalLayer').onclick=e=>{ if(e.target.id==='appModalLayer') closeAppModal(); };
   }
 
+  // Shared create/edit dialog used by customer, inventory, contracts,
+  // procurement and knowledge workflows. All callers use onSubmit plus
+  // closeModal(); keep these helpers in the same scope as mountAppModal().
+  function closeModal(){
+    closeAppModal();
+  }
+
+  function openModal({title='',description='',body='',confirmLabel='保存',wide=false,onSubmit}={}){
+    if(typeof onSubmit!=='function') throw new Error('登録処理が設定されていません。');
+    mountAppModal(
+      '<div class="appModalHead">'+
+        '<div><h2>'+esc(title)+'</h2>'+(description?'<p>'+esc(description)+'</p>':'')+'</div>'+
+        '<button id="sharedModalClose" class="ghost" type="button" aria-label="閉じる">×</button>'+
+      '</div>'+
+      '<form id="sharedModalForm" class="appModalForm">'+
+        '<div class="appModalBody">'+body+
+          '<div id="sharedModalMsg" class="notice hidden" role="alert"></div>'+
+        '</div>'+
+        '<div class="appModalFoot">'+
+          '<button id="sharedModalCancel" class="ghost" type="button">キャンセル</button>'+
+          '<button id="sharedModalSave" class="primary" type="submit">'+esc(confirmLabel)+'</button>'+
+        '</div>'+
+      '</form>',
+      Boolean(wide)
+    );
+    const layer=$('#appModalLayer');
+    const form=layer.querySelector('#sharedModalForm');
+    const save=layer.querySelector('#sharedModalSave');
+    const message=layer.querySelector('#sharedModalMsg');
+    const close=()=>{
+      if($('#appModalLayer')===layer&&!save.disabled) closeAppModal();
+    };
+    layer.querySelector('#sharedModalClose').onclick=close;
+    layer.querySelector('#sharedModalCancel').onclick=close;
+    layer.onclick=e=>{if(e.target===layer)close();};
+    layer.addEventListener('keydown',e=>{
+      if(e.key==='Escape'){
+        e.preventDefault();
+        e.stopPropagation();
+        close();
+      }
+    });
+    form.onsubmit=async e=>{
+      e.preventDefault();
+      if(save.disabled||!form.reportValidity())return;
+      save.disabled=true;
+      message.classList.add('hidden');
+      message.classList.remove('error');
+      message.textContent='';
+      try{
+        await onSubmit();
+        // Legacy handlers often call closeModal() themselves. Do not close
+        // a different dialog opened by a successful completion handler.
+        if($('#appModalLayer')===layer) closeAppModal();
+      }catch(err){
+        if($('#appModalLayer')===layer){
+          message.textContent=err?.message||String(err);
+          message.classList.add('error');
+          message.classList.remove('hidden');
+        }else{
+          toast(err?.message||String(err));
+        }
+      }finally{
+        if($('#appModalLayer')===layer)save.disabled=false;
+      }
+    };
+    layer.querySelector('input:not([type=hidden]):not(:disabled),select:not(:disabled),textarea:not(:disabled)')?.focus();
+    return layer;
+  }
+
   function localDateValue(date=new Date()){
     const x=new Date(date.getTime()-date.getTimezoneOffset()*60000);
     return x.toISOString().slice(0,10);
+  }
+
+  // The customer URL is a navigation hint, not an access token.
+  const CALLCONNECT_CUSTOMER_QUERY='qf_customer';
+  const CALLCONNECT_STAGING_ORIGIN='https://quoteflow-cloud-staging-git-5459e1-nijiiroclassflat-s-projects.vercel.app';
+  const CALLCONNECT_CUSTOMER_ID_RE=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  function callconnectCustomerLink(customerId){
+    const id=String(customerId||'').trim();
+    if(!CALLCONNECT_CUSTOMER_ID_RE.test(id)) throw new Error('有効な顧客IDではありません。');
+    // Use the stable staging alias, not a per-commit Vercel preview URL.
+    const origin=window.location.hostname.startsWith('quoteflow-cloud-staging')
+      ? CALLCONNECT_STAGING_ORIGIN
+      : window.location.origin;
+    const url=new URL('/',origin);
+    url.searchParams.set(CALLCONNECT_CUSTOMER_QUERY,id);
+    return url.href;
+  }
+  function removeCallconnectCustomerQuery(){
+    const url=new URL(window.location.href);
+    url.searchParams.delete(CALLCONNECT_CUSTOMER_QUERY);
+    window.history.replaceState(window.history.state,'',url.pathname+url.search+url.hash);
+  }
+  async function openCallconnectCustomerDeepLink(){
+    const url=new URL(window.location.href);
+    if(!url.searchParams.has(CALLCONNECT_CUSTOMER_QUERY)) return false;
+    const id=String(url.searchParams.get(CALLCONNECT_CUSTOMER_QUERY)||'').trim();
+    const role=bootData?.context?.role;
+    // Login and MFA must succeed before accepting any navigation request.
+    if(!role) return false;
+    if(!CALLCONNECT_CUSTOMER_ID_RE.test(id)){
+      removeCallconnectCustomerQuery();
+      toast('CallConnectの顧客リンクが正しくありません。');
+      return false;
+    }
+    if(!['internal_admin','internal_staff','support_staff'].includes(role)){
+      removeCallconnectCustomerQuery();
+      toast('この顧客カルテを開く権限がありません。');
+      return false;
+    }
+    try{
+      if(role==='support_staff'){
+        await go('support_customers');
+        await showSupportCustomerDetail(id);
+      }else{
+        await go('customers');
+        if(!$('#customerDetailHost')) throw new Error('顧客一覧を読み込めませんでした。');
+        await renderCustomerDetail(id,'overview');
+      }
+      // Clear only after the authorized customer record is open. A network
+      // failure leaves the URL available for retry after reconnection.
+      removeCallconnectCustomerQuery();
+      return true;
+    }catch(err){
+      toast('顧客カルテを開けませんでした。権限・通信状態を確認してください。');
+      console.warn('CallConnect customer link navigation failed',err);
+      return false;
+    }
   }
 
   async function syncCustomerToCallConnect(customerId,{silent=false}={}){
@@ -3590,7 +3964,7 @@
       if(data?.skipped&&data?.reason==='no_phone') toast('CallConnect同期：電話番号未登録のためスキップしました');
       else if(data?.failed_count>0) toast('CallConnect同期：一部失敗しました');
       else if(data?.created_count>0) toast('CallConnectへ顧客情報を同期しました');
-      else if(data?.duplicate_count>0) toast('CallConnect：登録済み電話番号を確認しました');
+      else if(data?.duplicate_count>0) toast('CallConnectは登録済みです。「CallConnect用リンクをコピー」から顧客メモへ貼り付けてください。');
     }
     return data||null;
   }
@@ -3600,7 +3974,9 @@
     const parentOptions=(options?.parents||[]).map(x=>
       '<option value="'+esc(x.id)+'">'+esc(x.customer_code||'—')+' / '+esc(x.name||'')+'</option>'
     ).join('');
-    const supportOptions=(options?.support_companies||[]).map(x=>
+    const supportCompanies=Array.isArray(options?.support_companies)?options.support_companies:[];
+    const defaultSupportCompanyId=supportCompanies.length===1?String(supportCompanies[0].id||''):'';
+    const supportOptions=supportCompanies.map(x=>
       '<option value="'+esc(x.id)+'">'+esc(x.name||'')+'</option>'
     ).join('');
     const salesOwnerOptions=(options?.sales_owners||[]).map(x=>
@@ -3672,7 +4048,7 @@
               '<div class="field"><label>自社営業担当</label><select id="customerSalesOwner"><option value="">未設定</option>'+salesOwnerOptions+'</select></div>'+
               '<div class="field"><label>取引開始日</label><input id="customerRelationshipStarted" type="date"></div>'+
               '<div class="field"><label>流入経路・紹介元</label><input id="customerLeadSource" placeholder="例：既存顧客紹介"></div>'+
-              '<div class="field"><label>サポート会社</label><select id="customerSupportCompany"><option value="">指定なし</option>'+supportOptions+'</select></div>'+
+              '<div class="field"><label>サポート会社（全顧客対応・必須）</label><select id="customerSupportCompany" required><option value="">選択してください</option>'+supportOptions+'</select><small>サポート会社は全顧客を担当します。新規顧客の障害・問い合わせ・設定依頼も通知対象となります。</small></div>'+
               '<label class="row" style="align-self:end;margin-bottom:10px"><input id="customerManualHold" type="checkbox"> 新規取引を手動ホールド</label>'+
             '</div>'+
           '</section>'+
@@ -3701,6 +4077,14 @@
     updateBranch();
     $('#customerCreateClose').onclick=closeAppModal;
     $('#customerCreateCancel').onclick=closeAppModal;
+    // Currently one support company covers all customers. Keep explicit
+    // support_assignments in place for authorization; never expand RLS to
+    // unassigned companies. A new customer must select a support partner.
+    const ensureSupportCompany=()=>{
+      const select=$('#customerSupportCompany');
+      if(select && !select.value && defaultSupportCompanyId) select.value=defaultSupportCompanyId;
+    };
+    ensureSupportCompany();
 
     const draftKey='quoteflow.customerDraft.'+(bootData?.context?.user_id||'current');
     const draftFieldIds=[
@@ -3742,6 +4126,7 @@
         else el.value=data[id];
       });
       updateBranch();
+      ensureSupportCompany();
       const n=$('#customerDraftNotice');
       if(n){
         n.classList.remove('hidden');
@@ -3754,6 +4139,7 @@
       localStorage.removeItem(draftKey);
       $('#customerCreateForm').reset();
       updateBranch();
+      ensureSupportCompany();
       duplicateState={exact_corporate_number:[],similar_name:[]};
       $('#customerDuplicateWarning').classList.add('hidden');
       $('#customerDraftNotice').classList.add('hidden');
@@ -3764,6 +4150,7 @@
       const missing=[];
       if(!$('#customerName').value.trim()) missing.push('会社名');
       if($('#customerBranchType').value==='branch'&&!$('#customerParent').value) missing.push('親顧客');
+      if(!$('#customerSupportCompany').value) missing.push('サポート会社');
       const st=$('#customerRequiredStatus');
       if(st) st.textContent=missing.length?'未入力：'+missing.join('・'):'必須項目は入力済みです。';
     };
@@ -3847,6 +4234,7 @@
         const corporateNumber=$('#customerCorporateNumber').value.trim();
         if(!$('#customerName').value.trim()) throw new Error('会社名・法人名は必須です。');
         if($('#customerBranchType').value==='branch'&&!$('#customerParent').value) throw new Error('支店・営業所・店舗の場合は親顧客を選択してください。');
+        if(!$('#customerSupportCompany').value) throw new Error('全顧客を担当するサポート会社を選択してください。');
         if(corporateNumber && !/^\d{13}$/.test(corporateNumber)) throw new Error('法人番号は13桁の数字で入力してください。');
 
         await checkDuplicate();
@@ -4693,7 +5081,8 @@
             '<div><h2>顧客カルテ</h2><p class="sectionDesc">'+esc(c.customer_code||'—')+' / '+esc(c.name||'')+(c.trade_name?' / '+esc(c.trade_name):'')+'</p></div>'+
             '<div class="row">'+
               '<button id="customerOverviewNewQuote" class="primary" type="button">＋ この顧客で見積作成</button>'+
-              '<button id="customerOverviewCallConnectSync" class="ghost" type="button">CallConnectへ同期</button>'+
+              '<button id="customerOverviewCallConnectSync" class="ghost" type="button">CallConnectへ同期</button>'+ 
+              '<button id="customerOverviewCallConnectCopy" class="ghost" type="button">CallConnect用リンクをコピー</button>'+
               '<button id="customerOverviewEditToggle" class="ghost" type="button">基本情報を編集</button>'+
               '<button id="customerDetailClose" class="ghost" type="button">閉じる</button>'+
             '</div>'+
@@ -4796,6 +5185,14 @@
 
       $('#customerDetailClose').onclick=()=>{host.innerHTML='';};
       $('#customerOverviewNewQuote').onclick=()=>renderCustomerQuoteCreate(customerId);
+      $('#customerOverviewCallConnectCopy').onclick=async()=>{
+        try{
+          await navigator.clipboard.writeText(callconnectCustomerLink(customerId));
+          toast('顧客カルテURLをコピーしました。CallConnectの顧客メモに貼り付けてください。');
+        }catch(err){
+          toast('URLをコピーできませんでした。ブラウザの権限を確認してください。');
+        }
+      };
       $('#customerOverviewTransactions').onclick=()=>renderCustomerDetail(customerId,'transactions');
       $('#customerOverviewHistory').onclick=()=>renderCustomerDetail(customerId,'history');
 
@@ -7961,7 +8358,7 @@
       const host=$('#ticketDetailHost');
       if(!host){
         toast('案件カルテの読み込みに失敗しました。案件一覧から再度開いてください。');
-        return;
+        return false;
       }
       host.innerHTML=
         '<section class="card section" role="alert">'+
@@ -7975,7 +8372,7 @@
         '</section>';
       $('#ticketWorkspaceRetry').onclick=()=>openTicketWorkspace(ticketId);
       $('#ticketWorkspaceReturn').onclick=()=>go(backPage);
-      return;
+      return false;
     }
 
     const closeBtn=$('#ticketDetailClose');
@@ -8006,6 +8403,7 @@
     }else{
       window.scrollTo({top:0,behavior:'smooth'});
     }
+    return true;
   }
 
   async function renderTicketDetail(ticketId){
@@ -8070,6 +8468,9 @@
     const attachments=detail.attachments||[];
     const handoffs=detail.handoffs||[];
     if(internal){
+      // Reading an internal ticket clears its per-user unread notification,
+      // including tickets created by customers and support staff.
+      try{await rpc('mark_support_ticket_read',{p_ticket_id:t.id});}catch(_){}
       for(const h of handoffs){
         if(h.requested_by_role==='support_staff' && h.state!=='completed'){
           try{await rpc('mark_internal_handoff_read',{p_handoff_id:h.id});}catch(_){}
@@ -8880,7 +9281,7 @@
             '<section class="item" style="margin-top:14px;border-color:#bfdbfe">'+
               '<div class="row between" style="align-items:flex-start;gap:10px;flex-wrap:wrap"><div><strong>Webで詳しい操作手順を調査</strong><div class="muted" style="margin-top:4px">保存済みの調査結果を先に検索。情報がない場合だけ、公式資料などを調べて仮保存します。</div></div><span class="pill">出典・確認日付き</span></div>'+
               '<div class="field" style="margin-top:10px"><label>技術的な症状・型番・エラーコード（顧客名・ID・パスワードは入力しない）</label><input id="ticketAiWebQuery" maxlength="300" placeholder="例：Windows 11 Canon MF印刷キュー停止"></div>'+
-              '<div class="supportQuickActions"><button id="ticketAiWebSearch" class="primary" type="button">保存済み検索・Web調査</button><button id="ticketAiWebRefresh" class="ghost" type="button">公式資料を再確認</button></div>'+
+              '<div class="supportQuickActions"><button id="ticketAiWebSearch" class="primary" type="button">保存済み検索・Web調査</button><button id="ticketAiWebRecent" class="ghost" type="button">保存済みの手順を見る</button><button id="ticketAiWebRefresh" class="ghost" type="button">公式資料を再確認</button><button id="ticketAiWebDiagnostics" class="ghost" type="button">接続診断（読取のみ）</button></div>'+
               '<div id="ticketAiWebMessage" class="notice hidden"></div><div id="ticketAiWebResult" class="hidden"></div>'+
             '</section>'+
 
@@ -8892,6 +9293,92 @@
 
     $('#ticketDetailClose').onclick=()=>{activeTicketId=null;$('#ticketDetailHost').innerHTML='';};
     $('#ticketDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
+
+    // The customer context stays in a modal: preserve the current ticket,
+    // unsent text and current workflow/scroll position.
+    const openTicketCustomerPanel=()=>{
+      mountAppModal(
+        '<div class="appModalHead"><div><h2>顧客・機器情報</h2><p>'+esc(t.ticket_number||'案件')+' / '+esc(cust?.name||'顧客未登録')+'</p></div><button id="ticketCustomerPanelClose" class="ghost" type="button">× 閉じる</button></div>'+
+        '<div class="appModalBody">'+
+          '<div class="modalGrid2">'+
+            '<div class="item"><strong>顧客</strong><p>'+esc(cust?.customer_code||'—')+' / '+esc(cust?.name||'未登録')+'</p></div>'+
+            '<div class="item"><strong>担当者・連絡先</strong><p>'+esc(primary?.name||'未登録')+' / '+esc(primary?.phone||primary?.email||'連絡先未登録')+'</p></div>'+
+            '<div class="item"><strong>対象機器</strong><p>'+(asset?esc(asset.asset_number||'—')+' / '+esc(asset.model_name||'')+' / '+esc(asset.serial_number||''):'未指定')+'</p></div>'+
+            '<div class="item"><strong>契約</strong><p>'+esc(contract?.contract_number||'未指定')+'</p></div>'+
+          '</div>'+
+          '<section class="item" style="margin-top:12px"><div class="row between" style="gap:10px;flex-wrap:wrap"><strong>顧客情報フォルダ（Microsoft 365）</strong><span class="pill">別タブで開く</span></div>'+
+            '<p class="muted">案件は開いたままです。アクセス可能な顧客フォルダだけを表示します。</p>'+
+            '<div id="ticketCustomerFolderStatus" class="notice">情報フォルダを確認中...</div>'+
+            '<div id="ticketCustomerFolderLink"></div>'+
+            (internal&&bootData.context?.role==='internal_admin'?'<div class="field" style="margin-top:12px"><label>情報フォルダのURL（管理者のみ編集）</label><input id="ticketCustomerDirectUrl" type="url" placeholder="https://会社名.sharepoint.com/..." maxlength="4096"></div><div class="row" style="gap:8px"><button id="ticketCustomerDirectSave" class="ghost" type="button">フォルダURLを登録・更新</button><button id="ticketCustomerDirectRemove" class="ghost" type="button">登録URLを削除</button></div><small class="muted">URLの登録はMicrosoft Graph連携なしで利用できます。リンク先の閲覧にはMicrosoft 365の権限が必要です。</small>':'')+
+          '</section>'+
+        '</div>'+
+        '<div class="appModalFoot"><button id="ticketCustomerPanelDone" class="primary" type="button">案件に戻る</button></div>',
+        true
+      );
+      $('#ticketCustomerPanelClose').onclick=closeAppModal;
+      $('#ticketCustomerPanelDone').onclick=closeAppModal;
+      const folderStatus=$('#ticketCustomerFolderStatus');
+      const folderHost=$('#ticketCustomerFolderLink');
+      const customerId=String(t.customer_id||'');
+      if(!customerId){
+        folderStatus.textContent='顧客が登録されていないため、情報フォルダを確認できません。';
+        return;
+      }
+      const directSave=$('#ticketCustomerDirectSave'),directRemove=$('#ticketCustomerDirectRemove');
+      const saveDirect=async remove=>{
+        const btn=remove?directRemove:directSave;
+        const url=$('#ticketCustomerDirectUrl')?.value.trim()||'';
+        if(!remove && !/^https:\/\/[^\s]+\.sharepoint\.com(?:[:/]|$)/i.test(url)){
+          folderStatus.textContent='SharePointまたはOneDriveの有効なフォルダURLを入力してください。';return;
+        }
+        if(remove && !confirm('この顧客の直接フォルダURLを削除しますか？')) return;
+        if(btn) btn.disabled=true;
+        try{
+          const data=await customerM365Invoke({action:remove?'remove_direct_link':'set_direct_link',customerId,folderUrl:url});
+          folderStatus.textContent=remove?'直接リンクを削除しました。':'情報フォルダURLを保存しました。';
+          if(folderHost?.isConnected) folderHost.innerHTML='';
+          if(!remove && data?.webUrl && folderHost?.isConnected){
+            const parsed=new URL(data.webUrl);
+            if(parsed.protocol==='https:' && parsed.hostname.toLowerCase().endsWith('.sharepoint.com')){
+              folderHost.innerHTML='<a class="primary" href="'+esc(parsed.href)+'" target="_blank" rel="noopener noreferrer">情報フォルダを開く ↗</a>';
+            }
+          }
+          if(remove){const input=$('#ticketCustomerDirectUrl');if(input) input.value='';}
+        }catch(err){folderStatus.textContent='保存に失敗しました。'+String(err.message||err);}
+        finally{if(btn) btn.disabled=false;}
+      };
+      if(directSave) directSave.onclick=()=>saveDirect(false);
+      if(directRemove) directRemove.onclick=()=>saveDirect(true);
+      customerM365Invoke({action:'get_quick_link',customerId,ticketId:t.id})
+        .then(data=>{
+          if(!folderHost?.isConnected || !folderStatus?.isConnected) return;
+          let url='';
+          try{
+            const parsed=new URL(String(data?.webUrl||''));
+            if(parsed.protocol==='https:' && parsed.hostname.toLowerCase().endsWith('.sharepoint.com')) url=parsed.href;
+          }catch(_){}
+          if(data?.linked && url){
+            const directInput=$('#ticketCustomerDirectUrl');if(directInput && data?.source==='direct') directInput.value=url;
+            folderStatus.textContent='対象顧客のフォルダが確認できました。';
+            folderHost.innerHTML='<a class="primary" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;justify-content:center;text-decoration:none;padding:12px 16px;border-radius:10px">情報フォルダを開く ↗</a>';
+          }else{
+            const why=String(data?.reason||'');
+            const messages={
+              integration_not_configured:'Microsoft 365連携の認証情報が未設定です。管理者がSupabase Edge Function Secretsの MICROSOFT_TENANT_ID / MICROSOFT_CLIENT_ID / MICROSOFT_CLIENT_SECRET を設定してください。',
+              integration_auth_failed:'Microsoft 365の接続認証に失敗しました。管理者がEntraアプリの資格情報とMicrosoft Graphの許可を確認してください。',
+              root_not_configured:'顧客フォルダの参照元が未設定です。管理者に確認してください。',
+              needs_manual_link:'この顧客に一致するフォルダを特定できません。管理者が顧客カルテから紐付けしてください。',
+              invalid_stored_url:'登録済みフォルダURLが正しくありません。管理者が紐付けを更新してください。',
+              folder_lookup_unavailable:'Microsoft 365のフォルダを取得できませんでした。管理者が連携設定または通信状態を確認してください。'
+            };
+            folderStatus.textContent=messages[why]||'情報フォルダが未登録です。管理者が顧客カルテから紐付けしてください。';
+          }
+        })
+        .catch(err=>{
+          if(folderStatus?.isConnected) folderStatus.textContent='情報フォルダを表示できません。'+String(err.message||err);
+        });
+    };
     const ticketCallAiSummary=$('#ticketCallAiSummary');
     if(ticketCallAiSummary){
       ticketCallAiSummary.onclick=async()=>{
@@ -9065,7 +9552,7 @@
           host.innerHTML='<div class="item" style="margin-top:12px">'+
             '<div class="row between" style="gap:10px;flex-wrap:wrap"><strong>詳細な操作手順</strong><span class="pill '+(data.fromCache?'good':'')+'">'+(data.fromCache?'保存済みから再利用':'Web調査結果')+'</span></div>'+
             (data.needsRefresh?'<div class="notice warn">前回の調査から30日以上経過しています。「公式資料を再確認」を選択してください。</div>':'')+
-            '<p class="muted">Web情報確認日: '+esc(checkedAt?checkedAt.slice(0,10):'確認できません')+' / '+(data.verifiedByStaff?'担当者確認済み':'実機検証は未実施')+'</p>'+
+            '<p class="muted">Web情報確認日: '+esc(checkedAt?checkedAt.slice(0,10):'確認できません')+' / '+(data.verifiedByStaff?'社内公開済み（実機検証は別途必要）':'実機検証は未実施')+'</p>'+
             '<div style="white-space:pre-wrap;line-height:1.8;max-height:420px;overflow:auto">'+esc(data.text||'確認できません')+'</div>'+
             (sourced?'<details style="margin-top:12px"><summary>調査に使用した出典（'+sources.length+'件）</summary><ul>'+sourced+'</ul></details>':'')+
             '<p class="muted" style="margin-top:10px">保存状態: '+(data.saved?'確認待ちナレッジへ保存済み':'保存できませんでした。再調査になる可能性があります。')+'</p>'+
@@ -9077,6 +9564,93 @@
           if(button)button.disabled=false;
           if(refreshBtn)refreshBtn.disabled=false;
         }
+      };
+      const renderSavedWebGuide=(data)=>{
+        const host=$('#ticketAiWebResult');
+        if(!host) return;
+        const sources=Array.isArray(data?.sources)?data.sources:[];
+        host.classList.remove('hidden');
+        host.innerHTML='<div class="item" style="margin-top:12px"><strong>保存済みの操作手順</strong>'+
+          (data?.needsRefresh?'<p class="notice warn">前回確認から30日以上経過しています。使用前に公式資料を再確認してください。</p>':'')+
+          '<p class="muted">調査日 '+esc(String(data?.checkedAt||'').slice(0,10))+' / '+(data?.verifiedByStaff?'社内公開済み（実機検証は別途必要）':'実機検証は未実施')+'</p>'+
+          '<div style="white-space:pre-wrap;line-height:1.8">'+esc(String(data?.text||''))+'</div>'+
+          (sources.length?'<details><summary>参考資料（'+sources.length+'件）</summary><ul>'+
+            sources.filter(x=>/^https:\/\//.test(String(x.url||''))).map(x=>
+              '<li><a href="'+esc(x.url)+'" rel="noopener noreferrer" target="_blank">'+esc(x.title||x.url)+'</a></li>').join('')+
+            '</ul></details>':'')+'</div>';
+        notice('#ticketAiWebMessage','保存済み手順を再表示しました。外部AI検索は行っていません。',true);
+      };
+      const recentButton=$('#ticketAiWebRecent');
+      if(recentButton) recentButton.onclick=async()=>{
+        recentButton.disabled=true;
+        notice('#ticketAiWebMessage','保存済みの調査履歴を読み込んでいます...',true);
+        try{
+          const {data,error}=await supabase.functions.invoke('ai-web-guide',{
+            body:{ticketId:t.id,listRecent:true}
+          });
+          if(error) throw await edgeFunctionError(error,{write:false});
+          if(data?.error) throw new Error(String(data.error));
+          const articles=Array.isArray(data?.articles)?data.articles:[];
+          const host=$('#ticketAiWebResult');
+          if(!host) return;
+          host.classList.remove('hidden');
+          if(!articles.length){
+            host.innerHTML='<div class="empty">この顧客の保存済みWeb調査はありません。AIが使えるときに初回調査を実行できます。</div>';
+          }else{
+            host.innerHTML='<div class="item" style="margin-top:12px"><strong>保存済み手順</strong>'+
+              '<p class="muted">外部AIを使わずに過去の調査を再表示します。</p>'+
+              articles.map((article,i)=>
+                '<button type="button" class="ghost ticketSavedWebGuide" data-index="'+i+'" style="display:block;width:100%;text-align:left;margin-top:7px">'+
+                esc(article.query||'調査内容')+' <span class="muted">('+esc(String(article.checkedAt||'').slice(0,10))+')</span></button>'
+              ).join('')+'</div>';
+            host.querySelectorAll('.ticketSavedWebGuide').forEach(button=>button.onclick=async()=>{
+              const item=articles[Number(button.dataset.index)];
+              if(!item||!item.id) return;
+              button.disabled=true;
+              try{
+                const {data:guide,error:guideError}=await supabase.functions.invoke('ai-web-guide',{
+                  body:{ticketId:t.id,reopenId:item.id}
+                });
+                if(guideError) throw await edgeFunctionError(guideError,{write:false});
+                if(guide?.error) throw new Error(String(guide.error));
+                renderSavedWebGuide(guide);
+              }catch(err){notice('#ticketAiWebMessage','保存済み手順を表示できませんでした。'+String(err.message||err));button.disabled=false;}
+            });
+          }
+          notice('#ticketAiWebMessage','保存済み手順を確認できます。外部AI検索は行っていません。',true);
+        }catch(err){notice('#ticketAiWebMessage','履歴を読み込めませんでした。'+String(err.message||err));}
+        finally{recentButton.disabled=false;}
+      };
+      const diagnosticButton=$('#ticketAiWebDiagnostics');
+      if(diagnosticButton) diagnosticButton.onclick=async()=>{
+        diagnosticButton.disabled=true;
+        notice('#ticketAiWebMessage','認証・案件参照・AI設定を確認しています。検索や保存は行いません...',true);
+        try{
+          const {data,error}=await supabase.functions.invoke('ai-web-guide',{
+            body:{ticketId:t.id,diagnostics:true,checkProvider:true}
+          });
+          if(error) throw await edgeFunctionError(error,{write:false});
+          if(data?.error) throw new Error(String(data.error));
+          if(data?.diagnostics!==true) throw new Error('接続診断に対応していません');
+          const checks=data.checks||{};
+          const items=[
+            ['ログイン認証',checks.authentication],
+            ['案件参照権限',checks.ticketAccess],
+            ['ナレッジ参照',checks.knowledgeRead],
+            ['AI設定',checks.aiConfigured],
+            ['AIモデル利用権限',checks.modelAccessible]
+          ];
+          const host=$('#ticketAiWebResult');
+          if(host){
+            host.classList.remove('hidden');
+            host.innerHTML='<div class="item" style="margin-top:12px"><strong>接続診断（読み取り専用）</strong>'+
+              '<p class="muted">AI生成と保存は実行していません。モデル照会は行いますが、残高・利用上限や生成成功は判定できません。</p>'+
+              '<ul>'+items.map(x=>'<li>'+esc(x[0])+'：'+(x[1]===true?'正常':'要確認')+'</li>').join('')+'</ul>'+
+              '<p class="muted">確認：'+esc(String(data.checkedAt||'').slice(0,19).replace('T',' '))+'</p></div>';
+          }
+          notice('#ticketAiWebMessage',data.ready?'基本接続は正常です。実際の検索・保存は未検証です。':'接続に問題があります。診断結果を確認してください。',!!data.ready);
+        }catch(err){notice('#ticketAiWebMessage','接続診断ができませんでした。'+String(err.message||err));}
+        finally{diagnosticButton.disabled=false;}
       };
       $('#ticketAiWebSearch').onclick=()=>runWebGuide(false);
       $('#ticketAiWebRefresh').onclick=()=>runWebGuide(true);
@@ -9363,14 +9937,7 @@
         return internalJump('#supportTicketCustomerContext');
       };
       const customerBtn=$('#internalTicketCustomer');
-      if(customerBtn) customerBtn.onclick=async()=>{
-        customerBtn.disabled=true;
-        try{
-          await go('customers');
-          await renderCustomerDetail(t.customer_id);
-        }catch(err){toast(err.message||String(err));}
-        finally{customerBtn.disabled=false;}
-      };
+      if(customerBtn) customerBtn.onclick=openTicketCustomerPanel;
       const messageBtn=$('#internalTicketMessage');
       if(messageBtn) messageBtn.onclick=()=>{
         const form=$('#ticketMessageForm');
@@ -9408,7 +9975,7 @@
       if(topPrimaryAction) topPrimaryAction.onclick=()=>$('#supportPrimaryNext')?.click();
       const topCustomer=$('#supportTopCustomer');
       const topAttachments=$('#supportTopAttachments');
-      if(topCustomer) topCustomer.onclick=()=>jump('#supportTicketCustomerContext');
+      if(topCustomer) topCustomer.onclick=openTicketCustomerPanel;
       if(topAttachments) topAttachments.onclick=()=>jump('#ticketAttachmentGallery');
       document.querySelectorAll('.supportTopAttachmentJump').forEach(btn=>btn.onclick=()=>jump('#ticketAttachmentGallery'));
       const contentJump=$('#supportTicketContentJump');
@@ -9423,7 +9990,7 @@
       const linearCustomer=$('#ticketLinearCustomer');
       const linearAttachments=$('#ticketLinearAttachments');
       if(contentJump) contentJump.onclick=()=>jump('#ticketAttachmentGallery');
-      if(customerJump) customerJump.onclick=()=>jump('#supportTicketCustomerContext');
+      if(customerJump) customerJump.onclick=openTicketCustomerPanel;
       const aiJump=$('#supportTicketAiJump');
       if(aiJump) aiJump.onclick=()=>{
         jump('#supportKnowledgeWorkspace');
@@ -9767,11 +10334,8 @@
         jump('#supportRemoteWorkspace');
         setTimeout(()=>($('#ticketRemoteAction')||$('#ticketTeamViewerCreate'))?.focus(),250);
       };
-      if(actionCustomer) actionCustomer.onclick=()=>{
-        jump('#supportTicketCustomerContext');
-        setTimeout(()=>$('#supportTicketCustomerContext button, #supportTicketCustomerContext input, #supportTicketCustomerContext select, #supportTicketCustomerContext textarea')?.focus(),250);
-      };
-      if(linearCustomer) linearCustomer.onclick=()=>jump('#supportTicketCustomerContext');
+      if(actionCustomer) actionCustomer.onclick=openTicketCustomerPanel;
+      if(linearCustomer) linearCustomer.onclick=openTicketCustomerPanel;
       if(linearAttachments) linearAttachments.onclick=()=>jump('#ticketAttachmentGallery');
 
       const openClassification=(type)=>{
@@ -13166,6 +13730,8 @@
     const data=await rpc('internal_knowledge_articles');
     const audienceText=a=>({internal:'自社のみ',support:'サポート会社',customer:'顧客会社',all:'全社'}[a]||a);
     const isRejected=k=>(k.tags||[]).includes('却下');
+    const isCustomerWebDraft=k=>k.category==='Web詳細調査'||(k.tags||[]).some(t=>/^(customer:|web-cache:)/i.test(String(t)));
+
     const candidates=(data||[]).filter(k=>k.is_active===false&&!isRejected(k));
     const published=(data||[]).filter(k=>k.is_active!==false);
     const rejected=(data||[]).filter(k=>k.is_active===false&&isRejected(k));
@@ -13254,7 +13820,7 @@
             : '';
         })()+
         '<div class="supportQuickActions" style="margin-top:10px">'+
-          '<button class="green knowledgeCandidatePublish" type="button" data-id="'+esc(k.id)+'">新規として公開</button>'+
+          (isCustomerWebDraft(k)?'<span class="pill warn">顧客別調査は直接公開不可（一般向けの新規ナレッジとして作成）</span>':'<button class="green knowledgeCandidatePublish" type="button" data-id="'+esc(k.id)+'">新規として公開</button>')+
           '<button class="primary knowledgeAdminEdit" type="button" data-id="'+esc(k.id)+'">修正</button>'+
           '<button class="ghost knowledgeCandidateReject" type="button" data-id="'+esc(k.id)+'">却下</button>'+
         '</div>'+
@@ -13301,6 +13867,7 @@
           if(!symptom) throw new Error('症状・依頼を入力してください。');
           if(!procedure) throw new Error('対応手順を入力してください。');
           const tags=$('#kaTags').value.split(',').map(x=>x.trim()).filter(Boolean).filter(x=>x!=='却下');
+          if(k.id&&isCustomerWebDraft(k)&&$('#kaActive').checked) throw new Error('顧客別Web調査は直接公開できません。顧客情報を除いた新しいナレッジとして登録してください。');
           await rpc('save_knowledge_article',{
             p_id:k.id||null,
             p_title:title,
@@ -13447,6 +14014,13 @@
     $('#knowledgeSearch').oninput=render; render();
   }
 
+  // CallConnect contact IDs are numeric, not UUIDs. Reject all other values.
+  function callconnectContactConsoleUrl(id){
+    const contactId=String(id||'').trim();
+    if(!/^[1-9][0-9]{0,17}$/.test(contactId)) return null;
+    return 'https://www.callconnect.jp/console/?contacts/'+encodeURIComponent(contactId);
+  }
+
   async function renderSupportCallConnect(){
     await rpc('mark_all_callconnect_notifications_read',{}, {readOnly:false}).catch(()=>{});
     const role=bootData?.context?.role;
@@ -13465,7 +14039,16 @@
         '<td>'+esc(statusTextMap[x.record_status]||x.record_status||'—')+'</td>'+
         '<td><strong>'+esc(x.contact_number||'—')+'</strong><br><span class="muted">'+esc(x.contact_company||x.contact_name||'')+'</span></td>'+
         '<td>'+esc(x.callconnect_user_name||'—')+'</td>'+
+        '<td>'+(callconnectContactConsoleUrl(x.contact_id)
+          ? '<button type="button" class="linkBtn callconnectContactOpen" data-contact-id="'+esc(x.contact_id)+'">連絡先を開く</button>'+
+            (x.matched_customer_id?'<button type="button" class="linkBtn callconnectCopyCustomerLink" data-customer-id="'+esc(x.matched_customer_id)+'">カルテURLをコピー</button>':'')
+          : '<span class="muted">連絡先ID未取得</span>')+'</td>'+
         '<td>'+esc(x.duration_seconds??0)+'秒</td>'+
+        '<td>'+(x.has_transcript
+          ? '<button class="linkBtn callconnectTranscriptOpen" type="button" data-call-id="'+esc(x.id)+'">全文を開く</button>'
+          : x.has_recording
+            ? '<button class="linkBtn callconnectTranscriptOpen" type="button" data-call-id="'+esc(x.id)+'">文字起こし待ち</button>'
+            : '<span class="muted">録音なし</span>')+'</td>'+
         '<td>'+(needMatch?'<span class="hold">'+esc(matchText[x.match_state]||x.match_state)+'</span>':'<span class="pill good">'+esc(matchText[x.match_state]||x.match_state)+'</span>')+
           (x.matched_customer_name?'<br><span class="muted">'+esc(x.matched_customer_name)+'</span>':'')+'</td>'+
         '<td>'+(x.support_ticket_id
@@ -13512,11 +14095,132 @@
         (dash?.last_error?'<div class="notice error">最終エラー: '+esc(dash.last_error)+'</div>':'')+
       '</section>')+
       (!supportView&&dash?.api_key_configured&&!dash?.contacts_create_api_url_configured?'<div class="notice error"><strong>着信時の顧客表示はまだ未完成です。</strong><br>CallConnect側に顧客を同期するため、Contacts Create API URLの設定が必要です。Webhookによる通話履歴保存・電話番号照合は動作しています。</div>':'')+
+      (bootData?.context?.role==='internal_admin'?'<section class="card section"><div class="row between"><div><h2>連絡先と顧客の自動照合</h2><p class="sectionDesc">既存のCallConnect連絡先を電話番号で照合します。プレビューではCallConnectの顧客メモを書き換えません。</p></div><div><button id="callconnectAutoLinkDiagnostic" type="button">API接続診断</button><button id="callconnectAutoLinksPreview" class="primary" type="button">自動照合を確認</button></div></div><div id="callconnectAutoLinkDiagnosticResult" class="notice hidden"></div><div id="callconnectAutoLinksResult" class="notice hidden"></div></section>':'')+
       '<div id="callconnectPageSyncMsg" class="notice hidden"></div>'+
       '<section class="card section"><div class="row between"><div><h2>通話履歴</h2><p class="sectionDesc">電話番号で顧客を確認し、内容を聞いてから新規問い合わせを登録します。登録後はそのまま対応画面へ進めます。</p></div><div class="field" style="margin:0;min-width:260px"><label>履歴を検索</label><input id="callconnectHistorySearch" placeholder="電話番号・会社名・担当者"></div></div>'+
-        '<div id="callconnectHistoryTable">'+dataTable(['日時','種別','電話番号','CallConnect担当','通話','顧客照合','案件','操作'],rows)+'</div>'+
+        '<div id="callconnectHistoryTable">'+dataTable(['日時','種別','電話番号','CallConnect担当','連絡先リンク','通話','文字起こし','顧客照合','案件','操作'],rows)+'</div>'+
       '</section>';
 
+    const autoLinkDiagnostic=$('#callconnectAutoLinkDiagnostic');
+    if(autoLinkDiagnostic)autoLinkDiagnostic.onclick=async()=>{
+      autoLinkDiagnostic.disabled=true;
+      const label=autoLinkDiagnostic.textContent;
+      autoLinkDiagnostic.textContent='接続確認中...';
+      try{
+        const {data,error}=await supabase.functions.invoke('callconnect-contact-link-sync',{body:{mode:'diagnose'}});
+        if(error)throw error;
+        if(!data?.ok)throw new Error(data?.error||'診断ができませんでした');
+        const descriptions={ready_for_read_only_inspection:'取得項目の整合性を確認できました',
+          list_memo_missing:'一覧APIにメモ欄がありません',
+          detail_memo_missing:'詳細APIにメモ欄がありません',
+          detail_phone_mismatch:'一覧と詳細の電話番号が一致しません',
+          detail_id_mismatch:'一覧と詳細のIDが一致しません',
+          no_remote_contacts:'連絡先がありません'};
+        const output=$('#callconnectAutoLinkDiagnosticResult');
+        output.classList.remove('hidden');
+        output.textContent=(descriptions[data.status]||data.status||'要確認')+
+          '。対象連絡先 '+Number(data.contact_count||0)+'件。読み取り専用で診断しました。';
+      }catch(e){const output=$('#callconnectAutoLinkDiagnosticResult');output.classList.remove('hidden');output.textContent='接続診断エラー：'+String(e.message||e);}
+      finally{autoLinkDiagnostic.disabled=false;autoLinkDiagnostic.textContent=label;}
+    };
+    const callconnectAutoLinksPreview=$('#callconnectAutoLinksPreview');
+    if(callconnectAutoLinksPreview){
+      callconnectAutoLinksPreview.onclick=async()=>{
+        const btn=callconnectAutoLinksPreview;
+        btn.disabled=true;
+        const host=$('#callconnectAutoLinksResult');
+        host.classList.remove('hidden');
+        host.textContent='電話番号の照合結果を確認しています...';
+        try{
+          const {data,error}=await supabase.functions.invoke('callconnect-contact-link-sync',{body:{mode:'preview'}});
+          if(error) throw error;
+          if(!data?.ok) throw new Error(data?.error||'照合結果を確認できませんでした');
+          const names={eligible:'URL追記候補',already_linked:'登録済み',conflict_link:'別リンク・競合',
+            ambiguous_customer:'複数顧客と一致',duplicate_remote_phone:'CallConnect側の番号重複',
+            multiple_remote_phones:'複数番号のため確認待ち',
+            unmatched:'該当なし',no_phone:'電話番号なし',invalid_contact_id:'連絡先ID形式不明',memo_too_long:'メモ長さ超過'};
+          const c=data.counts||{};
+          const summary=Object.entries(names).map(([k,v])=>'<div class="item"><strong>'+esc(v)+'</strong><span style="float:right">'+esc(c[k]||0)+' 件</span></div>').join('');
+          const eligible=(data.items||[]).filter(x=>x.status==='eligible'&&x.confirmation_token);
+          const rows=(data.items||[]).map(x=>
+            '<tr><td>'+(x.status==='eligible'&&x.confirmation_token
+              ?'<input class="callconnectAutoLinksSelect" type="checkbox" data-contact-id="'+esc(x.contact_id)+'" checked aria-label="'+esc(x.contact_name||'連絡先')+'の更新を選択">'
+              :'<span class="muted">—</span>')+'</td>'+
+            '<td>'+esc(x.contact_name||'—')+'</td><td>'+esc(x.masked_phone||'—')+'</td>'+
+            '<td>'+esc(x.customer_name||'—')+'</td><td>'+esc(names[x.status]||x.status)+' <button type="button" class="ghost callconnectAutoLinkInspect" data-contact-id="'+esc(x.contact_id)+'">詳細照合</button></td></tr>');
+          host.innerHTML='<div class="notice"><strong>照合完了：この時点では更新していません</strong>'+
+            '<p>取得 '+esc(data.contact_count||0)+' 件。電話番号が1社だけ一致し、既存メモに競合のない連絡先のみ候補にしています。</p></div>'+
+            '<div class="modalGrid3">'+summary+'</div>'+
+            '<div style="margin-top:12px">'+dataTable(['選択','CallConnect連絡先','電話番号（末尾のみ）','QuoteFlow顧客','判定'],rows)+'</div>'+
+            (eligible.length&&data.write_enabled
+              ?'<div class="notice" style="margin-top:12px"><strong>実際のCallConnect連絡先を変更します</strong>'+
+                '<p>選択した連絡先の既存メモは残したままQuoteFlowのURLを追記します。画面上で確認してから実行してください。競合・重複は更新しません。</p>'+
+                '<button type="button" class="primary" id="callconnectAutoLinksApply">選択した連絡先にURLを追記</button>'+
+                '<div id="callconnectAutoLinksApplyResult" role="status"></div></div>'
+              :'');
+          host.querySelectorAll('.callconnectAutoLinkInspect').forEach(btn=>btn.onclick=async()=>{
+            const contactId=String(btn.dataset.contactId||'');
+            btn.disabled=true;
+            const prior=btn.textContent;
+            btn.textContent='確認中...';
+            try{
+              const {data:result,error}=await supabase.functions.invoke('callconnect-contact-link-sync',{
+                body:{mode:'inspect',contact_id:contactId}
+              });
+              if(error)throw error;
+              if(!result?.ok)throw new Error(result?.error||'診断結果を取得できませんでした');
+              const labels={detail_consistent:'一致（読み取り専用確認済み）',
+                detail_phone_mismatch:'一覧と詳細の電話番号が異なります',
+                detail_id_mismatch:'連絡先IDが一致しません',
+                detail_memo_missing:'詳細側にメモ欄がありません',
+                detail_updated_since_list:'一覧取得後に変更されています',
+                list_memo_missing:'一覧にメモ欄がありません',
+                detail_memo_changed_since_list:'一覧と詳細のメモが異なります',
+                detail_requires_manual_review:'要確認'};
+              btn.textContent=labels[result.status]||'要確認';
+            }catch(err){
+              btn.textContent='詳細確認に失敗';
+            }finally{btn.disabled=false;}
+          });
+          const applyBtn=host.querySelector('#callconnectAutoLinksApply');
+          if(applyBtn){
+            applyBtn.onclick=async()=>{
+              const chosen=[...host.querySelectorAll('.callconnectAutoLinksSelect:checked')].map(box=>
+                eligible.find(x=>String(x.contact_id)===String(box.dataset.contactId))
+              ).filter(Boolean);
+              if(!chosen.length)return toast('更新する連絡先を選択してください。');
+              if(chosen.length>20)return toast('1回の更新は20件までです。');
+              if(!window.confirm('実際のCallConnectの顧客メモを'+chosen.length+
+                '件変更します。元のメモを維持してQuoteFlowのURLを追記します。実行しますか？'))return;
+              applyBtn.disabled=true;
+              const resultHost=host.querySelector('#callconnectAutoLinksApplyResult');
+              resultHost.textContent='選択した連絡先を確認して更新しています...';
+              try{
+                const targets=chosen.map(x=>({contact_id:x.contact_id,confirmation_token:x.confirmation_token}));
+                const {data:result,error:applyError}=await supabase.functions.invoke('callconnect-contact-link-sync',{
+                  body:{mode:'apply',confirmed:true,targets}
+                });
+                if(applyError)throw applyError;
+                if(!result?.ok)throw new Error(result?.error||'更新処理に失敗しました');
+                const updated=Number(result.updated_count||0);
+                const remaining=Number(result.attempted_count||0)-updated;
+                resultHost.textContent='更新完了 '+updated+'件 / 未更新・再確認 '+remaining+
+                  '件。CallConnect画面を確認し、照合結果を再取得してください。';
+                if(updated)toast('CallConnectの連絡先URLを'+updated+'件更新しました。');
+                host.querySelectorAll('.callconnectAutoLinksSelect').forEach(x=>x.disabled=true);
+              }catch(err){
+                resultHost.textContent='更新処理を確認できませんでした：'+String(err.message||err)+
+                  '。CallConnect側を確認してから再度プレビューしてください。';
+              }finally{applyBtn.disabled=false;}
+            };
+          }
+        }catch(err){
+          host.textContent='照合結果を取得できませんでした：'+String(err.message||err);
+        }finally{
+          btn.disabled=false;
+        }
+      };
+    }
     const callconnectPageSyncRecords=$('#callconnectPageSyncRecords');
     if(callconnectPageSyncRecords){
       callconnectPageSyncRecords.onclick=async()=>{
@@ -13537,6 +14241,18 @@
       };
     }
 
+    document.querySelectorAll('.callconnectContactOpen').forEach(btn=>btn.onclick=()=>{
+      const url=callconnectContactConsoleUrl(btn.dataset.contactId);
+      if(!url) return toast('CallConnectの連絡先IDを確認できません。');
+      window.open(url,'_blank','noopener,noreferrer');
+    });
+    document.querySelectorAll('.callconnectCopyCustomerLink').forEach(btn=>btn.onclick=async()=>{
+      try{
+        await navigator.clipboard.writeText(callconnectCustomerLink(btn.dataset.customerId));
+        toast('QuoteFlow顧客カルテURLをコピーしました。CallConnectの連絡先メモに追記してください。');
+      }catch(err){toast('カルテURLをコピーできませんでした。');}
+    });
+
     const callconnectHistorySearch=$('#callconnectHistorySearch');
     if(callconnectHistorySearch){
       callconnectHistorySearch.oninput=()=>{
@@ -13546,6 +14262,61 @@
         });
       };
     }
+
+    // Transcripts are sensitive call content. Load text only when an authorized
+    // staff member explicitly opens a record, never in the whole history list.
+    document.querySelectorAll('.callconnectTranscriptOpen').forEach(btn=>btn.onclick=async()=>{
+      const call=calls.find(x=>String(x.id)===String(btn.dataset.callId));
+      if(!call) return;
+      btn.disabled=true;
+      mountAppModal(
+        '<div class="appModalHead"><div><h2>CallConnect 通話文字起こし</h2>'+
+        '<p>'+esc(dateTimeText(call.call_ended_at||call.received_at))+' / '+esc(call.matched_customer_name||call.contact_company||call.contact_name||'通話履歴')+'</p></div>'+
+        '<button id="callconnectTranscriptClose" class="ghost" type="button">閉じる</button></div>'+
+        '<div class="appModalBody"><div id="callconnectTranscriptBody" class="notice">文字起こしを読み込んでいます...</div></div>'+
+        '<div class="appModalFoot"><button id="callconnectTranscriptDone" class="primary" type="button">閉じる</button></div>',
+        true
+      );
+      $('#callconnectTranscriptClose').onclick=closeAppModal;
+      $('#callconnectTranscriptDone').onclick=closeAppModal;
+      const host=$('#callconnectTranscriptBody');
+      try{
+        const record=await rpc('callconnect_record_transcript',{p_call_id:call.id},{readOnly:true});
+        if(!host?.isConnected) return;
+        if(!record){
+          host.textContent='通話記録が見つからないか、表示権限がありません。';
+          return;
+        }
+        const transcript=String(record.transcript_text||'').trim();
+        if(record.status==='ready'&&transcript){
+          const recordedAt=record.transcript_synced_at?dateTimeText(record.transcript_synced_at):'日時未記録';
+          const provider=record.transcription_provider==='openai'?'OpenAI':'CallConnect';
+          host.innerHTML=
+            '<p class="muted" style="margin:0 0 12px">取得元：'+esc(provider)+' / 保存：'+esc(recordedAt)+'</p>'+
+            '<div style="white-space:pre-wrap;line-height:1.8;max-height:55vh;overflow:auto;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--card)">'+esc(transcript)+'</div>'+
+            '<div class="supportQuickActions" style="margin-top:12px"><button id="callconnectTranscriptCopy" class="ghost" type="button">文字起こし全文をコピー</button></div>';
+          $('#callconnectTranscriptCopy').onclick=async()=>{
+            try{
+              await navigator.clipboard.writeText(transcript);
+              toast('文字起こし全文をコピーしました');
+            }catch(_){
+              toast('コピーできませんでした。本文を選択してコピーしてください。');
+            }
+          };
+        }else{
+          const stateMessage={
+            no_recording:'録音がないため、文字起こしはありません。',
+            pending:'音声の文字起こしを取得できていません。CallConnect側で変換完了後、通話履歴を再同期してください。',
+            failed:'文字起こしに失敗しています。管理者に接続設定・録音データを確認してもらってください。'
+          };
+          host.textContent=stateMessage[record.status]||'文字起こしを取得できていません。';
+        }
+      }catch(err){
+        if(host?.isConnected) host.textContent='文字起こしの取得に失敗しました：'+String(err.message||err);
+      }finally{
+        if(btn.isConnected) btn.disabled=false;
+      }
+    });
 
     document.querySelectorAll('.callconnectTicketOpen').forEach(btn=>btn.onclick=async()=>{
       const role=bootData?.context?.role;
@@ -13835,6 +14606,28 @@
     await renderSupport();
   }
 
+  async function showSupportCustomerDetail(customerId){
+    const host=$('#supportCustomerDetail');
+    if(!host) throw new Error('サポート会社の顧客画面を読み込めませんでした。');
+    // The RPC enforces the support-company assignment and AAL2 MFA.
+    const ctx=await rpc('support_customer_context',{p_customer_id:customerId});
+    if(!ctx?.customer||String(ctx.customer.id)!==String(customerId)){
+      throw new Error('顧客情報がありません、または権限がありません。');
+    }
+    const assetRows=(ctx.assets||[]).map(a=>
+      '<tr><td>'+esc(a.asset_number||'—')+'</td><td>'+esc(a.model_name||'—')+'</td><td>'+esc(a.serial_number||'—')+'</td><td>'+esc(statusText(a.status))+'</td></tr>'
+    );
+    const ticketRows=(ctx.tickets||[]).map(t=>
+      '<tr><td>'+esc(t.ticket_number||'—')+'</td><td>'+esc(t.subject||'')+'</td><td>'+esc(statusText(t.status))+'</td><td>'+esc(t.priority||'normal')+'</td></tr>'
+    );
+    host.innerHTML='<div class="card section" style="box-shadow:none">'+
+      '<h2>'+esc(ctx.customer.name||'')+'</h2><p class="muted">電話 '+esc(ctx.customer.phone||'—')+'</p>'+
+      '<h3>登録機器</h3>'+dataTable(['機器番号','機種','シリアル','状態'],assetRows)+
+      '<h3>問い合わせ履歴</h3>'+dataTable(['番号','件名','状態','優先度'],ticketRows)+'</div>';
+    host.scrollIntoView({behavior:'smooth',block:'start'});
+    return ctx;
+  }
+
   async function renderSupportCustomers(){
     const data=await rpc('support_customer_directory');
     const rows=(data||[]).map(c=>
@@ -13844,10 +14637,10 @@
       pageIntro('顧客・機器','電話番号を中心に、担当顧客・機器・契約・問い合わせ履歴を確認します。')+
       '<section class="card section"><div class="field" style="max-width:520px"><label>電話番号・顧客番号・顧客名</label><input id="supportCustomerSearch" inputmode="search" placeholder="まず電話番号を入力"></div><div id="supportCustomerDetail"></div><div id="supportCustomerTable">'+dataTable(['顧客番号','顧客名','電話','機器','契約','対応中','操作'],rows)+'</div></section>';
     const bind=()=>document.querySelectorAll('.supportCustomerOpen').forEach(btn=>btn.onclick=async()=>{
-      const ctx=await rpc('support_customer_context',{p_customer_id:btn.dataset.id});
-      const assetRows=(ctx.assets||[]).map(a=>'<tr><td>'+esc(a.asset_number||'—')+'</td><td>'+esc(a.model_name||'—')+'</td><td>'+esc(a.serial_number||'—')+'</td><td>'+esc(statusText(a.status))+'</td></tr>');
-      const ticketRows=(ctx.tickets||[]).map(t=>'<tr><td>'+esc(t.ticket_number||'—')+'</td><td>'+esc(t.subject||'')+'</td><td>'+esc(statusText(t.status))+'</td><td>'+esc(t.priority||'normal')+'</td></tr>');
-      $('#supportCustomerDetail').innerHTML='<div class="card section" style="box-shadow:none"><h2>'+esc(ctx.customer?.name||'')+'</h2><p class="muted">電話 '+esc(ctx.customer?.phone||'—')+'</p><h3>登録機器</h3>'+dataTable(['機器番号','機種','シリアル','状態'],assetRows)+'<h3>問い合わせ履歴</h3>'+dataTable(['番号','件名','状態','優先度'],ticketRows)+'</div>';
+      btn.disabled=true;
+      try{await showSupportCustomerDetail(btn.dataset.id);}
+      catch(err){toast('顧客カルテを開けませんでした。権限・通信状態を確認してください。');}
+      finally{btn.disabled=false;}
     });
     bind();
     $('#supportCustomerSearch').oninput=()=>{
@@ -15159,6 +15952,8 @@
       await startCallConnectTranscriptAutoSync();
       await startDeadlineWatch();
       await go('home');
+      // For a contact URL opened before sign-in, wait until login + MFA.
+      await openCallconnectCustomerDeepLink();
     }catch(err){
       console.error('QuoteFlow post-login initialization failed',err);
       $('#home').innerHTML=
@@ -15560,6 +16355,13 @@
           clearInterval(callconnectNotificationPollTimer);
           callconnectNotificationPollTimer=null;
         }
+        if(callconnectNotificationResumeHandler){
+          document.removeEventListener('visibilitychange',callconnectNotificationResumeHandler);
+          window.removeEventListener('online',callconnectNotificationResumeHandler);
+          callconnectNotificationResumeHandler=null;
+        }
+        setCallconnectRealtimeState('idle');
+        lastCallConnectPopupId='';
         if(deadlineWatchTimer){
           clearInterval(deadlineWatchTimer);
           deadlineWatchTimer=null;
@@ -15587,5 +16389,6 @@
   healthTimer=setInterval(checkHealth,60000);
   await boot();
 </script>
+<script src="./ui/workspace-redesign.js" defer></script>
 </body>
 </html>

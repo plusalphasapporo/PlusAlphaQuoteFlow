@@ -23,7 +23,35 @@ jobs:
 
       - name: Validate production HTML
         run: node scripts/validate-static.mjs
+      - name: Validate UI redesign compatibility
+        run: node scripts/test-ui-redesign.mjs
+      - name: Install DOM test dependency
+        run: npm install --no-save --package-lock=false jsdom@26.1.0
+      - name: Test UI DOM integration
+        run: node scripts/test-ui-redesign-dom.mjs
+      - name: Test customer create modal DOM workflows
+        run: node scripts/test-shared-create-modal.mjs
+      - name: Test customer web publication boundary
+        run: node scripts/test-web-publication-boundary.mjs
+      - name: Test knowledge publication safety
+        run: node scripts/test-knowledge-publication-safety.mjs
+      - name: Test AI rate limit classification
+        run: node scripts/test-ai-rate-limit.mjs
+      - name: Test AI Web Guide mocked end-to-end
+        run: node scripts/test-ai-web-guide.mjs
       - name: Test ticket workspace recovery
         run: node scripts/test-ticket-workspace.mjs
+      - name: Test ticket customer panel and M365 shortcut
+        run: node scripts/test-ticket-customer-panel.mjs
+      - name: Test role-aware unified notifications
+        run: node scripts/test-unified-notifications.mjs
+      - name: Test CallConnect verified real-time and fallback
+        run: node scripts/test-callconnect-realtime.mjs
+      - name: Test secure CallConnect transcript history
+        run: node scripts/test-callconnect-transcripts.mjs
+      - name: Test CallConnect one-click customer deep links
+        run: node scripts/test-callconnect-customer-deep-links.mjs
+      - name: Test CallConnect existing-contact matching preview
+        run: node scripts/test-callconnect-auto-links.mjs
       - name: Validate ticket numbering migrations
         run: node scripts/test-ticket-number-migration.mjs

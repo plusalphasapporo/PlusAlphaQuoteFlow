@@ -1,0 +1,114 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+import { webcrypto } from 'node:crypto';
+const src=fs.readFileSync('supabase/functions/callconnect-contact-link-sync/logic.mjs','utf8');
+const tmp=src.replaceAll('export ','');
+const scope={URL,Set,Map,TextEncoder,crypto:webcrypto};vm.createContext(scope);
+vm.runInContext(tmp+'\n globalThis.api={normalizePhone,buildPlan,prepareMemo,summarize,parseContactsPage,decideContactsPage,fingerprintPlanItem,otherContactFieldsEqual,verifiedContactDetail,inspectContactDetail,probeContactListAndDetail};',scope);
+const {normalizePhone,buildPlan,prepareMemo,summarize,parseContactsPage,decideContactsPage,fingerprintPlanItem,otherContactFieldsEqual,verifiedContactDetail,inspectContactDetail,probeContactListAndDetail}=scope.api;
+const id='91000000-0000-4000-8000-000000000001',other='92000000-0000-4000-8000-000000000002';
+assert.equal(normalizePhone('011-123-4567'),'0111234567');
+assert.equal(normalizePhone('+81 11 123 4567'),'0111234567');
+assert.equal(normalizePhone('81111234567'),'0111234567');
+assert.equal(normalizePhone('abc'),null);
+const customer={id,customer_code:'001',name:'Test Co',phone:'0111234567'};
+const test=c=>JSON.parse(JSON.stringify(buildPlan([c],[customer],[])[0]));
+let row=test({id:'10',friendly_number:'+81 11 123 4567',memo:'Old customer notes'});
+assert.equal(row.status,'eligible');
+assert.ok(row.next_memo.startsWith('Old customer notes\n'));
+assert.ok(row.next_memo.includes('qf_customer='+id));
+row=test({id:'10',friendly_number:'0111234567',memo:'QuoteFlow 顧客カルテ: https://example.com/?qf_customer='+other});
+assert.equal(row.status,'conflict_link');
+row=test({id:'10',friendly_number:'0111234567',memo:'QuoteFlow 顧客カルテ: https://example.com/?qf_customer='+id});
+assert.equal(row.status,'already_linked');
+row=test({id:'10',friendly_number:'0111234567',memo:'other qf_customer=garbled'});
+assert.equal(row.status,'conflict_link');
+row=test({id:'10',friendly_number:'0111234567',memo:'x'.repeat(1800)});
+assert.equal(row.status,'memo_too_long');
+row=test({id:'10',friendly_number:'0111234568',memo:''});assert.equal(row.status,'unmatched');
+let group=buildPlan([{id:'10',number:'0111234567',memo:''},{id:'11',number:'0111234567',memo:''}],[customer],[]);
+assert.deepEqual(group.map(x=>x.status),['duplicate_remote_phone','duplicate_remote_phone']);
+group=buildPlan([{id:'10',number:'0111234567',memo:''}],[customer,{id:other,name:'Other',phone:'0111234567'}],[]);
+assert.equal(group[0].status,'ambiguous_customer');
+group=buildPlan([{id:'10',number:'0111234567',memo:''}],[customer],[{customer_id:id,phone:'011-123-4567',active:true}]);
+assert.equal(group[0].status,'eligible','Same customer may have duplicate numbers across customer/contact rows');
+assert.equal(summarize(group).eligible,1);
+// Pagination regression: a small page is not automatically the last page.
+const rawPage=[{id:1},{id:2},{id:3}];
+assert.equal(parseContactsPage(rawPage).length,3);
+assert.equal(parseContactsPage({data:{contacts:rawPage}}).length,3);
+assert.equal(parseContactsPage({results:[{contact:{id:4}}]})[0].id,4);
+assert.equal(parseContactsPage({data:{something:'unknown'}}),null);
+assert.equal(decideContactsPage(rawPage,3,3).done,false,'An unknown-size page needs a completion probe');
+assert.equal(decideContactsPage([],0,3).done,true,'A subsequent empty page proves completion');
+assert.equal(decideContactsPage({contacts:rawPage,total:4},3,3).done,false);
+assert.equal(decideContactsPage({contacts:[{id:4}],total:4},1,4).done,true);
+assert.equal(decideContactsPage({contacts:rawPage,total:4,has_more:false},3,3).error,'contacts_pagination_incomplete');
+assert.equal(decideContactsPage({contacts:rawPage,total:3,has_more:true},3,3).error,'contacts_pagination_inconsistent');
+assert.equal(decideContactsPage({contacts:rawPage,total:'not-a-number'},3,3).error,'contacts_total_invalid');
+assert.equal(decideContactsPage({contacts:rawPage,has_more:false},3,3).done,true);
+
+assert.equal(otherContactFieldsEqual({id:10,phone:'0111234567',memo:'before'},{id:10,phone:'0111234567',memo:'after'}),true);
+assert.equal(otherContactFieldsEqual({id:10,phone:'0111234567',memo:'before'},{id:10,phone:'',memo:'after'}),false);
+assert.equal(otherContactFieldsEqual({id:10,phone:'0111234567',memo:'before'},{id:10,memo:'after'}),false);
+assert.equal(buildPlan([{id:'10',number:'0111234567'}],[customer],[])[0].status,'memo_unavailable');
+assert.equal(verifiedContactDetail(buildPlan([{id:'10',number:'0111234567',memo:'既存のメモ'}],[customer],[])[0],{id:'10',phone:'0111234567',memo:'既存のメモ'}),'verified');
+
+const inspected=buildPlan([{id:'10',phone:'0111234567',memo:'original'}],[customer],[])[0];
+assert.equal(inspectContactDetail(inspected,{id:'10',phone:'0111234567',memo:'original'}),'detail_consistent');
+assert.equal(inspectContactDetail(inspected,{id:'10',phone:'0111234568',memo:'original'}),'detail_phone_mismatch');
+assert.equal(inspectContactDetail(inspected,{id:'10',phone:'0111234567'}),'detail_memo_missing');
+assert.equal(inspectContactDetail(inspected,{id:'10',phone:'0111234567',memo:'different'}),'detail_memo_changed_since_list');
+assert.equal(inspectContactDetail(inspected,{id:'11',phone:'0111234567',memo:'original'}),'detail_id_mismatch');
+assert.equal(inspectContactDetail(buildPlan([{id:'10',phone:'0111234567'}],[customer],[])[0],{id:'10',phone:'0111234567',memo:''}),'list_memo_missing');
+const diagnostic=probeContactListAndDetail({id:10,phone:'0111234567',memo:''},{id:10,phone:'0111234567',memo:''});
+assert.equal(diagnostic.status,'ready_for_read_only_inspection');
+assert.equal(diagnostic.list_memo_present,true);
+assert.equal(diagnostic.phone_matches,true);
+assert.equal(probeContactListAndDetail({id:10,phone:'0111234567'},{id:10,phone:'0111234567',memo:''}).status,'list_memo_missing');
+assert.equal(probeContactListAndDetail({id:10,phone:'0111234567',memo:''},{id:10,phone:'0111234567'}).status,'detail_memo_missing');
+assert.equal(probeContactListAndDetail({id:10,phone:'0111234567',memo:''},{id:10,phone:'01199998888',memo:''}).status,'detail_phone_mismatch');
+const edge=fs.readFileSync('supabase/functions/callconnect-contact-link-sync/index.ts','utf8');
+// Approval hashes bind the selected CallConnect contact, customer, phone and
+// original memo to the preview. A changed memo must have a different token.
+const selected=buildPlan([{id:'10',number:'0111234567',memo:'既存のメモ'}],[customer],[])[0];
+const selectedToken=await fingerprintPlanItem(selected);
+assert.match(selectedToken,/^[0-9a-f]{64}$/);
+const changedMemo={...selected,existing_memo:'第三者が追加したメモ'};
+assert.notEqual(await fingerprintPlanItem(changedMemo),selectedToken);
+assert.notEqual(await fingerprintPlanItem({...selected,customer_id:other}),selectedToken);
+assert.notEqual(await fingerprintPlanItem({...selected,phones:['09011112222']}),selectedToken);
+
+assert.match(edge,/\["preview","apply","inspect","diagnose"\]/);
+assert.match(edge,/requires_explicit_confirmation:true/);
+assert.match(edge,/input\.confirmed!==true/);
+assert.match(edge,/input\.mode==="inspect"/);
+assert.match(edge,/input\.mode==="diagnose"/);
+assert.match(edge,/probeContactListAndDetail\(first,detail\)/);
+assert.match(edge,/inspectContactDetail\(item,detail\)/);
+assert.match(edge,/write_enabled:false/);
+assert.match(edge,/fingerprintPlanItem\(item\)/);
+assert.match(edge,/before=await readDetail\(\)/);
+assert.match(edge,/verifiedContactDetail\(item,before\)/);
+
+
+assert.match(edge,/contact_writes_disabled_pending_vendor_verification/);
+assert.match(edge,/CALLCONNECT_CONTACT_WRITES_ENABLED/);
+assert.match(edge,/new URL\(endpoint\.origin\+endpoint\.pathname\.replace/);
+assert.match(edge,/method:"PUT"/);
+assert.match(edge,/form\.set\("memo",item\.next_memo\)/);
+
+assert.match(edge,/verification_pending/);
+assert.match(edge,/updated_count:counts\.updated\|\|0/);
+
+assert.match(edge,/write_enabled:Deno\.env\.get\("CALLCONNECT_CONTACT_WRITES_ENABLED"\)==="true"/);
+assert.match(edge,/unexpected_contact_change_stop/);
+assert.match(edge,/otherContactFieldsEqual\(before,verified\)/);
+assert.match(edge,/decideContactsPage\(raw,batch\.length,list\.length\)/);
+assert.match(edge,/contacts_exceed_safe_scan_limit/);
+assert.match(edge,/contact_pagination_duplicate/);
+assert.match(edge,/claim\.aal!=="aal2"/);
+assert.match(edge,/profile\.role!=="internal_admin"/);
+assert.match(edge,/explicit_confirmation_and_1_to_20_targets_required/);
+console.log('CallConnect contact sync tests passed: complete pagination, unique matching, admin MFA, expiring approval hashes, memo-only PUT and readback verification.');

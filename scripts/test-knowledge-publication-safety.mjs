@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+const migration=fs.readFileSync('supabase/migrations/20261014034300_redact_private_knowledge_tags_from_role_rpc.sql','utf8');
+const html=fs.readFileSync('index.html','utf8');
+assert.match(migration,/create or replace function app_private\.role_knowledge_articles_impl\(\)/i);
+assert.ok(migration.includes("where tag !~* '^(customer:|web-cache:)'"));
+assert.match(migration,/app_private\.is_active_user\(\)/);
+assert.match(migration,/app_private\.current_role\(\)/);
+assert.match(migration,/security definer/i);
+assert.match(migration,/k\.is_active=true/);
+assert.match(html,/社内公開済み（実機検証は別途必要）/);
+assert.doesNotMatch(html,/担当者確認済み/);
+console.log('Shared knowledge security projection and publication labeling passed.');
