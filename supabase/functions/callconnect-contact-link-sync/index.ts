@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import {createClient} from "https://esm.sh/@supabase/supabase-js@2.95.0";
-import {buildPlan,publicPlanItem,summarize,STAGING_ORIGIN,parseContactsPage,decideContactsPage,fingerprintPlanItem,remotePhones,prepareMemo,otherContactFieldsEqual,verifiedContactDetail,inspectContactDetail} from "./logic.mjs";
+import {buildPlan,publicPlanItem,summarize,STAGING_ORIGIN,parseContactsPage,decideContactsPage,fingerprintPlanItem,remotePhones,prepareMemo,otherContactFieldsEqual,verifiedContactDetail,inspectContactDetail,probeContactListAndDetail} from "./logic.mjs";
 const headers={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"authorization, x-client-info, apikey, content-type","Access-Control-Allow-Methods":"POST, OPTIONS","Cache-Control":"no-store"};
 const json=(status:number,body:unknown)=>new Response(JSON.stringify(body),{status,headers:{...headers,"Content-Type":"application/json"}});
 Deno.serve(async(req:Request)=>{
@@ -19,7 +19,7 @@ Deno.serve(async(req:Request)=>{
  let claim:any={};try{claim=JSON.parse(atob(jwt.split(".")[1].replace(/-/g,"+").replace(/_/g,"/")));}catch{return json(401,{error:"invalid_session"});}
  if(claim.aal!=="aal2")return json(403,{error:"aal2_required"});
  let input:any={};try{input=await req.json();}catch{return json(400,{error:"invalid_json"});}
- if(!["preview","apply","inspect"].includes(input.mode))return json(400,{error:"invalid_mode"});
+ if(!["preview","apply","inspect","diagnose"].includes(input.mode))return json(400,{error:"invalid_mode"});
  // Never allow a remote write from the page load, poller or an implicit action.
  // Only an internal administrator with MFA, an explicit selection and a
  // separate user confirmation can reach the update code below.
@@ -84,6 +84,28 @@ Deno.serve(async(req:Request)=>{
  let plan;
  try{plan=buildPlan(list,customers,contacts,origin);}catch{return json(422,{error:"contact_preview_validation_failed"});}
 
+ if(input.mode==="diagnose"){
+   // Read-only GETs only: check API shape and compare the first contact with
+   // its vendor detail. Never transmit PII, memos or credentials to UI.
+   if(!list.length)return json(200,{ok:true,mode:"diagnose",status:"no_remote_contacts",
+     read_only:true,contact_count:0});
+   const first=list[0];
+   const id=String(first?.id??"");
+   if(!/^[1-9][0-9]{0,17}$/.test(id))
+     return json(422,{error:"contact_id_format_unverified"});
+   const detailUrl=new URL(endpoint.origin+endpoint.pathname.replace(/\/+$/,"")+"/"+encodeURIComponent(id));
+   const response=await fetch(detailUrl.toString(),{
+     method:"GET",headers:{"Accept":"application/json","X-Callconnect-Token":String(creds.api_key)},
+     signal:AbortSignal.timeout(15000)
+   }).catch(()=>null);
+   if(!response?.ok)
+     return json(502,{error:"detail_lookup_failed",http_status:response?.status||null});
+   const raw:any=await response.json().catch(()=>null);
+   const detail=raw?.contact??raw?.data??raw;
+   const result=probeContactListAndDetail(first,detail);
+   return json(200,{ok:true,mode:"diagnose",read_only:true,
+     contact_count:list.length,...result});
+ }
  if(input.mode==="inspect"){
    const contactId=String(input.contact_id??"").trim();
    if(!/^[1-9][0-9]{0,17}$/.test(contactId))
