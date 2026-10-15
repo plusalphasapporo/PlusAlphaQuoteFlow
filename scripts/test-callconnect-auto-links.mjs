@@ -5,8 +5,8 @@ import { webcrypto } from 'node:crypto';
 const src=fs.readFileSync('supabase/functions/callconnect-contact-link-sync/logic.mjs','utf8');
 const tmp=src.replaceAll('export ','');
 const scope={URL,Set,Map,TextEncoder,crypto:webcrypto};vm.createContext(scope);
-vm.runInContext(tmp+'\n globalThis.api={normalizePhone,buildPlan,prepareMemo,summarize,parseContactsPage,decideContactsPage,fingerprintPlanItem};',scope);
-const {normalizePhone,buildPlan,prepareMemo,summarize,parseContactsPage,decideContactsPage,fingerprintPlanItem}=scope.api;
+vm.runInContext(tmp+'\n globalThis.api={normalizePhone,buildPlan,prepareMemo,summarize,parseContactsPage,decideContactsPage,fingerprintPlanItem,otherContactFieldsEqual,verifiedContactDetail};',scope);
+const {normalizePhone,buildPlan,prepareMemo,summarize,parseContactsPage,decideContactsPage,fingerprintPlanItem,otherContactFieldsEqual,verifiedContactDetail}=scope.api;
 const id='91000000-0000-4000-8000-000000000001',other='92000000-0000-4000-8000-000000000002';
 assert.equal(normalizePhone('011-123-4567'),'0111234567');
 assert.equal(normalizePhone('+81 11 123 4567'),'0111234567');
@@ -49,6 +49,12 @@ assert.equal(decideContactsPage({contacts:rawPage,total:3,has_more:true},3,3).er
 assert.equal(decideContactsPage({contacts:rawPage,total:'not-a-number'},3,3).error,'contacts_total_invalid');
 assert.equal(decideContactsPage({contacts:rawPage,has_more:false},3,3).done,true);
 
+assert.equal(otherContactFieldsEqual({id:10,phone:'0111234567',memo:'before'},{id:10,phone:'0111234567',memo:'after'}),true);
+assert.equal(otherContactFieldsEqual({id:10,phone:'0111234567',memo:'before'},{id:10,phone:'',memo:'after'}),false);
+assert.equal(otherContactFieldsEqual({id:10,phone:'0111234567',memo:'before'},{id:10,memo:'after'}),false);
+assert.equal(buildPlan([{id:'10',number:'0111234567'}],[customer],[])[0].status,'memo_unavailable');
+assert.equal(verifiedContactDetail(selected,{id:'10',phone:'0111234567',memo:'既存のメモ'}),'verified');
+
 const edge=fs.readFileSync('supabase/functions/callconnect-contact-link-sync/index.ts','utf8');
 // Approval hashes bind the selected CallConnect contact, customer, phone and
 // original memo to the preview. A changed memo must have a different token.
@@ -76,7 +82,9 @@ assert.match(edge,/verified&&String\(verified\.memo\?\?""\)===item\.next_memo/);
 assert.match(edge,/verification_pending/);
 assert.match(edge,/updated_count:counts\.updated\|\|0/);
 
-assert.match(edge,/write_enabled:true/);
+assert.match(edge,/write_enabled:Deno\.env\.get\("CALLCONNECT_CONTACT_WRITES_ENABLED"\)==="true"/);
+assert.match(edge,/unexpected_contact_change_stop/);
+assert.match(edge,/otherContactFieldsEqual\(before,verified\)/);
 assert.match(edge,/decideContactsPage\(raw,batch\.length,list\.length\)/);
 assert.match(edge,/contacts_exceed_safe_scan_limit/);
 assert.match(edge,/contact_pagination_duplicate/);
