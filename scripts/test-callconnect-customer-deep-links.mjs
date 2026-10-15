@@ -138,4 +138,14 @@ function fixture(role,href,allowedId=customerId){
   h.dom.window.close();
 }
 
+
+const contactMigration=fs.readFileSync('supabase/migrations/20261015043000_callconnect_contact_link_metadata.sql','utf8');
+assert.match(contactMigration,/'contact_id',CASE WHEN cc\.contact_id ~/);
+assert.match(html,/function callconnectContactConsoleUrl\(id\)/);
+assert.match(html,/https:\/\/www\.callconnect\.jp\/console\/\?contacts\//);
+assert.match(html,/callconnectContactOpen/);
+assert.match(html,/callconnectCopyCustomerLink/);
+assert.match(html,/class="linkBtn callconnectContactOpen"/);
+assert.match(html,/class="linkBtn callconnectCopyCustomerLink"/);
+assert.match(html,/navigator\.clipboard\.writeText\(callconnectCustomerLink\(btn\.dataset\.customerId\)\)/);
 console.log('CallConnect 1-click links passed: staging alias, session/MFA gate, internal/support navigation, scoped access, safe invalid links, query cleanup and retry behavior.');
