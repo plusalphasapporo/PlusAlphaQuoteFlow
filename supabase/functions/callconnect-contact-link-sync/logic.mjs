@@ -140,7 +140,7 @@ export function buildPlan(remoteContacts,customers,localContacts,origin=STAGING_
     const item={
       contact_id:c.id,contact_name:String(c.source.name||c.source.company||'').slice(0,120),
       masked_phone:maskedPhone(c.numbers[0]),customer_id:null,customer_name:null,
-      customer_code:null,status:'unmatched',existing_memo:String(c.source.memo??''),
+      customer_code:null,status:'unmatched',existing_memo:String(c.source.memo??''),remote_updated_at:String(c.source.updated_at??''),
       next_memo:null,link:null,phones:c.numbers
     };
     if(!REMOTE_ID.test(c.id)){item.status='invalid_contact_id';return item;}
@@ -173,7 +173,7 @@ export async function fingerprintPlanItem(item){
     throw Error('ineligible_contact');
   const bytes=new TextEncoder().encode(JSON.stringify([
     'callconnect-contact-link-v1',String(item.contact_id),String(item.customer_id),
-    String(item.existing_memo),String(item.next_memo),[...(item.phones||[])].sort()
+    String(item.existing_memo),String(item.next_memo),String(item.remote_updated_at||''),[...(item.phones||[])].sort()
   ]));
   const digest=await crypto.subtle.digest('SHA-256',bytes);
   return [...new Uint8Array(digest)].map(v=>v.toString(16).padStart(2,'0')).join('');
