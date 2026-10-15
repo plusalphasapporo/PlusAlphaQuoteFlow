@@ -92,7 +92,9 @@ if (!fs.existsSync('assets/support-ticket-tabs.js')) {
     ['draft restoration after refresh', "window.QuoteFlowTicketTabs?.restoreInProgress(t.id,ticketInProgressSnapshot)"],
     ['message-realtime protection', "window.QuoteFlowTicketTabs?.hasUnsentEdits(msg.ticket_id)"],
     ['back navigation guard', "window.QuoteFlowTicketTabs?.confirmLeave(ticketId)"],
-    ['ticket close guard', "window.QuoteFlowTicketTabs?.confirmLeave(t.id)"]
+    ['ticket close guard', "window.QuoteFlowTicketTabs?.confirmLeave(t.id)"],
+    ['sidebar navigation guard', "window.QuoteFlowTicketTabs?.confirmLeave(activeTicketId)"],
+    ['cross-ticket unsent draft guard', "window.QuoteFlowTicketTabs?.hasUnsentEdits(previousId)"]
   ]) {
     if(!html.includes(needle)) failures.push('Ticket refresh integration missing: '+name);
   }
