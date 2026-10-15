@@ -13948,7 +13948,7 @@
   function callconnectContactConsoleUrl(id){
     const contactId=String(id||'').trim();
     if(!/^[1-9][0-9]{0,17}$/.test(contactId)) return null;
-    return 'https://app.callconnect.jp/contacts/'+encodeURIComponent(contactId);
+    return 'https://www.callconnect.jp/console/?contacts/'+encodeURIComponent(contactId);
   }
 
   async function renderSupportCallConnect(){
