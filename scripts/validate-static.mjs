@@ -68,7 +68,7 @@ requireText('<script src="/assets/notification-center.js"></script>', 'Notificat
 requireText('<link rel="manifest" href="/manifest.webmanifest">', 'Installable app manifest');
 requireText("navigator.serviceWorker.register('/sw.js')", 'Service worker registration');
 requireText("window.QuoteFlowNotificationCenter?.mount(", 'Notification center mounting');
-requireText("mark_all_quote_notifications_read", 'Role-scoped mark-all-read RPC wiring');
+if (!fs.readFileSync('assets/notification-center.js','utf8').includes("mark_all_quote_notifications_read")) failures.push('Missing role-scoped mark-all-read RPC wiring');
 if (html.includes('>🔔<')) failures.push('Legacy emoji notification icon remains');
 for (const path of ['assets/notification-center.js','manifest.webmanifest','sw.js','sql/quote_notifications_mark_all_read.sql']) {
   if (!fs.existsSync(path)) failures.push('Missing notification asset: '+path);
