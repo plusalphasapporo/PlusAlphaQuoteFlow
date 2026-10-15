@@ -18,15 +18,15 @@ requireText("localStorage.removeItem('quoteflow_trusted_device')", 'legacy trust
 requireText('localStorage.removeItem(AUTH_STORAGE_KEY)', 'persistent auth-token cleanup');
 
 // Shared create/edit modal must exist before customer/product actions use it.
-for(const [pattern,label] of [
-  [/function openModal\\(\\{title=/,'shared create/edit modal'],
-  [/function closeModal\\(\\)/,'shared modal close'],
-  [/id="sharedModalForm"/,'shared modal form'],
-  [/form\\.onsubmit=async e=>/,'shared modal submit handler'],
-  [/await onSubmit\\(\\)/,'shared modal save callback'],
-  [/form\\.reportValidity\\(\\)/,'shared modal required field validation']
+for(const [needle,label] of [
+  ['function openModal({title=','shared create/edit modal'],
+  ['function closeModal(){','shared modal close'],
+  ['id="sharedModalForm"','shared modal form'],
+  ['form.onsubmit=async e=>','shared modal submit handler'],
+  ['await onSubmit()','shared modal save callback'],
+  ['form.reportValidity()','shared modal required field validation']
 ]){
-  if(!pattern.test(html)) failures.push('Missing: '+label);
+  if(!html.includes(needle)) failures.push('Missing: '+label);
 }
 
 for (const forbidden of ['sb_secret_', 'SUPABASE_SERVICE_ROLE_KEY', 'service_role']) {
