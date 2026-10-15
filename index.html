@@ -466,7 +466,7 @@
   </div>
   <div class="headerActions">
     <span id="dbBadge" class="pill headerPill">接続確認中</span>
-    <button id="notificationBtn" class="headerIconBtn hidden" type="button" title="通知">🔔<span id="notificationCount" class="notificationCount hidden"></span></button>
+    <button id="notificationBtn" class="headerIconBtn hidden" type="button" title="通知センター" aria-label="通知センター"><svg viewBox="0 0 24 24" aria-hidden="true" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg><span id="notificationCount" class="notificationCount hidden"></span></button>
     <span id="userBadge" class="profileBadge hidden"></span>
     <button id="logoutBtn" class="headerLogout hidden">ログアウト</button>
   </div>
@@ -1633,13 +1633,14 @@
       const queueWarningCount=queueWarningItems.length;
       const queueAlertCount=queueCriticalCount+queueWarningCount;
       const count=Number(unread?.count||0)+Number(handoffUpdates?.count||0)+overdueCount+dueTodayCount+Number(callUnread?.count||0)+unansweredAlertCount+queueAlertCount;
+      const unreadBadgeCount=Number(unread?.count||0)+Number(handoffUpdates?.count||0)+Number(callUnread?.count||0);
       const badge=$('#notificationCount');
       badge.classList.remove('attention','warning','critical');
       if(unansweredCriticalCount||queueCriticalCount) badge.classList.add('critical');
       else if(unansweredWarningCount||queueWarningCount) badge.classList.add('warning');
       else if(unansweredAttentionCount) badge.classList.add('attention');
-      if(count>0){
-        badge.textContent=count>99?'99+':String(count);
+      if(unreadBadgeCount>0){
+        badge.textContent=unreadBadgeCount>99?'99+':String(unreadBadgeCount);
         badge.classList.remove('hidden');
       }else{
         badge.classList.add('hidden');
@@ -2221,8 +2222,9 @@
       const overdueCount=deadlineAttention.filter(x=>x.deadline_state==='overdue').length;
       const dueTodayCount=deadlineAttention.filter(x=>x.deadline_state==='due_today').length;
       const count=Number(biz?.kpis?.urgent_open_tickets||0)+Number(unread?.count||0)+overdueCount+dueTodayCount+Number(callUnread?.count||0);
-      if(count>0){
-        $('#notificationCount').textContent=count>99?'99+':String(count);
+      const unreadBadgeCount=Number(unread?.count||0)+Number(unread?.ticket_count||0)+Number(callUnread?.count||0);
+      if(unreadBadgeCount>0){
+        $('#notificationCount').textContent=unreadBadgeCount>99?'99+':String(unreadBadgeCount);
         $('#notificationCount').classList.remove('hidden');
       }else{
         $('#notificationCount').classList.add('hidden');
@@ -2398,7 +2400,7 @@
           rpc('callconnect_unread_notifications')
         ]);
         const deadlineCount=(deadlineStates||[]).filter(x=>x.deadline_state==='overdue'||x.deadline_state==='due_today').length;
-        count=Number(biz?.kpis?.urgent_open_tickets||0)+Number(unreadHandoffs?.count||0)+deadlineCount+Number(callUnread?.count||0);
+        count=Number(unreadHandoffs?.count||0)+Number(unreadHandoffs?.ticket_count||0)+Number(callUnread?.count||0);
       }else if(role==='support_staff'){
         const [unread,unanswered,nextActionStates,handoffUpdates,deadlineStates,callUnread]=await Promise.all([
           rpc('support_unread_notifications'),
@@ -2416,7 +2418,7 @@
         const queueCriticalCount=(nextActionStates||[]).filter(x=>x.alert_level==='critical'&&x.notification_active!==false).length;
         const queueWarningCount=(nextActionStates||[]).filter(x=>x.alert_level==='warning'&&x.notification_active!==false).length;
         const queueAlertCount=queueCriticalCount+queueWarningCount;
-        count=Number(unread?.count||0)+Number(handoffUpdates?.count||0)+deadlineCount+Number(callUnread?.count||0)+unansweredAlertCount+queueAlertCount;
+        count=Number(unread?.count||0)+Number(handoffUpdates?.count||0)+Number(callUnread?.count||0);
         const badge=$('#notificationCount');
         badge.classList.remove('attention','warning','critical');
         if(unansweredCriticalCount||queueCriticalCount) badge.classList.add('critical');
@@ -2428,7 +2430,7 @@
         $('#notificationBtn').title='通知'+(parts.length?' / '+parts.join(' / '):'');
       }else if(role==='customer_user'){
         const h=await rpc('customer_portal_home');
-        count=(h?.recent_tickets||[]).filter(x=>x.status!=='closed').length;
+        count=0; // Open tickets are not unread notifications.
       }
     }catch(_){ count=0; }
     if(role!=='support_staff'){
@@ -2456,6 +2458,12 @@
       }
       return go(role==='customer_user'?'customer_status':'support');
     };
+    if(['support_staff','internal_admin','internal_staff'].includes(role)){
+      window.QuoteFlowNotificationCenter?.mount({
+        role,rpc,toast,
+        refreshBadges:()=>role==='support_staff'?refreshSupportUnreadBadge():refreshInternalUnreadHandoffBadge()
+      });
+    }
 
     const searchWrap=$('#globalSearchWrap');
     if(!['internal_admin','internal_staff','support_staff'].includes(role)){
@@ -15537,5 +15545,6 @@
   await boot();
 </script>
 <script src="/assets/support-ticket-tabs.js"></script>
+<script src="/assets/notification-center.js"></script>
 </body>
 </html>
