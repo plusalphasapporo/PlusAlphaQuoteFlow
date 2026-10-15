@@ -13944,6 +13944,13 @@
     $('#knowledgeSearch').oninput=render; render();
   }
 
+  // CallConnect contact IDs are numeric, not UUIDs. Reject all other values.
+  function callconnectContactConsoleUrl(id){
+    const contactId=String(id||'').trim();
+    if(!/^[1-9][0-9]{0,17}$/.test(contactId)) return null;
+    return 'https://app.callconnect.jp/contacts/'+encodeURIComponent(contactId);
+  }
+
   async function renderSupportCallConnect(){
     await rpc('mark_all_callconnect_notifications_read',{}, {readOnly:false}).catch(()=>{});
     const role=bootData?.context?.role;
@@ -13962,6 +13969,10 @@
         '<td>'+esc(statusTextMap[x.record_status]||x.record_status||'—')+'</td>'+
         '<td><strong>'+esc(x.contact_number||'—')+'</strong><br><span class="muted">'+esc(x.contact_company||x.contact_name||'')+'</span></td>'+
         '<td>'+esc(x.callconnect_user_name||'—')+'</td>'+
+        '<td>'+(callconnectContactConsoleUrl(x.contact_id)
+          ? '<button type="button" class="linkBtn callconnectContactOpen" data-contact-id="'+esc(x.contact_id)+'">連絡先を開く</button>'+
+            (x.matched_customer_id?'<button type="button" class="linkBtn callconnectCopyCustomerLink" data-customer-id="'+esc(x.matched_customer_id)+'">カルテURLをコピー</button>':'')
+          : '<span class="muted">連絡先ID未取得</span>')+'</td>'+
         '<td>'+esc(x.duration_seconds??0)+'秒</td>'+
         '<td>'+(x.has_transcript
           ? '<button class="linkBtn callconnectTranscriptOpen" type="button" data-call-id="'+esc(x.id)+'">全文を開く</button>'
@@ -14016,7 +14027,7 @@
       (!supportView&&dash?.api_key_configured&&!dash?.contacts_create_api_url_configured?'<div class="notice error"><strong>着信時の顧客表示はまだ未完成です。</strong><br>CallConnect側に顧客を同期するため、Contacts Create API URLの設定が必要です。Webhookによる通話履歴保存・電話番号照合は動作しています。</div>':'')+
       '<div id="callconnectPageSyncMsg" class="notice hidden"></div>'+
       '<section class="card section"><div class="row between"><div><h2>通話履歴</h2><p class="sectionDesc">電話番号で顧客を確認し、内容を聞いてから新規問い合わせを登録します。登録後はそのまま対応画面へ進めます。</p></div><div class="field" style="margin:0;min-width:260px"><label>履歴を検索</label><input id="callconnectHistorySearch" placeholder="電話番号・会社名・担当者"></div></div>'+
-        '<div id="callconnectHistoryTable">'+dataTable(['日時','種別','電話番号','CallConnect担当','通話','文字起こし','顧客照合','案件','操作'],rows)+'</div>'+
+        '<div id="callconnectHistoryTable">'+dataTable(['日時','種別','電話番号','CallConnect担当','連絡先リンク','通話','文字起こし','顧客照合','案件','操作'],rows)+'</div>'+
       '</section>';
 
     const callconnectPageSyncRecords=$('#callconnectPageSyncRecords');
@@ -14038,6 +14049,18 @@
         }
       };
     }
+
+    document.querySelectorAll('.callconnectContactOpen').forEach(btn=>btn.onclick=()=>{
+      const url=callconnectContactConsoleUrl(btn.dataset.contactId);
+      if(!url) return toast('CallConnectの連絡先IDを確認できません。');
+      window.open(url,'_blank','noopener,noreferrer');
+    });
+    document.querySelectorAll('.callconnectCopyCustomerLink').forEach(btn=>btn.onclick=async()=>{
+      try{
+        await navigator.clipboard.writeText(callconnectCustomerLink(btn.dataset.customerId));
+        toast('QuoteFlow顧客カルテURLをコピーしました。CallConnectの連絡先メモに追記してください。');
+      }catch(err){toast('カルテURLをコピーできませんでした。');}
+    });
 
     const callconnectHistorySearch=$('#callconnectHistorySearch');
     if(callconnectHistorySearch){
