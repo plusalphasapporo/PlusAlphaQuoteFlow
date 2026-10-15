@@ -27,11 +27,11 @@ assert.equal(row.status,'conflict_link');
 row=test({id:'10',friendly_number:'0111234567',memo:'x'.repeat(1800)});
 assert.equal(row.status,'memo_too_long');
 row=test({id:'10',friendly_number:'0111234568',memo:''});assert.equal(row.status,'unmatched');
-let group=buildPlan([{id:'10',number:'0111234567'},{id:'11',number:'0111234567'}],[customer],[]);
+let group=buildPlan([{id:'10',number:'0111234567',memo:''},{id:'11',number:'0111234567',memo:''}],[customer],[]);
 assert.deepEqual(group.map(x=>x.status),['duplicate_remote_phone','duplicate_remote_phone']);
-group=buildPlan([{id:'10',number:'0111234567'}],[customer,{id:other,name:'Other',phone:'0111234567'}],[]);
+group=buildPlan([{id:'10',number:'0111234567',memo:''}],[customer,{id:other,name:'Other',phone:'0111234567'}],[]);
 assert.equal(group[0].status,'ambiguous_customer');
-group=buildPlan([{id:'10',number:'0111234567'}],[customer],[{customer_id:id,phone:'011-123-4567',active:true}]);
+group=buildPlan([{id:'10',number:'0111234567',memo:''}],[customer],[{customer_id:id,phone:'011-123-4567',active:true}]);
 assert.equal(group[0].status,'eligible','Same customer may have duplicate numbers across customer/contact rows');
 assert.equal(summarize(group).eligible,1);
 // Pagination regression: a small page is not automatically the last page.
