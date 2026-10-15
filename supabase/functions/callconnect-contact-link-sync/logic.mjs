@@ -166,6 +166,19 @@ export function buildPlan(remoteContacts,customers,localContacts,origin=STAGING_
     return item;
   });
 }
+// Fingerprint all write-sensitive data. The browser cannot authorize a
+// different contact or stale memo by substituting only a contact ID.
+export async function fingerprintPlanItem(item){
+  if(item?.status!=='eligible'||!item.contact_id||!item.customer_id||!item.next_memo)
+    throw Error('ineligible_contact');
+  const bytes=new TextEncoder().encode(JSON.stringify([
+    'callconnect-contact-link-v1',String(item.contact_id),String(item.customer_id),
+    String(item.existing_memo),String(item.next_memo),[...(item.phones||[])].sort()
+  ]));
+  const digest=await crypto.subtle.digest('SHA-256',bytes);
+  return [...new Uint8Array(digest)].map(v=>v.toString(16).padStart(2,'0')).join('');
+}
+
 export function publicPlanItem(x){
   const {contact_id,contact_name,masked_phone,customer_id,customer_name,customer_code,status}=x;
   return {contact_id,contact_name,masked_phone,customer_id,customer_name,customer_code,status};
