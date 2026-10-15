@@ -63,6 +63,16 @@ if (!fs.existsSync(logoPath)) {
   }
 }
 
+// Ensure the tabbed support-ticket UI is loaded and its implementation is syntactically valid.
+requireText('<script src="/assets/support-ticket-tabs.js"></script>', 'Support ticket navigation script');
+requireText('window.QuoteFlowTicketTabs?.mount(', 'Tabbed ticket detail mounting');
+if (!fs.existsSync('assets/support-ticket-tabs.js')) {
+  failures.push('Missing support ticket tab UI script');
+} else {
+  const check=spawnSync(process.execPath,['--check','assets/support-ticket-tabs.js'],{encoding:'utf8'});
+  if(check.status!==0) failures.push('Support tab script syntax error: '+(check.stderr||check.stdout));
+}
+
 if (failures.length) {
   console.error('\nQuoteFlow static validation failed:\n- ' + failures.join('\n- '));
   process.exit(1);
