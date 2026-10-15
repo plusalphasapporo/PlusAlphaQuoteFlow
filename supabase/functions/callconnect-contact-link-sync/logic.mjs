@@ -34,11 +34,47 @@ function uniquePhones(values){
   return [...new Set(values.map(normalizePhone).filter(Boolean))];
 }
 export function parseContactsPage(raw){
-  if(Array.isArray(raw))return raw;
-  if(Array.isArray(raw?.contacts))return raw.contacts;
-  if(Array.isArray(raw?.data))return raw.data;
-  if(Array.isArray(raw?.data?.contacts))return raw.data.contacts;
-  return null;
+  const batch=Array.isArray(raw)?raw:
+    Array.isArray(raw?.contacts)?raw.contacts:
+    Array.isArray(raw?.data)?raw.data:
+    Array.isArray(raw?.data?.contacts)?raw.data.contacts:
+    Array.isArray(raw?.results)?raw.results:null;
+  if(!batch)return null;
+  const rows=batch.map(row=>row?.contact&&typeof row.contact==='object'?row.contact:row);
+  if(rows.some(row=>!row||typeof row!=='object'||Array.isArray(row)))return null;
+  return rows;
+}
+// A partial last page is NOT proof that all pages were retrieved if the
+// vendor may use a smaller default page size. Without trustworthy metadata
+// a further page is required, and the next empty page closes the scan.
+export function decideContactsPage(raw,batchLength,received){
+  const totalValue=raw?.total??raw?.total_count??raw?.pagination?.total??raw?.meta?.total;
+  const known=totalValue!==undefined&&totalValue!==null&&String(totalValue)!=='';
+  const total=known?Number(totalValue):null;
+  if(known&&(!Number.isSafeInteger(total)||total<0))return {done:false,error:'contacts_total_invalid'};
+  const hasNext=Boolean(raw?.next_page||raw?.has_more===true||raw?.pagination?.next_page||raw?.pagination?.has_next===true);
+  const explicitEnd=Boolean(raw&&typeof raw==='object'&&!Array.isArray(raw)&&(
+    raw.has_more===false||
+    (Object.hasOwn(raw,'next_page')&&!raw.next_page)||
+    (raw.pagination&&(
+      raw.pagination.has_next===false||
+      (Object.hasOwn(raw.pagination,'next_page')&&!raw.pagination.next_page)
+    ))
+  ));
+  if(known&&received>total)return {done:false,error:'contacts_total_inconsistent'};
+  if(batchLength===0){
+    if(hasNext||(known&&received<total))return {done:false,error:'contacts_pagination_incomplete'};
+    return {done:true};
+  }
+  if(known&&received===total){
+    if(hasNext)return {done:false,error:'contacts_pagination_inconsistent'};
+    return {done:true};
+  }
+  if(explicitEnd){
+    if(hasNext||(known&&received<total))return {done:false,error:'contacts_pagination_incomplete'};
+    return {done:true};
+  }
+  return {done:false};
 }
 export function remotePhones(c){
   const sources=[c.friendly_number,c.number,c.phone,c.mobile];
