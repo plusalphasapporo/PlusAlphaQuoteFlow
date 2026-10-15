@@ -122,6 +122,32 @@ export function prepareMemo(existingMemo,customer,link){
   if(memo.length>MAX_MEMO_LENGTH) return {status:'memo_too_long',memo:null};
   return {status:'eligible',memo};
 }
+// Compare every vendor field that is visible in the detail response and is
+// not the memo/managed timestamp. A memo-only PUT must preserve the rest.
+// Both missing fields and changed values count as unexpected mutations.
+export function otherContactFieldsEqual(before,after){
+  if(!before||!after||typeof before!=='object'||typeof after!=='object')return false;
+  const excluded=new Set(['memo','updated_at','last_modified','last_modified_at']);
+  const keys=new Set([...Object.keys(before),...Object.keys(after)]);
+  for(const key of keys){
+    if(excluded.has(key))continue;
+    if(!Object.prototype.hasOwnProperty.call(before,key)||
+       !Object.prototype.hasOwnProperty.call(after,key))return false;
+    if(JSON.stringify(before[key])!==JSON.stringify(after[key]))return false;
+  }
+  return true;
+}
+export function verifiedContactDetail(item,detail){
+  if(!item||!detail||String(detail.id)!==String(item.contact_id))return 'invalid_contact_detail';
+  if(!Object.prototype.hasOwnProperty.call(detail,'memo'))return 'memo_field_missing';
+  if(remotePhones(detail).sort().join('|')!==[...(item.phones||[])].sort().join('|'))
+    return 'phone_changed';
+  if(String(detail.memo??'')!==String(item.existing_memo))return 'memo_changed';
+  if(item.remote_updated_at&&String(detail.updated_at??'')!==item.remote_updated_at)
+    return 'remote_changed';
+  return 'verified';
+}
+
 export function buildPlan(remoteContacts,customers,localContacts,origin=STAGING_ORIGIN){
   const {byPhone,byCustomer}=buildIndex(customers,localContacts);
   const prepared=(remoteContacts||[]).map(c=>({
@@ -145,6 +171,9 @@ export function buildPlan(remoteContacts,customers,localContacts,origin=STAGING_
     };
     if(!REMOTE_ID.test(c.id)){item.status='invalid_contact_id';return item;}
     if(!c.numbers.length){item.status='no_phone';return item;}
+    if(!Object.prototype.hasOwnProperty.call(c.source,'memo')){
+      item.status='memo_unavailable';return item;
+    }
     // A remote contact with unrelated multiple numbers can mask an incorrect match.
     if(c.numbers.length>1){item.status='multiple_remote_phones';return item;}
     if(c.numbers.some(p=>(remoteNumberOwners.get(p)?.size||0)>1)){
@@ -186,7 +215,7 @@ export function publicPlanItem(x){
 export function summarize(plan){
   const counts={eligible:0,already_linked:0,conflict_link:0,ambiguous_customer:0,
     duplicate_remote_phone:0,multiple_remote_phones:0,unmatched:0,no_phone:0,
-    invalid_contact_id:0,memo_too_long:0};
+    invalid_contact_id:0,memo_unavailable:0,memo_too_long:0};
   for(const item of plan)counts[item.status]=(counts[item.status]||0)+1;
   return counts;
 }
