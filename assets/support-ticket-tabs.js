@@ -340,7 +340,11 @@
     const host=inProgressHost(ticketId);
     if(!host) return null;
     const fields={};
-    for(const id of ['ticketAiIncidentContext','ticketRemoteAction','ticketRemoteResultNote','ticketKnowledgeSearch']){
+    for(const id of [
+      'ticketAiIncidentContext','ticketRemoteAction','ticketRemoteResultNote','ticketKnowledgeSearch',
+      'ticketProfileInternalNote','ticketProfilePriority','ticketProfileAssigned',
+      'ticketProfileAsset','ticketProfileContract','ticketFirstResponseDue','ticketResolutionDue'
+    ]){
       const el=host.querySelector('#'+id);
       if(el?.dataset.ticketUnsaved==='1') fields[id]=el.value;
     }
@@ -370,6 +374,15 @@
           console.warn('Unable to restore in-progress ticket attachments',error);
         }
       }
+    }
+  }
+  // Only clear values actually submitted and saved; edits made while a request was running stay dirty.
+  function clearSavedEdits(ticketId,values){
+    const host=inProgressHost(ticketId);
+    if(!host||!values) return;
+    for(const [id,submittedValue] of Object.entries(values)){
+      const el=host.querySelector('#'+id);
+      if(el && String(el.value)===String(submittedValue??'')) delete el.dataset.ticketUnsaved;
     }
   }
   function hasUnsentEdits(ticketId){
@@ -431,5 +444,5 @@
     const audit=host.querySelector(':scope > .entityAuditSection');
     if(audit) activeController.panes.get('history')?.append(audit);
   }
-  window.QuoteFlowTicketTabs={mount,revealAndScroll,moveAudit,captureInProgress,restoreInProgress,hasUnsentEdits,confirmLeave,showPendingMessage};
+  window.QuoteFlowTicketTabs={mount,revealAndScroll,moveAudit,captureInProgress,restoreInProgress,clearSavedEdits,hasUnsentEdits,confirmLeave,showPendingMessage};
 })();
