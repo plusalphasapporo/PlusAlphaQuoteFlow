@@ -681,6 +681,8 @@
   const money = (v) => new Intl.NumberFormat('ja-JP',{style:'currency',currency:'JPY',maximumFractionDigits:0}).format(Number(v || 0));
   const dateText = (v) => v ? new Intl.DateTimeFormat('ja-JP',{year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(v)) : '—';
   const statusText = (v) => ({draft:'下書き',finalized:'管理者承認待ち',sent:'送付済み',accepted:'管理者承認済み',rejected:'却下',open:'未対応',in_progress:'対応中',resolved:'解決',closed:'完了',active:'有効',inactive:'無効',planned:'予定',delivered:'納品済み'}[v] || v || '—');
+  // Quote workflow status is independent from older administrative approval history.
+  const quoteStatusText = (v) => ({draft:'下書き',finalized:'見積発行済み',accepted:'過去の承諾記録',rejected:'顧客からの拒否回答'}[v] || statusText(v));
   const toast = (m) => { const e=$('#toast'); e.textContent=m; e.style.display='block'; clearTimeout(window.__toastTimer); window.__toastTimer=setTimeout(()=>e.style.display='none',2500); };
   const show = (id) => ['loginView','mfaView','passwordRecoveryView','passwordSetupView','appView'].forEach(x => $('#'+x).classList.toggle('hidden',x!==id));
   const notice = (id,msg,ok=false) => { const e=$(id); e.textContent=msg; e.className='notice '+(ok?'ok':'error'); e.classList.remove('hidden'); };
@@ -5822,7 +5824,6 @@
   async function renderQuoteEditor(quoteId,cmap){
     const role=bootData.context?.role;
     const internal=role==='internal_admin'||role==='internal_staff';
-    const admin=role==='internal_admin';
     const [detail,products]=await Promise.all([
       rpc('internal_quote_detail',{p_quote_id:quoteId}),
       rpc('internal_products_list')
@@ -5864,17 +5865,17 @@
     host.innerHTML=
       '<section class="card section">'+
         '<div class="quoteDetailHead">'+
-          '<div><h2>見積詳細</h2><p class="sectionDesc">'+esc(customer.name||customer.customer_code||'')+' / '+esc(q.quote_number||'下書き')+' / '+esc(statusText(q.status))+'</p></div>'+
+          '<div><h2>見積詳細</h2><p class="sectionDesc">'+esc(customer.name||customer.customer_code||'')+' / '+esc(q.quote_number||'下書き')+' / '+esc(quoteStatusText(q.status))+'</p></div>'+
           '<div class="row">'+
             (internal && !editable ? '<button id="quoteDuplicateDraftBtn" class="primary" type="button">改訂用の下書きを作成</button>' : '')+
-            (dealFlowEnabled?'<button id="quoteDealOpenBtn" class="primary" type="button">案件管理で受注・失注へ進む</button>':'')+
+            (dealFlowEnabled && !editable?'<button id="quoteDealOpenBtn" class="primary" type="button">案件管理で受注・失注へ進む</button>':'')+
             (q.quote_number?'<button id="quotePrintBtn" class="ghost" type="button">見積書 印刷/PDF</button>':'')+
             '<button id="quoteDetailClose" class="ghost" type="button">閉じる</button>'+
           '</div>'+
         '</div>'+
         (editable
           ? (q.approval_return_reason
-              ? '<div class="notice error"><strong>管理者から差し戻し</strong><br>'+esc(q.approval_return_reason)+(q.approval_returned_at?'<br><span class="muted">'+esc(dateText(q.approval_returned_at))+'</span>':'')+'</div>'
+              ? '<div class="notice error"><strong>過去の差し戻し履歴</strong><br>'+esc(q.approval_return_reason)+(q.approval_returned_at?'<br><span class="muted">'+esc(dateText(q.approval_returned_at))+'</span>':'')+'</div>'
               : '')+
             '<div id="quoteEditRequiredGuide" class="notice">必須：見積日・明細1件以上。<span id="quoteEditRequiredStatus" style="margin-left:8px"></span></div>'+
             '<div id="quoteEditDraftNotice" class="notice hidden"></div>'+
@@ -5922,24 +5923,18 @@
                   '<div class="summaryBox"><span>粗利</span><strong id="quoteEditSumProfit">¥0</strong></div>'+
                   '<div class="summaryBox"><span>粗利率</span><strong id="quoteEditSumMargin">—</strong></div>'+
                 '</div>'+
-                '<div class="row" style="margin-top:14px"><button class="primary" type="submit">変更を保存</button><button id="quoteFinalizeBtn" class="green" type="button">最新内容を保存して承認申請</button><span class="muted">承認申請前に現在の入力内容を自動保存します。</span></div>'+
+                '<div class="row" style="margin-top:14px"><button class="primary" type="submit">変更を保存</button><button id="quoteFinalizeBtn" class="green" type="button">最新内容を保存して見積発行</button><span class="muted">発行後の修正は改訂用の下書きを作成します。</span></div>'+
               '</section>'+
             '</form>'+
             '<div id="quoteEditMsg" class="notice hidden"></div>'
           : '<div class="quoteTotals"><span>小計 <strong>'+esc(money(q.subtotal))+'</strong></span><span>税 <strong>'+esc(money(q.tax_amount))+'</strong></span><span>合計 <strong>'+esc(money(q.total_amount))+'</strong></span></div>'+
             dataTable(['明細','数量','単位','メーカー','仕入先','単価','金額'],readOnlyRows)+
-            (internal && q.status==='accepted'
-              ? '<div class="notice ok">管理者承認済みです。受注へ進められます。</div>'+
-                '<div class="row" style="margin-top:14px"><button id="quoteToOrderBtn" class="orange" type="button">受注を作成して開く</button><span class="muted">同じ見積から重複受注は作成されません。</span></div><div id="quoteActionMsg" class="notice hidden"></div>'
-              : q.status==='finalized'
-                ? (admin
-                    ? '<div class="notice">承認申請されています。内容を確認して承認または差し戻してください。</div>'+
-                      '<div class="row" style="margin-top:14px"><button id="quoteApproveBtn" class="green" type="button">見積を承認</button><button id="quoteReturnToggle" class="ghost" type="button">差し戻し</button></div>'+
-                      '<div id="quoteReturnBox" class="hidden" style="margin-top:12px"><div class="field"><label>差し戻し理由</label><textarea id="quoteReturnReason" rows="3" required placeholder="修正してほしい内容を具体的に入力してください"></textarea></div><button id="quoteReturnBtn" class="orange" type="button">差し戻しを確定</button></div>'+
-                      '<div id="quoteActionMsg" class="notice hidden"></div>'
-                    : '<div class="notice">管理者承認待ちです。</div>')
-                : q.status==='rejected'
-                  ? '<div class="notice error">却下された見積です。</div>'
+            (internal && q.status==='finalized'
+              ? '<div class="notice ok">見積は発行済みです。案件管理から受注・失注を登録してください。</div>'
+              : internal && q.status==='accepted'
+                ? '<div class="notice">この見積には過去の承諾記録があります。受注の有無は案件管理で確認してください。</div>'
+                : internal && q.status==='rejected'
+                  ? '<div class="notice">顧客からの拒否回答履歴があります。営業上の失注は案件管理で別途記録してください。</div>'
                   : '')
         )+
       '</section>';
@@ -6275,70 +6270,19 @@
 
       $('#quoteFinalizeBtn').onclick=async()=>{
         const btn=$('#quoteFinalizeBtn');
+        if(!confirm('見積を発行しますか？発行後の修正は改訂用下書きで行います。'))return;
         btn.disabled=true;
         try{
           await saveCurrentDraft();
           localStorage.removeItem(editDraftKey);
-          const finalized=await rpc('finalize_quote',{p_quote_id:q.id});
-          notice('#quoteEditMsg','最新内容を保存して承認申請しました。見積番号 '+String(finalized?.quote_number||''),true);
-          toast('管理者承認待ちにしました');
-          setTimeout(()=>go('sales'),500);
+          const linked=await window.QuoteFlowDeals.linkQuote(q.id);
+          const finalized=await rpc('deal_issue_quote',{p_deal_id:linked.id,p_quote_id:q.id});
+          toast('見積を発行しました '+String(finalized?.quote_number||''));
+          await go('deals');
+          await window.QuoteFlowDeals.openDetail(linked.id);
         }catch(err){
-          const msg=String(err.message||err);
-          notice('#quoteEditMsg',msg.includes('numbering configuration required')?'採番設定が未設定です。管理者の「設定」から見積番号の形式を登録してください。':msg);
-        }finally{
-          btn.disabled=false;
-        }
-      };
-    }else if(admin && q.status==='finalized' && $('#quoteApproveBtn')){
-      $('#quoteApproveBtn').onclick=async()=>{
-        const btn=$('#quoteApproveBtn');
-        btn.disabled=true;
-        try{
-          const approved=await rpc('approve_quote',{p_quote_id:q.id});
-          notice('#quoteActionMsg','管理者承認しました。見積番号 '+String(approved?.quote_number||''),true);
-          toast('見積を承認しました');
-          setTimeout(()=>go('sales'),450);
-        }catch(err){
-          notice('#quoteActionMsg',err.message||String(err));
-        }finally{
-          btn.disabled=false;
-        }
-      };
-
-      $('#quoteReturnToggle').onclick=()=>$('#quoteReturnBox').classList.toggle('hidden');
-      $('#quoteReturnBtn').onclick=async()=>{
-        const btn=$('#quoteReturnBtn');
-        btn.disabled=true;
-        try{
-          const reason=$('#quoteReturnReason').value.trim();
-          if(!reason) throw new Error('差し戻し理由を入力してください。');
-          await rpc('return_quote_for_revision',{p_quote_id:q.id,p_reason:reason});
-          notice('#quoteActionMsg','見積を差し戻しました。担当者が修正して再申請できます。',true);
-          toast('見積を差し戻しました');
-          setTimeout(()=>go('sales'),450);
-        }catch(err){
-          notice('#quoteActionMsg',err.message||String(err));
-        }finally{
-          btn.disabled=false;
-        }
-      };
-    }else if(internal && q.status==='accepted' && $('#quoteToOrderBtn')){
-      $('#quoteToOrderBtn').onclick=async()=>{
-        const btn=$('#quoteToOrderBtn');
-        btn.disabled=true;
-        try{
-          const order=await rpc('convert_quote_to_order',{p_quote_id:q.id});
-          notice('#quoteActionMsg',(order?.already_exists?'既存の受注があります。':'受注を作成しました。')+' 受注番号 '+String(order?.order_number||''),true);
-          toast(order?.already_exists?'既存の受注を開きます':'受注を作成しました');
-          await renderSalesWorkspace('order_ops');
-          if(order?.id) await renderOrderDetail(order.id);
-        }catch(err){
-          const msg=String(err.message||err);
-          notice('#quoteActionMsg',msg.includes('numbering configuration required')?'採番設定が未設定です。管理者の「設定」から受注番号の形式を登録してください。':msg);
-        }finally{
-          btn.disabled=false;
-        }
+          notice('#quoteEditMsg','見積の保存・発行状況を確認してください。重複登録せず対象の見積を開いてください。'+(err?.message||String(err)));
+        }finally{btn.disabled=false;}
       };
     }
   }
@@ -6392,7 +6336,7 @@
           '<td><strong>'+esc(q.quote_number||'下書き')+'</strong></td>'+
           '<td>'+esc(customer.name||'—')+'</td>'+
           '<td>'+esc(q.project_name||'—')+'</td>'+
-          '<td>'+esc(statusText(q.status))+'</td>'+
+          '<td>'+esc(quoteStatusText(q.status))+'</td>'+
           '<td class="amount">'+esc(money(q.total_amount))+'</td>'+
           '<td>'+esc(dateText(q.valid_until))+'</td>'+
           '<td>'+esc(dateText(q.created_at))+'</td>'+
@@ -14991,7 +14935,7 @@
   window.QuoteFlowDeals?.configure({
     rpc, getHost:()=>$('#home'),getRole:()=>bootData?.context?.role,
     openModal:o=>window.openModal(o),closeModal:()=>window.closeModal(),toast,
-    navigate:page=>go(page),editQuote:async id=>{await go('sales');},
+    navigate:page=>go(page),editQuote:async id=>{await go('sales');const cmap=await customerMap();await renderQuoteEditor(id,cmap);},
     openLinked:async(kind,id)=>{
       if(kind==='purchase'){await go('procurement');await renderPurchaseOrderDetail(id);return;}
       if(kind==='delivery'){await go('procurement');await renderDeliveryDetail(id);return;}
