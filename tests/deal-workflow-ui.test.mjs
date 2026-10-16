@@ -286,3 +286,20 @@ test('incomplete installation must not offer automatic aftercare handoff',async(
  assert.doesNotMatch(f.host.innerHTML,/data-deal-action="support"/);
  assert.doesNotMatch(f.host.innerHTML,/data-deal-action="contracts"/);
 });
+
+test('linked order, purchase order and delivery navigation mounts the matching detail host',()=>{
+ const html=readFileSync('index.html','utf8');
+ assert.match(html,/openOrderProcurement:async\(\{orderId\}\)=>\{[\s\S]*?await renderOrders\(\);[\s\S]*?await renderOrderDetail\(orderId\)/);
+ assert.match(html,/if\(kind==='order'\)\{await go\('sales'\);await renderOrders\(\);await renderOrderDetail\(id\)/);
+ assert.match(html,/if\(kind==='purchase'\)\{await go\('procurement'\);await renderPurchaseOrders\(\);await renderPurchaseOrderDetail\(id\)/);
+ assert.match(html,/if\(kind==='delivery'\)\{await go\('procurement'\);await renderDeliveries\(\);await renderDeliveryDetail\(id\)/);
+ assert.match(html,/async function renderOrders\(\)[\s\S]*?id="orderDetailHost"/);
+ assert.match(html,/async function renderPurchaseOrders\(\)[\s\S]*?id="purchaseOrderDetailHost"/);
+ assert.match(html,/async function renderDeliveries\(\)[\s\S]*?id="deliveryDetailHost"/);
+});
+test('receiving navigation preserves selected deal ID rather than a placeholder',()=>{
+ const html=readFileSync('index.html','utf8');
+ assert.match(html,/openReceivingForDeal:async\(\{dealId,purchaseOrders\}\)=>/);
+ assert.match(html,/renderProcurementWorkspace\('receiving',\{dealId,purchaseOrderIds:purchaseOrders\.map\(po=>po\.id\)\}\)/);
+ assert.doesNotMatch(html,/purchaseOrders\[0\]\.deal_id\|\|'選択案件'/);
+});
