@@ -23,7 +23,7 @@ jobs:
           from pathlib import Path
           from urllib.request import Request, urlopen
           base = 'https://plusalphasapporo.github.io/PlusAlphaQuoteFlow/'
-          files = ['index.html', 'assets/quoteflow-mark.png', 'assets/operations-ui.css', 'assets/support-ticket-tabs.js', 'assets/notification-center.js', 'manifest.webmanifest', 'sw.js']
+          files = ['index.html', 'assets/quoteflow-mark.png', 'assets/operations-ui.css', 'assets/support-ticket-tabs.js', 'assets/notification-center.js', 'assets/workspace-fixes.js', 'assets/deal-workflow.js', 'assets/deal-progress.js', 'assets/deal-workflow.css', 'manifest.webmanifest', 'sw.js']
           expected = {name: Path(name).read_bytes() for name in files}
           for attempt in range(1, 25):
               try:
@@ -40,7 +40,7 @@ jobs:
                       verified.append({'file': name, 'sha256': hashlib.sha256(actual).hexdigest(), 'bytes': len(actual)})
                   print(json.dumps({'status': 'PUBLIC_FILES_MATCH_RELEASE', 'url': base, 'commit': os.environ['GITHUB_SHA'], 'verified_utc': datetime.now(timezone.utc).isoformat(), 'files': verified}, indent=2))
                   with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
-                      summary.write('## Public release verified\n\nURL: ' + base + '\n\nCommit: `' + os.environ['GITHUB_SHA'] + '`\n\nAll seven public browser files match the released commit byte for byte. Login and authenticated operations are not tested here.\n')
+                      summary.write('## Public release verified\n\nURL: ' + base + '\n\nCommit: `' + os.environ['GITHUB_SHA'] + '`\n\nAll public browser files match the released commit byte for byte. Login and authenticated operations are not tested here.\n')
                   break
               except Exception as exc:
                   print('Attempt', attempt, ':', type(exc).__name__, str(exc), flush=True)
