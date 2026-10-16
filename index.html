@@ -3642,7 +3642,7 @@
     return data||null;
   }
 
-  async function renderCustomerCreate(){
+  async function renderCustomerCreate(onCreated=null){
     const options=await rpc('internal_customer_registration_options');
     const parentOptions=(options?.parents||[]).filter(x=>x.branch_type==='head_office').map(x=>
       '<option value="'+esc(x.id)+'">'+esc(x.customer_code||'—')+' / '+esc(x.name||'')+'</option>'
@@ -3949,8 +3949,13 @@
           else if(syncResult?.created_count>0) toast('CallConnectへ顧客情報を同期しました');
           else if(syncResult?.duplicate_count>0) toast('CallConnect：登録済み電話番号を確認しました');
         }
-        await renderCustomers();
-        if(created?.id) await renderCustomerDetail(created.id,'overview');
+        if(created?.id && typeof onCreated==='function'){
+          await go('deals');
+          await onCreated(created.id);
+        }else{
+          await renderCustomers();
+          if(created?.id) await renderCustomerDetail(created.id,'overview');
+        }
       }catch(err){
         notice('#customerCreateMsg',err.message||String(err));
       }finally{
@@ -4054,6 +4059,7 @@
     );
 
     if(customerContext?.customerId && customerContext.customerId!==preselectedCustomerId) throw new Error('確認した顧客が一致しません');
+    if(customerContext?.customerId){$('#quoteCreateCustomer').disabled = true;}
     const form=$('#quoteCreateForm');
     const itemsHost=$('#quoteCreateItems');
     const residualHost=$('#quoteCreateResiduals');
@@ -14935,7 +14941,7 @@
 
   window.QuoteFlowDealCustomerStep?.configure({
     rpc,getRole:()=>bootData?.context?.role,getHost:()=>$('#home'),
-    openCustomerCreate:async()=>{await go('customers');await renderCustomerCreate();},
+    openCustomerCreate:async({onCreated}={})=>{await go('customers');await renderCustomerCreate(onCreated);},
     createQuote:async({preselectedCustomerId,customerContext})=>renderCustomerQuoteCreate(preselectedCustomerId,customerContext)
   });
   window.QuoteFlowDeals?.configure({
