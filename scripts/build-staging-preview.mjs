@@ -15,6 +15,7 @@ const allowedFiles = [
   'assets/notification-center.js',
   'assets/workspace-fixes.js',
   'assets/deal-workflow.js',
+  'assets/deal-customer-step.js',
   'assets/deal-progress.js',
   'assets/deal-workflow.css',
   'manifest.webmanifest',

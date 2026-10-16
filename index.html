@@ -633,6 +633,7 @@
 
 <link rel="stylesheet" href="./assets/deal-workflow.css">
 <script src="./assets/deal-progress.js"></script>
+<script src="./assets/deal-customer-step.js"></script>
 <script src="./assets/deal-workflow.js"></script>
 <script type="module">
   import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -1062,7 +1063,6 @@
       ['cases','案件管理'],
       ['handoffs','引継ぎ管理'],
       ['deals','案件進行管理'],
-      ['deals','案件進行管理'],
       ['sales','見積・リース'],
       ['procurement','仕入・納品'],
       ['contracts','契約・保守'],
@@ -1075,6 +1075,7 @@
     ],
     internal_staff: [
       ['home','ダッシュボード'],
+      ['deals','案件進行管理'],
       ['customers','顧客管理'],
       ['assets','機器台帳'],
       ['support','問い合わせ管理'],
@@ -3641,7 +3642,7 @@
     return data||null;
   }
 
-  async function renderCustomerCreate(){
+  async function renderCustomerCreate(onCreated=null){
     const options=await rpc('internal_customer_registration_options');
     const parentOptions=(options?.parents||[]).filter(x=>x.branch_type==='head_office').map(x=>
       '<option value="'+esc(x.id)+'">'+esc(x.customer_code||'—')+' / '+esc(x.name||'')+'</option>'
@@ -3948,8 +3949,13 @@
           else if(syncResult?.created_count>0) toast('CallConnectへ顧客情報を同期しました');
           else if(syncResult?.duplicate_count>0) toast('CallConnect：登録済み電話番号を確認しました');
         }
-        await renderCustomers();
-        if(created?.id) await renderCustomerDetail(created.id,'overview');
+        if(created?.id && typeof onCreated==='function'){
+          await go('deals');
+          await onCreated(created.id);
+        }else{
+          await renderCustomers();
+          if(created?.id) await renderCustomerDetail(created.id,'overview');
+        }
       }catch(err){
         notice('#customerCreateMsg',err.message||String(err));
       }finally{
@@ -3958,7 +3964,7 @@
     };
   }
 
-  async function renderCustomerQuoteCreate(preselectedCustomerId=null){
+  async function renderCustomerQuoteCreate(preselectedCustomerId=null,customerContext=null){
     const [customers,products]=await Promise.all([
       rpc('internal_customers_list'),
       rpc('internal_products_list')
@@ -4052,6 +4058,8 @@
       true
     );
 
+    if(customerContext?.customerId && customerContext.customerId!==preselectedCustomerId) throw new Error('確認した顧客が一致しません');
+    if(customerContext?.customerId){$('#quoteCreateCustomer').disabled = true;}
     const form=$('#quoteCreateForm');
     const itemsHost=$('#quoteCreateItems');
     const residualHost=$('#quoteCreateResiduals');
@@ -4145,8 +4153,21 @@
           ' / 連絡先: '+esc(customer?.phone||customer?.mobile||'未登録')+
           ' / 担当者: '+esc((contacts||[]).find(x=>x.is_primary)?.name||(contacts||[])[0]?.name||'未登録')+'</span>';
       }
+      return contacts||[];
     };
 
+    const loadConfirmedCustomer=async()=>{
+      if(preselectedCustomerId) $('#quoteCreateCustomer').value=preselectedCustomerId;
+      const contacts=await loadCustomer();
+      if(customerContext?.contactId){
+        const c=contacts.find(x=>x.id===customerContext.contactId&&x.customer_id===preselectedCustomerId&&x.active!==false);
+        if(!c) throw new Error('担当者が顧客に一致しません');
+        $('#quoteCreateContact').value=c.name;
+      }
+      if(customerContext?.installationAddress){
+        $('#quoteCreateNote').value=[$('#quoteCreateNote').value.trim(),'設置場所: '+customerContext.installationAddress].filter(Boolean).join('\n');
+      }
+    };
 
     const activeProducts=(products||[]).filter(p=>p.is_active!==false);
     const renderProductOptions=()=>{
@@ -4328,7 +4349,7 @@
     };
     $('#quoteCreateClose').onclick=closeAppModal;
     $('#quoteCreateCancel').onclick=closeAppModal;
-    $('#quoteCreateDraftClear').onclick=()=>{
+    $('#quoteCreateDraftClear').onclick=async()=>{
       if(!confirm('入力途中の見積内容をクリアしますか？')) return;
       localStorage.removeItem(draftKey);
       form.reset();
@@ -4343,12 +4364,16 @@
       $('#quoteCreateContact').innerHTML='<option value="">指定なし</option>';
       $('#quoteCustomerSummary').classList.add('hidden');
       $('#quoteDraftNotice').classList.add('hidden');
+      if(preselectedCustomerId){
+        try{await loadConfirmedCustomer();}
+        catch(err){notice('#quoteCreateMsg',err.message||String(err));}
+      }
       renderProductOptions();
       recalc();
       updateQuoteRequired();
     };
     if(preselectedCustomerId){
-      await loadCustomer();
+      await loadConfirmedCustomer();
     }else{
       await restoreQuoteDraft();
     }
@@ -4361,6 +4386,7 @@
       if(btn) btn.disabled=true;
       try{
         const customerId=$('#quoteCreateCustomer').value;
+        if(customerContext?.customerId && customerId!==customerContext.customerId) throw new Error('確認済み顧客と見積の顧客が一致しません。顧客情報確認からやり直してください。');
         if(!customerId) throw new Error('顧客を選択してください。');
         const quoteDate=$('#quoteCreateDate').value;
         const validUntil=$('#quoteCreateValidUntil').value;
@@ -14928,6 +14954,11 @@
     };
   }
 
+  window.QuoteFlowDealCustomerStep?.configure({
+    rpc,getRole:()=>bootData?.context?.role,getHost:()=>$('#home'),
+    openCustomerCreate:async({onCreated}={})=>{await go('customers');await renderCustomerCreate(onCreated);},
+    createQuote:async({preselectedCustomerId,customerContext})=>renderCustomerQuoteCreate(preselectedCustomerId,customerContext)
+  });
   window.QuoteFlowDeals?.configure({
     rpc, getHost:()=>$('#home'),getRole:()=>bootData?.context?.role,
     openModal:o=>window.openModal(o),closeModal:()=>window.closeModal(),toast,
