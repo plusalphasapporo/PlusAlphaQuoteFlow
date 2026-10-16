@@ -4397,7 +4397,7 @@
         if(leaseMonths!==null && leaseMonths<=0) throw new Error('リース期間は1か月以上で入力してください。');
         if(taxRate<0||taxRate>100) throw new Error('消費税率は0〜100%で入力してください。');
         const quoteItems=readQuoteItems(itemsHost);
-        await rpc('create_quote_full',{
+        const createdQuote=await rpc('create_quote_full',{
           p_customer_id:customerId,
           p_quote_date:quoteDate,
           p_valid_until:validUntil||null,
@@ -4412,7 +4412,23 @@
         });
         localStorage.removeItem(draftKey);
         closeAppModal();
+        if(!createdQuote?.id){
+          toast('見積保存後のIDを確認できません。重複登録せず見積一覧を確認してください。');
+          await go('sales');return;
+        }
         toast('見積を登録しました');
+        if(customerContext?.customerId){
+          try{
+            const linked=await window.QuoteFlowDeals.linkQuote(createdQuote.id);
+            await go('deals');
+            await window.QuoteFlowDeals.openDetail(linked.id);
+            return;
+          }catch(linkError){
+            await go('sales');
+            notice('#quoteFlowLinkNotice','見積は保存済みですが、案件への紐づけを確認できません。見積を再登録せず「既存見積から案件を作成」から確認してください。'+(linkError?.message||String(linkError)));
+            return;
+          }
+        }
         await go('sales');
       }catch(err){
         notice('#quoteCreateMsg',err.message||String(err));
@@ -5813,6 +5829,7 @@
     ]);
     if(!detail?.quote) throw new Error('見積が見つかりません。');
     const q=detail.quote;
+    const dealFlowEnabled=internal&&!!window.QuoteFlowDeals?.linkQuote;
     const items=detail.items||[];
     const residuals=detail.residual_items||[];
     const customer=cmap[q.customer_id]||{};
@@ -5850,6 +5867,7 @@
           '<div><h2>見積詳細</h2><p class="sectionDesc">'+esc(customer.name||customer.customer_code||'')+' / '+esc(q.quote_number||'下書き')+' / '+esc(statusText(q.status))+'</p></div>'+
           '<div class="row">'+
             (internal && !editable ? '<button id="quoteDuplicateDraftBtn" class="primary" type="button">改訂用の下書きを作成</button>' : '')+
+            (dealFlowEnabled?'<button id="quoteDealOpenBtn" class="primary" type="button">案件管理で受注・失注へ進む</button>':'')+
             (q.quote_number?'<button id="quotePrintBtn" class="ghost" type="button">見積書 印刷/PDF</button>':'')+
             '<button id="quoteDetailClose" class="ghost" type="button">閉じる</button>'+
           '</div>'+
@@ -5927,6 +5945,16 @@
       '</section>';
 
     $('#quoteDetailClose').onclick=()=>{ host.innerHTML=''; };
+    const openDealBtn=$('#quoteDealOpenBtn');
+    if(openDealBtn)openDealBtn.onclick=async()=>{
+      openDealBtn.disabled=true;
+      try{
+        const linked=await window.QuoteFlowDeals.linkQuote(q.id);
+        await go('deals');
+        await window.QuoteFlowDeals.openDetail(linked.id);
+      }catch(err){toast('案件の確認に失敗しました。見積を再登録しないでください: '+(err?.message||String(err)));}
+      finally{openDealBtn.disabled=false;}
+    };
     const quotePrintBtn=$('#quotePrintBtn');
     if(quotePrintBtn){
       quotePrintBtn.onclick=()=>openBusinessDocument('quote',{
@@ -6336,6 +6364,7 @@
         ['amount_desc','金額が高い順'],
         ['valid_asc','有効期限が近い順']
       ])+
+      '<div id="quoteFlowLinkNotice" class="notice hidden"></div>'+ 
       '<div id="quoteDetailHost"></div>'+
       '<section class="section"><div id="quoteListHost"></div></section>';
 
@@ -6388,7 +6417,7 @@
       }
     };
 
-    if(internal) $('#quoteChooseCustomer').onclick=()=>renderCustomerQuoteCreate(null);
+    if(internal) $('#quoteChooseCustomer').onclick=()=>window.QuoteFlowDealCustomerStep.open();
     bindListToolbar('quoteList',renderRows);
     renderRows();
   }
