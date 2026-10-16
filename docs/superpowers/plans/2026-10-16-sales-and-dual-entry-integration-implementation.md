@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 顧客受注の見積・打ち合わせ・受注／失注から支払・発注・工事・機器／保守を1案件画面で進め、独立した顧客サポートへの安全な参照導線と2入口のダッシュボードを提供する。
+**Goal:** 顧客情報確認 → 見積 → 打ち合わせ → 受注・失注 → 審査・支払 → 発注・入荷 → 工事・施工 → 機器・保守 → サポートの9工程を1案件画面で進め、顧客情報を見積に引き継いで二重入力を防ぐ。
 
 **Architecture:** 開発中PR #43の`deals`と既存quotes/orders/purchase_orders/deliveries/assets/contractsを正本にする。サポートチケットは別の正本に残し、必要時のみ明示的参照キーで販売案件と接続する。サポート一次対応部分は別計画`2026-10-16-support-firstline-handoff-implementation.md`の出力を利用する。
 
@@ -11,6 +11,8 @@
 **Spec:** `docs/superpowers/specs/2026-10-16-dual-workflow-sales-and-support-design.md`（第3、5〜9章）、詳細は`docs/superpowers/specs/2026-10-16-unified-deal-flow-with-lost-quotes-design.md`。
 
 ## Global Constraints
+
+- **顧客情報確認が必ず第1工程**。既存顧客検索・新規登録・本支店・電話・メール・担当者・設置先を確認し、`customer_id`を見積へ渡す。旧顧客番号、既存の本支店の親子関係と過去の見積は不変。
 
 - 見積の**社内承認は不要**。担当社内職員が見積発行→受注／失注を操作する。商談記録を追加の承認ゲートにはしない。
 - 見積番号・受注番号・旧顧客番号・本支店・過去の見積・チケット・添付・監査ログを変更・削除しない。
@@ -30,6 +32,19 @@
 5. 施工不要・発注不要でも工程が永遠に保留 → 明示的「対象外」と次操作の導出（Task 3）。
 
 ---
+
+### Task 0: 顧客情報確認（最初の工程）
+
+**Files:** Create `assets/deal-customer-step.js`, `tests/deal-customer-step.test.mjs`, `tests/deal-customer-handoff.test.mjs`; Modify `assets/deal-workflow.js`, `index.html`。
+
+**Interfaces:** `QuoteFlowDealCustomerStep.configure({rpc,getRole,getHost,openCustomerCreate,createQuote})`, `open({preselectedCustomerId=null})`, `confirm({customerId,contactId=null,installationAddress=null})` → `{customerId,contactId,installationAddress}`。既存の`internal_customers_list`, `internal_customer_detail`, `internal_customer_contacts`, `renderCustomerCreate()`, `renderCustomerQuoteCreate(preselectedCustomerId)`を再利用する。
+
+- [ ] **Step 1: Failing tests.** 既存顧客検索、旧顧客番号、本支店（`branch_type`/`parent_customer_id`）、連絡先・担当者（`contacts.customer_id`）、設置場所確認を検証。顧客未選択、別顧客の担当者、停止顧客は見積へ進ませない。選択した`customerId`が見積まで同一で、旧番号・既存書類が不変であることを確認。
+- [ ] **Step 2: RED.** `node --test tests/deal-customer-step.test.mjs tests/deal-customer-handoff.test.mjs`が未実装機能で失敗することを確認。
+- [ ] **Step 3: Implement.** 「顧客情報確認 → この顧客で見積へ進む」を独立画面で実装し、既存顧客登録・重複候補確認と見積フォームを呼ぶ。顧客選択値を変更する場合は再確認を要求する。社内職員に`deals`ルート権限を付け、サポート会社には非公開。
+- [ ] **Step 4: GREEN.** `node --test tests/deal-customer-step.test.mjs tests/deal-customer-handoff.test.mjs tests/deal-workflow-ui.test.mjs`および`node scripts/validate-static.mjs`が成功。
+- [ ] **Step 5: Commit.** `git add assets/deal-customer-step.js assets/deal-workflow.js index.html tests/deal-customer-step.test.mjs tests/deal-customer-handoff.test.mjs && git commit -m "feat: confirm customer before sales quote"`
+- [ ] **Step 6: Independent review.** この工程だけの独立PRで、別担当者が本支店・担当者の整合性、顧客二重作成、MFA、見積引継ぎを検査し、修正後CIを再実行。合格するまでTask 1に進まない。
 
 ### Task 1: PR #43の既存実装と実DBスキーマの整合性レビュー
 
@@ -103,9 +118,14 @@
 - [ ] **Step 4: GREEN.** 新規全テスト＋既存CI成功、隔離DBのロール別実テスト／リハーサル証跡確認。**本番確認なしにPRをマージ・公開しない**。
 - [ ] **Step 5: Commit.** `git add .github/workflows/quote-flow-ci.yml scripts/verify-dual-flow-release.mjs tests/dual-flow-release.test.mjs && git commit -m "test: enforce dual-flow rollout gates"`
 
+## Independent Review Gates
+
+- **各工程を独立PR・独立レビュー**とし、RED → 実装 → GREEN・回帰CI → 別担当レビュー → 指摘修正 → 再テストを完了条件とする。レビュー担当者がいない場合は未完了として停止する。
+- サポート工程のPR #44へ販売側の変更を混ぜない。隔離DBで検証するまで本番SQLを適用しない。
+
 ## Order and Dependencies
 
-販売DBと案件画面の現行実装（PR #43）をベースにTask 1→2→3→4で検証。Task 5のトップ入口はサポート計画Task 3〜5のインターフェース確認後に統合。Task 6は2計画のゲートが揃ってから実行。単独で動くサポート業務はサポート計画のレビューを先に通せる。どちらも本番反映は隔離DBの検証とユーザーの確認後。
+販売DBと案件画面の現行実装（PR #43）をベースにTask 0→1→2→3→4で検証。Task 5のトップ入口はサポート計画Task 3〜5のインターフェース確認後に統合。Task 6は2計画のゲートが揃ってから実行。単独で動くサポート業務はサポート計画のレビューを先に通せる。どちらも本番反映は隔離DBの検証とユーザーの確認後。
 
 ## Scope Exclusions
 
