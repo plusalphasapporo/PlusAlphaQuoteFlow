@@ -21,6 +21,9 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Unified deal workflow UI tests
+        run: node --test tests/deal-workflow-ui.test.mjs
+
       - name: Unified deal workflow schema, linking, loss and direct order tests
         run: node --test tests/deal-workflow-*.test.mjs
 
