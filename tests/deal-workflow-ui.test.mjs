@@ -321,3 +321,31 @@ test('linked aftercare records open a detail page with a mounted host',()=>{
   assert.ok(block.includes('id="'+host+'"'),page+' missing host '+host);
  }
 });
+
+test('aftercare handoff is blocked when any installation is unaccepted',async()=>{
+ const detail={deal:{id:'deal-1',sales_outcome:'won'},customer:{name:'顧客'},
+ quotes:[],orders:[{id:'order-1'}],financing:{method:'bank_transfer'},
+ purchase_orders:[],receiving_items:[],deliveries:[],
+ installation_jobs:[{id:'job-1',state:'completed',acceptance_state:'accepted'},
+ {id:'job-2',state:'completed',acceptance_state:'rejected'}],
+ assets:[],contracts:[],support_tickets:[],events:[],loss_events:[]};
+ const f=fixture({handlers:{internal_deal_detail:async()=>detail}});
+ await f.api.openDetail('deal-1');
+ assert.doesNotMatch(f.host.innerHTML,/data-deal-action="support"/);
+ assert.doesNotMatch(f.host.innerHTML,/data-deal-action="contracts"/);
+ detail.installation_jobs[1].acceptance_state='accepted';
+ await f.api.openDetail('deal-1');
+ assert.match(f.host.innerHTML,/data-deal-action="support"/);
+});
+test('aftercare handoff rejects a cancelled or lost deal even if one job is accepted',async()=>{
+ for(const outcome of ['lost','cancelled_after_order']){
+  const f=fixture({handlers:{internal_deal_detail:async()=>({
+   deal:{id:'deal-1',sales_outcome:outcome},customer:{name:'顧客'},
+   quotes:[],orders:[{id:'o-1'}],financing:{method:'bank_transfer'},
+   purchase_orders:[],deliveries:[],installation_jobs:[{id:'j-1',state:'completed',acceptance_state:'accepted'}],
+   assets:[],contracts:[],support_tickets:[],events:[],loss_events:[]
+  })}});
+  await f.api.openDetail('deal-1');
+  assert.doesNotMatch(f.host.innerHTML,/data-deal-action="support"/);
+ }
+});
