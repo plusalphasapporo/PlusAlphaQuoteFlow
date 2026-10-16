@@ -77,7 +77,7 @@ test('won deal offers multiple job registration and editing, with separate deliv
  const f=fixture();await f.api.openDetail('deal-1');
  assert.match(f.host.innerHTML,/工事日を登録/);
  assert.match(f.host.innerHTML,/本店3F/);
- assert.match(f.host.innerHTML,/工事日程を編集/);
+ assert.match(f.host.innerHTML,/工事・検収を編集/);
  assert.equal(typeof f.api.openInstallationDialog,'function');
  f.api.openInstallationDialog('deal-1','job-1');
  assert.match(f.modal().body,/id="dealInstallStart"/);
