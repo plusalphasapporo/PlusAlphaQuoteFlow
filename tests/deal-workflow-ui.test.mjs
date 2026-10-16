@@ -231,3 +231,28 @@ test('existing purchase orders offer receiving without creating duplicate orders
  await f.api.openReceivingForDeal('deal-1');
  assert.equal(got.purchaseOrders[0].id,'po-1');
 });
+
+test('receiving uses exact PO ID scoping and never guesses by customer name',()=>{
+ const js=readFileSync('assets/deal-progress.js','utf8');
+ const w={};runInNewContext(js,{window:w,console});
+ const rows=[{item_id:'a',purchase_order_id:'po-1',customer_name:'同一顧客'},{item_id:'b',purchase_order_id:'po-2',customer_name:'同一顧客'}];
+ const scoped=w.QuoteFlowDealProgress.scopeReceiving(rows,['po-1']);
+ assert.deepEqual(scoped.map(x=>x.item_id),['a']);
+ assert.throws(()=>w.QuoteFlowDealProgress.scopeReceiving(rows,[]),/対象発注/);
+ assert.match(html,/renderProcurementWorkspace\('receiving',receivingScope\)/);
+ assert.match(html,/purchaseOrderIds:purchaseOrders\.map\(po=>po\.id\)/);
+});
+test('deal detail displays purchasing and delivery completion links',async()=>{
+ const f=fixture({handlers:{internal_deal_detail:async()=>({
+  deal:{id:'deal-1',title:'設置工事',sales_outcome:'won'},customer:{name:'営業先株式会社'},
+  quotes:[],orders:[{id:'order-1'}],financing:{method:'bank_transfer'},
+  purchase_orders:[{id:'po-1',purchase_order_number:'PO-1',supplier_name:'仕入先A'}],
+  receiving_items:[{quantity:2,received_quantity:1}],deliveries:[{id:'dv-1',delivery_number:'D-1',status:'planned'}],
+  installation_jobs:[],assets:[],contracts:[],support_tickets:[],events:[],loss_events:[]
+ })}});
+ await f.api.openDetail('deal-1');
+ assert.match(f.host.innerHTML,/PO-1/);
+ assert.match(f.host.innerHTML,/未入荷 1件/);
+ assert.match(f.host.innerHTML,/D-1/);
+ assert.match(f.host.innerHTML,/納品詳細・完了確認/);
+});
