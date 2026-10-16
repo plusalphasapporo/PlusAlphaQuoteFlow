@@ -177,7 +177,7 @@ test('quote editor uses direct issuance and preserves legacy approval history as
  assert.doesNotMatch(editor,/管理者承認待ち|見積を承認|承認申請/);
  assert.match(editor,/過去の承諾記録/);
  assert.match(editor,/quoteDealOpenBtn/);
- assert.match(html,/editQuote:async id=>\{await go\('sales'\);const cmap=await customerMap\(\);await renderQuoteEditor\(id,cmap\);\}/);
+ assert.match(html,/editQuote:async id=>\{if\(!await goForDeal\('sales'\)\)return;const cmap=await customerMap\(\);await renderQuoteEditor\(id,cmap\);\}/);
 });
 
 test('order success refreshes actual deal and launches finance setup only for won records without terms',async()=>{
@@ -289,10 +289,10 @@ test('incomplete installation must not offer automatic aftercare handoff',async(
 
 test('linked order, purchase order and delivery navigation mounts the matching detail host',()=>{
  const html=readFileSync('index.html','utf8');
- assert.match(html,/openOrderProcurement:async\(\{orderId\}\)=>\{[\s\S]*?await renderOrders\(\);[\s\S]*?await renderOrderDetail\(orderId\)/);
- assert.match(html,/if\(kind==='order'\)\{await go\('sales'\);await renderOrders\(\);await renderOrderDetail\(id\)/);
- assert.match(html,/if\(kind==='purchase'\)\{await go\('procurement'\);await renderPurchaseOrders\(\);await renderPurchaseOrderDetail\(id\)/);
- assert.match(html,/if\(kind==='delivery'\)\{await go\('procurement'\);await renderDeliveries\(\);await renderDeliveryDetail\(id\)/);
+ assert.match(html,/openOrderProcurement:async\(\{orderId\}\)=>\{[\s\S]*?if\(!await goForDeal\('sales'\)\)return;[\s\S]*?await renderOrders\(\);[\s\S]*?await renderOrderDetail\(orderId\)/);
+ assert.match(html,/if\(kind==='order'\)\{if\(!await goForDeal\('sales'\)\)return;await renderOrders\(\);await renderOrderDetail\(id\)/);
+ assert.match(html,/if\(kind==='purchase'\)\{if\(!await goForDeal\('procurement'\)\)return;await renderPurchaseOrders\(\);await renderPurchaseOrderDetail\(id\)/);
+ assert.match(html,/if\(kind==='delivery'\)\{if\(!await goForDeal\('procurement'\)\)return;await renderDeliveries\(\);await renderDeliveryDetail\(id\)/);
  assert.match(html,/async function renderOrders\(\)[\s\S]*?id="orderDetailHost"/);
  assert.match(html,/async function renderPurchaseOrders\(\)[\s\S]*?id="purchaseOrderDetailHost"/);
  assert.match(html,/async function renderDeliveries\(\)[\s\S]*?id="deliveryDetailHost"/);
