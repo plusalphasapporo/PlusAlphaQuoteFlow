@@ -66,12 +66,39 @@ BEGIN
  IF NEW.customer_id<>v_deal.customer_id THEN
   RAISE EXCEPTION USING errcode='23514',message='order customer and deal mismatch';
  END IF;
+ IF EXISTS (
+  SELECT 1 FROM public.orders existing
+  WHERE existing.deal_id=v_deal_id
+    OR existing.quote_id IN (SELECT q.id FROM public.quotes q WHERE q.deal_id=v_deal_id)
+ ) THEN
+  RAISE EXCEPTION USING errcode='23505',message='deal already has an order';
+ END IF;
  NEW.deal_id:=v_deal_id;
  RETURN NEW;
 END;$fn$;
 DROP TRIGGER IF EXISTS orders_deal_outcome_guard ON public.orders;
 CREATE TRIGGER orders_deal_outcome_guard BEFORE INSERT ON public.orders
 FOR EACH ROW EXECUTE FUNCTION app_private.guard_deal_order_insert();
+
+-- Every order insertion, including the legacy RPC, synchronizes the deal atomically.
+CREATE OR REPLACE FUNCTION app_private.sync_order_deal_after_insert()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path TO '' AS $fn$
+DECLARE v_previous text;
+BEGIN
+ IF NEW.deal_id IS NULL THEN RETURN NEW; END IF;
+ SELECT sales_outcome INTO v_previous FROM public.deals WHERE id=NEW.deal_id FOR UPDATE;
+ IF v_previous <> 'open' THEN
+  RAISE EXCEPTION USING errcode='42501',message='deal no longer open';
+ END IF;
+ UPDATE public.deals SET sales_outcome='won',current_stage='order',
+   next_action='支払方法と納期を登録',updated_at=now() WHERE id=NEW.deal_id;
+ INSERT INTO public.deal_events(deal_id,event_type,message,actor_user_id)
+ VALUES(NEW.deal_id,'order.created','受注登録',auth.uid());
+ RETURN NEW;
+END;$fn$;
+DROP TRIGGER IF EXISTS orders_deal_sync_after_insert ON public.orders;
+CREATE TRIGGER orders_deal_sync_after_insert AFTER INSERT ON public.orders
+FOR EACH ROW EXECUTE FUNCTION app_private.sync_order_deal_after_insert();
 
 CREATE OR REPLACE FUNCTION app_private.deal_create_order_from_quote_impl(p_deal_id uuid,p_quote_id uuid)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path TO '' AS $fn$
@@ -113,10 +140,6 @@ BEGIN
  INSERT INTO public.orders(deal_id,customer_id,quote_id,order_number,status,total_amount,ordered_at,created_by)
  VALUES(p_deal_id,v_deal.customer_id,p_quote_id,v_number,'draft',v_quote.total_amount,now(),auth.uid())
  RETURNING * INTO v_order;
- UPDATE public.deals SET sales_outcome='won',current_stage='order',
- next_action='支払方法と納期を登録',updated_at=now() WHERE id=p_deal_id;
- INSERT INTO public.deal_events(deal_id,event_type,message,actor_user_id)
- VALUES(p_deal_id,'order.created','受注登録',auth.uid());
  INSERT INTO public.audit_logs(actor_user_id,actor_role,action,target_type,target_id,after_data,created_at)
  VALUES(auth.uid(),(SELECT app_private.current_role()),'deal.order_created','order',v_order.id::text,
  jsonb_build_object('deal_id',p_deal_id,'quote_id',p_quote_id,'order_number',v_number),now());
