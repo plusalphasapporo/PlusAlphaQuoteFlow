@@ -82,7 +82,7 @@ test('openDetail displays end-to-end stages and quote operations without approva
   assert.match(f.host.innerHTML,/見積発行済み/);
   assert.match(f.host.innerHTML,/受注登録/);
   assert.match(f.host.innerHTML,/失注登録/);
-  assert.match(f.host.innerHTML,/見積画面/);
+  assert.match(f.host.innerHTML,/見積を編集・確認/);
   assert.doesNotMatch(f.host.innerHTML,/管理者承認|承認待ち/);
 });
 test('loss dialog requires date, reason and conditional details, then calls only loss RPC',async()=>{
