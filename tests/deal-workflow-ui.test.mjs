@@ -256,3 +256,33 @@ test('deal detail displays purchasing and delivery completion links',async()=>{
  assert.match(f.host.innerHTML,/D-1/);
  assert.match(f.host.innerHTML,/納品詳細・完了確認/);
 });
+
+test('completed and accepted installation reveals linked equipment maintenance and support actions',async()=>{
+ const f=fixture({handlers:{internal_deal_detail:async()=>({
+  deal:{id:'deal-1',sales_outcome:'won'},customer:{name:'営業先株式会社'},
+  quotes:[],orders:[{id:'order-1'}],financing:{method:'bank_transfer'},
+  purchase_orders:[],receiving_items:[],deliveries:[],
+  installation_jobs:[{id:'job-1',state:'completed',acceptance_state:'accepted',site_address:'本店'}],
+  assets:[{id:'asset-1',asset_number:'A-1',model_name:'複合機'}],
+  contracts:[{id:'contract-1',contract_number:'C-1',status:'active'}],
+  support_tickets:[{id:'ticket-1',ticket_number:'S-1'}],events:[],loss_events:[]
+ })}});
+ await f.api.openDetail('deal-1');
+ for(const text of ['施工完了','検収済み','A-1','C-1','S-1','機器台帳を確認','契約・保守を確認','サポートへ進む'])
+  assert.match(f.host.innerHTML,new RegExp(text));
+ assert.match(f.host.innerHTML,/data-deal-record="asset" data-record-id="asset-1"/);
+ assert.match(f.host.innerHTML,/data-deal-record="contract" data-record-id="contract-1"/);
+ assert.match(f.host.innerHTML,/data-deal-record="ticket" data-record-id="ticket-1"/);
+});
+test('incomplete installation must not offer automatic aftercare handoff',async()=>{
+ const f=fixture({handlers:{internal_deal_detail:async()=>({
+  deal:{id:'deal-1',sales_outcome:'won'},customer:{name:'営業先株式会社'},
+  quotes:[],orders:[{id:'order-1'}],financing:{method:'bank_transfer'},
+  purchase_orders:[],deliveries:[],installation_jobs:[{id:'job-1',state:'completed',acceptance_state:'rejected'}],
+  assets:[],contracts:[],support_tickets:[],events:[],loss_events:[]
+ })}});
+ await f.api.openDetail('deal-1');
+ assert.match(f.host.innerHTML,/検収不合格/);
+ assert.doesNotMatch(f.host.innerHTML,/data-deal-action="support"/);
+ assert.doesNotMatch(f.host.innerHTML,/data-deal-action="contracts"/);
+});
