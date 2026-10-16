@@ -28,3 +28,15 @@ test('page loads customer-first script and sale route',()=>{
  assert.match(html,/window\.QuoteFlowDealCustomerStep\?\.configure/);
  assert.match(html,/renderCustomerQuoteCreate\(preselectedCustomerId,customerContext/);
 });
+
+test('clearing a confirmed quote reloads the fixed customer, contact and installation before it can be saved',()=>{
+ const html=readFileSync('index.html','utf8');
+ const clear=html.match(/\$\('#quoteCreateDraftClear'\)\.onclick=async\(\)=>\{([\s\S]*?)\n    \};/);
+ assert.ok(clear,'clear handler exists and awaits customer restore');
+ assert.match(clear[1],/form\.reset\(\)/);
+ assert.match(clear[1],/if\(preselectedCustomerId\)\s*\{\s*try\{await loadConfirmedCustomer\(\)/);
+ assert.match(html,/const loadConfirmedCustomer=async\(\)=>\{/);
+ assert.match(html,/if\(preselectedCustomerId\) \$\('#quoteCreateCustomer'\)\.value=preselectedCustomerId/);
+ assert.match(html,/customerContext\?\.contactId/);
+ assert.match(html,/customerContext\?\.installationAddress/);
+});
