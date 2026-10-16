@@ -4427,6 +4427,7 @@
             return;
           }catch(linkError){
             await go('sales');
+            await renderSalesWorkspace('quotes');
             notice('#quoteFlowLinkNotice','見積は保存済みですが、案件への紐づけを確認できません。見積を再登録せず「既存見積から案件を作成」から確認してください。'+(linkError?.message||String(linkError)));
             return;
           }
@@ -14947,23 +14948,23 @@
     openOrderProcurement:async({orderId})=>{
       if(!orderId)throw new Error('受注番号が指定されていません');
       await go('sales');
-      await renderSalesWorkspace('order_ops');
+      await renderOrders();
       await renderOrderDetail(orderId);
       $('#orderCreatePOForm')?.scrollIntoView({behavior:'smooth',block:'start'});
     },
-    openReceivingForDeal:async({purchaseOrders})=>{
+    openReceivingForDeal:async({dealId,purchaseOrders})=>{
       if(!Array.isArray(purchaseOrders)||!purchaseOrders.length)throw new Error('対象案件の発注がありません');
       if(!purchaseOrders.every(po=>typeof po.id==='string'&&po.id))throw new Error('発注IDを確認できません');
       await go('procurement');
-      await renderProcurementWorkspace('receiving',{dealId:purchaseOrders[0].deal_id||'選択案件',purchaseOrderIds:purchaseOrders.map(po=>po.id)});
+      await renderProcurementWorkspace('receiving',{dealId,purchaseOrderIds:purchaseOrders.map(po=>po.id)});
     },
     openLinked:async(kind,id)=>{
-      if(kind==='purchase'){await go('procurement');await renderPurchaseOrderDetail(id);return;}
-      if(kind==='delivery'){await go('procurement');await renderDeliveryDetail(id);return;}
+      if(kind==='purchase'){await go('procurement');await renderPurchaseOrders();await renderPurchaseOrderDetail(id);return;}
+      if(kind==='delivery'){await go('procurement');await renderDeliveries();await renderDeliveryDetail(id);return;}
       if(kind==='asset'){await go('assets');await renderAssetDetail(id);return;}
       if(kind==='contract'){await go('contracts');await renderContractDetail(id);return;}
       if(kind==='ticket'){await go('support');await renderTicketDetail(id);return;}
-      if(kind==='order'){await go('sales');await renderOrderDetail(id);return;}
+      if(kind==='order'){await go('sales');await renderOrders();await renderOrderDetail(id);return;}
       throw new Error('対応していない関連レコードです。');
     },
     listQuotes:async()=>{const result=await supabase.from('quotes').select('id,deal_id,quote_number,project_name,customer_id,status').order('created_at',{ascending:false});if(result.error)throw result.error;return result.data||[];}
