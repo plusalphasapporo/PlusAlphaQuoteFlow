@@ -310,7 +310,7 @@ test('linked aftercare records open a detail page with a mounted host',()=>{
  for(const [kind,page,detail] of [
   ['asset','assets','renderAssetDetail'],['contract','contracts','renderContractDetail'],['ticket','support','renderTicketDetail']
  ]){
-  assert.ok(linked.includes("if(kind==='"+kind+"'){await go('"+page+"');await "+detail+"(id)"),kind);
+  assert.ok(linked.includes("if(kind==='"+kind+"'){if(!await goForDeal('"+page+"'))return;await "+detail+"(id)"),kind);
  }
  for(const [page,host] of [
   ['renderAssets','assetDetailHost'],['renderContractsWorkspace','contractDetailHost'],['renderSupport','ticketDetailHost']
@@ -362,4 +362,13 @@ test('progress stage never skips cancelled or unverified installations',()=>{
  assert.equal(evaluate([{state:'completed',acceptance_state:'accepted'},{state:'completed',acceptance_state:null}]).stage,'検収');
  assert.equal(evaluate([{state:'completed',acceptance_state:'accepted'},{state:'completed',acceptance_state:'rejected'}]).stage,'検収');
  assert.equal(evaluate([{state:'completed',acceptance_state:'accepted'}]).target,'support');
+});
+
+test('navigation guard protects unsent edits before any deal-linked detail replaces the screen',()=>{
+ const html=readFileSync('index.html','utf8');
+ assert.match(html,/const goForDeal=async page=>\{[\s\S]*?result!==false&&currentPage===page/);
+ assert.match(html,/if\(activeTicketId && window\.QuoteFlowTicketTabs\?\.confirmLeave\(activeTicketId\)===false\) return false/);
+ for(const kind of ['purchase','delivery','asset','contract','ticket','order'])
+  assert.ok(html.includes("if(kind==='"+kind+"'){if(!await goForDeal("),kind);
+ assert.match(html,/openReceivingForDeal:async\(\{dealId,purchaseOrders\}\)=>\{[\s\S]*?if\(!await goForDeal\('procurement'\)\)return/);
 });
