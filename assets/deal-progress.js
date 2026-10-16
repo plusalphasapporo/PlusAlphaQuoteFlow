@@ -20,9 +20,11 @@ function derive(x={}){
   stage='支払・リース';nextAction='リース審査否決：支払方法を再検討';target='finance';
  }else if(fin.method==='lease'&&!['approved','conditional'].includes(fin.credit_status)){
   stage='支払・リース';nextAction='リース審査結果を確認';target='finance';
- }else if(pos.length&&items.some(i=>Number(i.received_quantity||0)<Number(i.quantity||0))){
-  stage='発注・入荷';nextAction='未入荷の商品を入荷登録してください';target='receiving';
- }else if(pos.length&&!deliveries.length){stage='発注・入荷';nextAction='納品予定を登録してください';target='procurement';}
+ }else if(pos.length&&(!items.length||items.some(i=>Number(i.received_quantity||0)<Number(i.quantity||0)))){
+  stage='発注・入荷';nextAction=items.length?'未入荷の商品を登録してください':'発注明細と入荷状況を確認してください';target='receiving';
+ }else if(pos.length&&!deliveries.length){stage='発注・入荷';nextAction='納品予定を作成してください';target='delivery';}
+ else if(deliveries.some(d=>d.status!=='delivered')){stage='発注・入荷';nextAction='納品状況・完了確認を登録してください';target='delivery';}
+ else if(!pos.length&&!deliveries.length&&!jobs.length){stage='発注・入荷';nextAction='必要に応じて発注・納品または工事日を登録してください';target='procurement';}
  else if(!jobs.length){stage='工事日';nextAction='工事日を登録するか、工事対象外を確認';target='installation';}
  else if(jobs.some(j=>j.state==='postponed')){stage='工事日';nextAction='延期された工事日を再調整';target='installation';}
  else if(jobs.some(j=>j.state==='revisit_required')){stage='施工';nextAction='再訪問の予定を登録';target='installation';}
@@ -35,5 +37,11 @@ function derive(x={}){
  else {stage='機器・保守';nextAction='サポートへ引継ぎ・運用管理';target='support';}
  return {stage,nextAction,target,steps:['見積','受注','支払・リース','発注・入荷','工事日','施工','検収','機器・保守','サポート']};
 }
-window.QuoteFlowDealProgress={derive};
+function scopeReceiving(items,purchaseOrderIds){
+ if(!Array.isArray(items)||!Array.isArray(purchaseOrderIds)||!purchaseOrderIds.length)throw Error('対象発注と入荷明細を確認してください');
+ const ids=new Set(purchaseOrderIds.filter(id=>typeof id==='string'&&id.trim()));
+ if(!ids.size)throw Error('対象発注のIDを確認できません');
+ return items.filter(item=>item&&ids.has(item.purchase_order_id));
+}
+window.QuoteFlowDealProgress={derive,scopeReceiving};
 })();
