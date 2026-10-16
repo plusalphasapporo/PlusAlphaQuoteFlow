@@ -13,6 +13,7 @@ function fixture(overrides={}){
   let options=null;
   const fields=new Map();
   const host={innerHTML:'',onclick:null,contains(){return true;},querySelector(){return null;}};
+  const table={innerHTML:'',querySelectorAll(){return [];}};
   const calls=[];
   const quote={id:'quote-1',deal_id:'deal-1',customer_id:'customer-1',status:'finalized',
     quote_number:'Q-1001',project_name:'複合機入替',total_amount:250000,valid_until:'2026-12-30'};
@@ -34,7 +35,7 @@ function fixture(overrides={}){
   };
   const nav=[];
   const win={};
-  const document={getElementById(id){return fields.get(id)||null;}};
+  const document={getElementById(id){return id==='dealTable'?table:fields.get(id)||null;}};
   if(source)runInNewContext(source,{window:win,document,console});
   const api=win.QuoteFlowDeals||{};
   if(typeof api.configure==='function')api.configure({
@@ -44,7 +45,7 @@ function fixture(overrides={}){
     navigate:async page=>nav.push(page),editQuote:async()=>{},
     listQuotes:async()=>overrides.listQuotes||[]
   });
-  return {api,host,calls,fields,nav,quote,detail,rows,get modal(){return options;}};
+  return {api,host,table,calls,fields,nav,quote,detail,rows,get modal(){return options;}};
 }
 
 test('routes include separate internal-only deal management and relative assets',()=>{
@@ -59,9 +60,9 @@ test('openList loads deal records and shows customer branch, current stage, and 
   await f.api.openList();
   assert.ok(f.calls.some(x=>x.name==='internal_deals_list'&&x.opts?.readOnly===true));
   assert.match(f.host.innerHTML,/案件進行管理/);
-  assert.match(f.host.innerHTML,/営業先株式会社/);
-  assert.match(f.host.innerHTML,/本店/);
-  assert.match(f.host.innerHTML,/商談/);
+  assert.match(f.table.innerHTML,/営業先株式会社/);
+  assert.match(f.table.innerHTML,/本店/);
+  assert.match(f.table.innerHTML,/商談/);
   assert.match(f.host.innerHTML,/見積から案件/);
   assert.doesNotMatch(f.host.innerHTML,/社内承認待ち|管理者承認申請/);
 });
