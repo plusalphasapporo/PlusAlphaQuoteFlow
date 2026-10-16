@@ -21,6 +21,9 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Deal financing and installation tests
+        run: node --test tests/deal-financing.test.mjs tests/deal-installation.test.mjs
+
       - name: Unified deal workflow UI tests
         run: node --test tests/deal-workflow-ui.test.mjs
 
