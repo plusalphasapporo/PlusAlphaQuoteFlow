@@ -14936,18 +14936,24 @@
     };
   }
 
+  // Respect unsaved support-ticket changes and failed page loads before opening
+  // a linked deal record over the current screen.
+  const goForDeal=async page=>{
+    const result=await go(page);
+    return result!==false&&currentPage===page;
+  };
   window.QuoteFlowDealCustomerStep?.configure({
     rpc,getRole:()=>bootData?.context?.role,getHost:()=>$('#home'),
-    openCustomerCreate:async({onCreated}={})=>{await go('customers');await renderCustomerCreate(onCreated);},
+    openCustomerCreate:async({onCreated}={})=>{if(!await goForDeal('customers'))return;await renderCustomerCreate(onCreated);},
     createQuote:async({preselectedCustomerId,customerContext})=>renderCustomerQuoteCreate(preselectedCustomerId,customerContext)
   });
   window.QuoteFlowDeals?.configure({
     rpc, getHost:()=>$('#home'),getRole:()=>bootData?.context?.role,
     openModal:o=>window.openModal(o),closeModal:()=>window.closeModal(),toast,
-    navigate:page=>go(page),editQuote:async id=>{await go('sales');const cmap=await customerMap();await renderQuoteEditor(id,cmap);},
+    navigate:page=>go(page),editQuote:async id=>{if(!await goForDeal('sales'))return;const cmap=await customerMap();await renderQuoteEditor(id,cmap);},
     openOrderProcurement:async({orderId})=>{
       if(!orderId)throw new Error('受注番号が指定されていません');
-      await go('sales');
+      if(!await goForDeal('sales'))return;
       await renderOrders();
       await renderOrderDetail(orderId);
       $('#orderCreatePOForm')?.scrollIntoView({behavior:'smooth',block:'start'});
@@ -14955,23 +14961,23 @@
     openReceivingForDeal:async({dealId,purchaseOrders})=>{
       if(!Array.isArray(purchaseOrders)||!purchaseOrders.length)throw new Error('対象案件の発注がありません');
       if(!purchaseOrders.every(po=>typeof po.id==='string'&&po.id))throw new Error('発注IDを確認できません');
-      await go('procurement');
+      if(!await goForDeal('procurement'))return;
       await renderProcurementWorkspace('receiving',{dealId,purchaseOrderIds:purchaseOrders.map(po=>po.id)});
     },
     openLinked:async(kind,id)=>{
-      if(kind==='purchase'){await go('procurement');await renderPurchaseOrders();await renderPurchaseOrderDetail(id);return;}
-      if(kind==='delivery'){await go('procurement');await renderDeliveries();await renderDeliveryDetail(id);return;}
-      if(kind==='asset'){await go('assets');await renderAssetDetail(id);return;}
-      if(kind==='contract'){await go('contracts');await renderContractDetail(id);return;}
-      if(kind==='ticket'){await go('support');await renderTicketDetail(id);return;}
-      if(kind==='order'){await go('sales');await renderOrders();await renderOrderDetail(id);return;}
+      if(kind==='purchase'){if(!await goForDeal('procurement'))return;await renderPurchaseOrders();await renderPurchaseOrderDetail(id);return;}
+      if(kind==='delivery'){if(!await goForDeal('procurement'))return;await renderDeliveries();await renderDeliveryDetail(id);return;}
+      if(kind==='asset'){if(!await goForDeal('assets'))return;await renderAssetDetail(id);return;}
+      if(kind==='contract'){if(!await goForDeal('contracts'))return;await renderContractDetail(id);return;}
+      if(kind==='ticket'){if(!await goForDeal('support'))return;await renderTicketDetail(id);return;}
+      if(kind==='order'){if(!await goForDeal('sales'))return;await renderOrders();await renderOrderDetail(id);return;}
       throw new Error('対応していない関連レコードです。');
     },
     listQuotes:async()=>{const result=await supabase.from('quotes').select('id,deal_id,quote_number,project_name,customer_id,status').order('created_at',{ascending:false});if(result.error)throw result.error;return result.data||[];}
   });
   async function go(page){
     // Sidebar navigation also replaces the ticket DOM. Confirm before losing unsent edits.
-    if(activeTicketId && window.QuoteFlowTicketTabs?.confirmLeave(activeTicketId)===false) return;
+    if(activeTicketId && window.QuoteFlowTicketTabs?.confirmLeave(activeTicketId)===false) return false;
     const role=bootData?.context?.role;
     const allowed=(pageSets[role]||[]).map(x=>x[0]);
     const supplementalAllowed=role==='support_staff'
@@ -15017,7 +15023,8 @@
     }catch(e){
       const raw=String(e.message||e);
       if(raw.includes('AAL2_REQUIRED')){
-        return prepareMfa();
+        await prepareMfa();
+        return false;
       }
       if(raw.includes('SESSION_EXPIRED')){
         bootData=null;
@@ -15025,7 +15032,7 @@
         $('#logoutBtn').classList.add('hidden');
         $('#userBadge').classList.add('hidden');
         notice('#loginMsg','ログインセッションの有効期限が切れました。もう一度ログインしてください。');
-        return;
+        return false;
       }
 
       const offline=!navigator.onLine || e.kind==='network';
@@ -15039,6 +15046,7 @@
           '</div>'+
         '</div>';
       $('#pageRetryBtn').onclick=()=>go(page);
+      return false;
     }
   }
 
