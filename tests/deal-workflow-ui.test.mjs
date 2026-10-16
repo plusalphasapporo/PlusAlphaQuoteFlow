@@ -179,3 +179,29 @@ test('quote editor uses direct issuance and preserves legacy approval history as
  assert.match(editor,/quoteDealOpenBtn/);
  assert.match(html,/editQuote:async id=>\{await go\('sales'\);const cmap=await customerMap\(\);await renderQuoteEditor\(id,cmap\);\}/);
 });
+
+test('order success refreshes actual deal and launches finance setup only for won records without terms',async()=>{
+ const f=fixture({handlers:{
+  internal_deal_detail:async()=>f.detail,
+  deal_create_order_from_quote:async()=>{f.detail.deal.sales_outcome='won';f.detail.orders=[{id:'order-1',quote_id:'quote-1',order_number:'O-900'}];return {id:'order-1',order_number:'O-900'};}
+ }});
+ await f.api.openDetail('deal-1');
+ f.api.openOrderDialog('deal-1','quote-1');
+ assert.match(f.modal.body,/Q-1001/);
+ await f.modal.onSubmit();
+ assert.equal(f.modal.title,'支払・リースを登録・編集');
+ assert.match(f.modal.body,/dealFinanceMethod/);
+});
+test('financing method labels and loss reasons remain readable in deal detail',async()=>{
+ const f=fixture({handlers:{internal_deal_detail:async()=>({
+  deal:{id:'deal-1',sales_outcome:'won',title:'設備更新'},customer:{name:'営業先株式会社'},
+  quotes:[],orders:[{id:'order-1'}],financing:{method:'bank_transfer',payment_state:'invoiced',credit_status:'not_required'},
+  events:[],loss_events:[{event_type:'lost',reason_category:'price',detail:'価格見直し後に受注'}],
+  purchase_orders:[],deliveries:[],assets:[],contracts:[],support_tickets:[]
+ })}});
+ await f.api.openDetail('deal-1');
+ assert.match(f.host.innerHTML,/銀行振込/);
+ assert.match(f.host.innerHTML,/請求済み/);
+ assert.match(f.host.innerHTML,/失注理由：価格/);
+ assert.doesNotMatch(f.host.innerHTML,/与信：/);
+});
