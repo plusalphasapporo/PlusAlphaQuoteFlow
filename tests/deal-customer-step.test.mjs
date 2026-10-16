@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
 const text=readFileSync('assets/deal-customer-step.js','utf8');
-const make=()=>{const window={};runInNewContext(text,{window});return window.QuoteFlowDealCustomerStep};
+const make=()=>{const window={};runInNewContext(text,{window,document:{getElementById:()=>null}});return window.QuoteFlowDealCustomerStep};
 const records=[{id:'h',name:'本店',customer_code:'C01',branch_type:'head_office',status:'active'},
 {id:'b',name:'支店',customer_code:'C02',branch_type:'branch',parent_customer_id:'h',status:'active'},
 {id:'x',name:'別社',customer_code:'C03',branch_type:'head_office',status:'active'},
