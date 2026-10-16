@@ -39,10 +39,26 @@ async function openList(){
  const sales=document.getElementById('dealGoSales');if(sales)sales.onclick=()=>config.navigate('sales');
  rerender();
 }
-function nextActions(d,quotes,orders){
+function nextActions(data){
+ const d=data.deal||{},quotes=data.quotes||[],orders=data.orders||[],pos=data.purchase_orders||[],fin=data.financing;
  if(d.sales_outcome==='lost')return '<button data-deal-action="reopen" class="primary">失注案件を再開</button>';
  if(d.sales_outcome==='cancelled_after_order')return '<p>受注後キャンセル。履歴を参照してください。</p>';
- if(orders.length||d.sales_outcome==='won')return '<p>受注済み。支払・リース、仕入・納品、工事・施工へ進めます。</p>';
+ if(d.sales_outcome==='won'||orders.length){
+  if(d.sales_outcome!=='won'||!orders.length)return '<p class="notice error">受注の状態と記録が一致しません。発注を進めず、受注番号を確認してください。</p>';
+  const order=orders.at(-1);
+  let out='<div class="row" style="gap:10px;flex-wrap:wrap">';
+  if(!fin)out+='<button class="primary" data-deal-action="finance">1. 支払方法を登録</button>';
+  else{
+   if(fin.method==='lease'&&fin.credit_status==='denied')out+='<button class="primary" data-deal-action="finance">リース否決：支払方法を再確認</button>';
+   else{
+    out+='<button class="primary" data-deal-action="procure-order" data-order-id="'+e(order.id)+'">'+(pos.length?'発注内容・納品予定を開く':'2. 受注から発注を作成')+'</button>';
+    if(fin.method==='lease'&&!['approved','conditional'].includes(fin.credit_status))out+='<span class="muted">リース審査中です。発注可否を担当者が確認してください。</span>';
+   }
+  }
+  if(pos.length)out+='<button class="ghost" data-deal-action="receiving">入荷・シリアルを確認</button>';
+  out+='<button class="ghost" data-deal-action="install">工事日を調整（発注と並行可）</button></div>';
+  return out;
+ }
  const latest=quotes.at(-1);
  if(!latest)return '<p>この案件には見積がありません。見積画面で作成してください。</p><button data-deal-action="sales">見積画面</button>';
  return '<div class="row">'+(latest.status==='draft'?'<button class="primary" data-deal-action="issue" data-quote-id="'+e(latest.id)+'">見積発行</button>':'')+
@@ -58,7 +74,7 @@ async function openDetail(dealId){
  let state=guidance.stage;
  const h=host();h.innerHTML='<section class="card section"><div class="row between"><div><h2>'+e(d.title||'案件')+'</h2><p class="sectionDesc">'+e(c.customer_code||'')+' / '+e(c.name||'')+(c.parent_customer_name?' / '+e(c.parent_customer_name):'')+'</p></div><button id="dealBack" class="ghost">案件一覧へ戻る</button></div>'+
  '<div class="dealSummary"><div><small>営業結果</small><strong>'+e(OUTCOMES[d.sales_outcome]||d.sales_outcome)+'</strong></div><div><small>現在の工程</small><strong>'+e(state)+'</strong></div><div><small>次に行うこと</small><strong>'+e(guidance.nextAction||'進行状況を確認')+'</strong></div></div>'+
- stages(state)+'<div class="dealActions">'+nextActions(d,quotes,orders)+'</div></section>'+
+ stages(state)+'<div class="dealActions">'+nextActions(data)+'</div></section>'+
  '<section class="card section"><h3>見積・受注</h3>'+
  '<div class="dealRecords">'+quotes.map(q=>'<div class="dealRecord"><strong>'+e(q.quote_number||'下書き')+'</strong><span>'+e(q.project_name||'')+'</span><span>'+e(q.status==='finalized'?'見積発行済み':q.status==='draft'?'下書き':q.status==='accepted'?'既存承諾記録':q.status)+'</span><button type="button" class="ghost" data-deal-quote="'+e(q.id)+'">見積を開く</button></div>').join('')+'</div>'+
  '<div class="dealRecords">'+orders.map(o=>'<div class="dealRecord">受注番号 '+e(o.order_number||'未採番')+'</div>').join('')+'</div></section>'+
@@ -75,7 +91,7 @@ async function openDetail(dealId){
  '</section>'+
  '<section class="card section"><h3>案件に紐づく情報</h3><div class="dealLinked">'+
  [['仕入・納品','purchase_orders','procurement'],['工事日・施工','deliveries','procurement'],['機器・保守','assets','assets'],['保守契約','contracts','contracts'],['サポート','support_tickets','support']].map(([label,key,page])=>'<button type="button" data-deal-nav="'+page+'" class="ghost">'+e(label)+' ('+e((data[key]||[]).length)+')</button>').join('')+
- '</div><p class="muted">支払・リースと施工工程の登録は後続開発で追加します。</p></section>'+
+ '</div><p class="muted">登録済みの受注・発注・納品を参照します。工事日調整は発注と並行して実施できます。</p></section>'+
  '<section class="card section"><h3>案件の履歴</h3>'+[...(data.events||[]),...(data.loss_events||[])].map(x=>'<div class="dealRecord">'+e(x.event_type==='lost'?'失注理由：'+(REASONS[x.reason_category]||x.reason_category||'未設定')+(x.detail?' / '+x.detail:''):x.message||x.event_type)+' '+e(x.created_at||'')+'</div>').join('')+'</section>';
  const back=document.getElementById('dealBack');if(back)back.onclick=()=>openList();
  h.querySelectorAll?.('[data-deal-action]').forEach(btn=>btn.onclick=()=>{
@@ -87,6 +103,8 @@ async function openDetail(dealId){
   if(action==='sales')return config.navigate('sales');
   if(action==='quote')return config.editQuote(quoteId);
   if(action==='finance')return openFinancingDialog(dealId);
+  if(action==='procure-order')return openOrderProcurement(dealId,btn.dataset.orderId);
+  if(action==='receiving')return openReceivingForDeal(dealId);
   if(action==='install')return openInstallationDialog(dealId);
  });
  h.querySelectorAll?.('[data-deal-quote]').forEach(btn=>btn.onclick=()=>config.editQuote(btn.dataset.dealQuote));
@@ -152,6 +170,23 @@ async function openFromQuote(quoteId){
  config.closeModal?.();return openDetail(linked.id);
 }
 
+async function openOrderProcurement(dealId,orderId){
+ requireStaff();
+ if(!orderId||selectedId!==dealId||detailCache?.deal?.sales_outcome!=='won'||
+    !(detailCache.orders||[]).some(o=>o.id===orderId))throw Error('対象案件の受注番号を確認してください。');
+ if(typeof config.openOrderProcurement!=='function')throw Error('発注画面を開けません');
+ return config.openOrderProcurement({dealId,orderId});
+}
+async function openReceivingForDeal(dealId){
+ requireStaff();
+ if(selectedId!==dealId||detailCache?.deal?.sales_outcome!=='won')throw Error('受注済みの案件を確認してください。');
+ const purchaseOrders=(detailCache.purchase_orders||[]).filter(p=>p?.id).map(p=>({
+  id:p.id,purchase_order_number:p.purchase_order_number||null
+ }));
+ if(!purchaseOrders.length)throw Error('この案件に紐づく発注はありません。先に受注詳細で発注を登録してください。');
+ if(typeof config.openReceivingForDeal!=='function')throw Error('入荷画面を開けません');
+ return config.openReceivingForDeal({dealId,purchaseOrders});
+}
 function openFinancingDialog(dealId){
  requireStaff();
  const f=detailCache?.financing||{};
@@ -227,5 +262,5 @@ function openInstallationDialog(dealId,jobId=null){
 }
 
 function configure(deps){config=deps;}
-window.QuoteFlowDeals={configure,openList,openDetail,linkQuote,openLossDialog,openIssueDialog,openOrderDialog,openReopenDialog,openQuotePicker,openFromQuote,openFinancingDialog,openInstallationDialog};
+window.QuoteFlowDeals={configure,openList,openDetail,linkQuote,openLossDialog,openIssueDialog,openOrderDialog,openReopenDialog,openQuotePicker,openFromQuote,openFinancingDialog,openInstallationDialog,openOrderProcurement,openReceivingForDeal};
 })();
