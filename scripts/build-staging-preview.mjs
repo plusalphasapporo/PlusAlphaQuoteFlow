@@ -13,6 +13,10 @@ const allowedFiles = [
   'assets/operations-ui.css',
   'assets/support-ticket-tabs.js',
   'assets/notification-center.js',
+  'assets/workspace-fixes.js',
+  'assets/deal-workflow.js',
+  'assets/deal-progress.js',
+  'assets/deal-workflow.css',
   'manifest.webmanifest',
   'sw.js'
 ];

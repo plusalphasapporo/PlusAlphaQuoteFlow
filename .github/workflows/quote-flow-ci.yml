@@ -21,6 +21,24 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Legacy and direct order synchronization regressions
+        run: node --test tests/deal-order-sync.test.mjs
+
+      - name: Release asset completeness regression
+        run: node --test tests/deal-release-readiness.test.mjs
+
+      - name: Deal linkage and next-step guidance tests
+        run: node --test tests/deal-workflow-linkage.test.mjs
+
+      - name: Deal financing and installation tests
+        run: node --test tests/deal-financing.test.mjs tests/deal-installation.test.mjs
+
+      - name: Unified deal workflow UI tests
+        run: node --test tests/deal-workflow-ui.test.mjs
+
+      - name: Unified deal workflow schema, linking, loss and direct order tests
+        run: node --test tests/deal-workflow-*.test.mjs
+
       - name: Registration and quote revision regression tests
         run: node --test tests/workspace-registration.test.mjs
 
