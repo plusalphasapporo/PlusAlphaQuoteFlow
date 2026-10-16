@@ -80,7 +80,13 @@ async function openDetail(dealId){
  '<div class="dealRecords">'+orders.map(o=>'<div class="dealRecord">受注番号 '+e(o.order_number||'未採番')+'</div>').join('')+'</div></section>'+
  '<section class="card section"><h3>支払・リース</h3><p>支払方法：'+e(PAYMENT_METHODS[data.financing?.method]||'未設定')+' / 請求・入金：'+e(PAYMENT_STATES[data.financing?.payment_state]||'未設定')+(data.financing?.method==='lease'?' / 与信：'+e(CREDIT_STATES[data.financing?.credit_status]||'未設定')+' / '+e(data.financing?.lease_company||'リース会社未設定'):'')+'</p>'+
  (d.sales_outcome==='won'?'<button class="primary" data-deal-action="finance">支払・リースを'+(data.financing?'編集':'登録')+'</button>':'')+'</section>'+
- '<section class="card section"><h3>工事日・施工</h3>'+
+ '<section class="card section"><h3>発注・入荷・納品</h3>'+
+ (data.purchase_orders||[]).map(po=>'<div class="dealRecord"><strong>発注 '+e(po.purchase_order_number||'未採番')+'</strong><span>'+e(po.supplier_name||'')+' / '+e(po.status||'状態未確認')+'</span><button type="button" class="ghost" data-deal-record="purchase" data-record-id="'+e(po.id)+'">発注詳細</button></div>').join('')+
+ ((data.purchase_orders||[]).length?'<button type="button" class="ghost" data-deal-action="receiving">この案件の入荷を表示</button>':'<p class="muted">発注未登録</p>')+
+ ((data.receiving_items||[]).length?'<p>入荷明細 '+e(data.receiving_items.length)+'件 / 未入荷 '+e(data.receiving_items.filter(i=>Number(i.received_quantity||0)<Number(i.quantity||0)).length)+'件</p>':'<p class="muted">入荷明細未確認</p>')+
+ (data.deliveries||[]).map(dv=>'<div class="dealRecord"><strong>納品 '+e(dv.delivery_number||'未採番')+'</strong><span>'+e(dv.status==='delivered'?'納品済み':'納品予定・未完了')+'</span><button type="button" class="ghost" data-deal-record="delivery" data-record-id="'+e(dv.id)+'">納品詳細・完了確認</button></div>').join('')+
+ (d.sales_outcome==='won'&&orders.length&&!data.deliveries?.length?'<button type="button" class="ghost" data-deal-action="procure-order" data-order-id="'+e(orders.at(-1).id)+'">受注詳細で納品予定を作成</button>':'')+'</section>'+
+ '<section class="card section"><h3>工事日・施工・検収</h3>'+
  (data.installation_jobs||[]).map(j=>'<div class="dealRecord"><span>'+e(j.site_address||'工事場所未登録')+' / '+e(j.state)+'</span><button class="ghost" data-deal-job="'+e(j.id)+'">工事日程を編集</button></div>').join('')+
  (d.sales_outcome==='won'?'<button class="primary" data-deal-action="install">工事日を登録</button>':'')+'</section>'+
  '<section class="card section"><h3>既存データとの関連付け</h3><p class="muted">受注・発注・納品など、関連元が確認できた記録だけを表示します。</p>'+
