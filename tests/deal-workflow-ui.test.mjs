@@ -349,3 +349,17 @@ test('aftercare handoff rejects a cancelled or lost deal even if one job is acce
   assert.doesNotMatch(f.host.innerHTML,/data-deal-action="support"/);
  }
 });
+
+test('progress stage never skips cancelled or unverified installations',()=>{
+ const win={};
+ runInNewContext(readFileSync('assets/deal-progress.js','utf8'),{window:win,console});
+ const derive=win.QuoteFlowDealProgress.derive;
+ const base={deal:{sales_outcome:'won'},quotes:[],orders:[{id:'o'}],
+  financing:{method:'bank_transfer'},purchase_orders:[],receiving_items:[],
+  deliveries:[],assets:[{id:'a'}],contracts:[{id:'c'}]};
+ const evaluate=jobs=>derive({...base,installation_jobs:jobs});
+ assert.equal(evaluate([{state:'completed',acceptance_state:'accepted'},{state:'cancelled',acceptance_state:'pending'}]).target,'installation');
+ assert.equal(evaluate([{state:'completed',acceptance_state:'accepted'},{state:'completed',acceptance_state:null}]).stage,'検収');
+ assert.equal(evaluate([{state:'completed',acceptance_state:'accepted'},{state:'completed',acceptance_state:'rejected'}]).stage,'検収');
+ assert.equal(evaluate([{state:'completed',acceptance_state:'accepted'}]).target,'support');
+});
