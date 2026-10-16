@@ -14947,10 +14947,7 @@
       if(!Array.isArray(purchaseOrders)||!purchaseOrders.length)throw new Error('対象案件の発注がありません');
       await go('procurement');
       await renderProcurementWorkspace('receiving');
-      const ids=new Set(purchaseOrders.map(po=>po.id));
-      const workspace=$('#home');
-      const notices=[...workspace.querySelectorAll('.receiveItemBtn')].filter(btn=>purchaseOrders.some(po=>po.id===btn.dataset.purchaseOrderId));
-      // Existing receiving RPC lists items across customers. Keep the normal list and request explicit PO selection.
+      // Receiving items are shared in this legacy screen; identify the target purchase order without creating records.
       toast('対象発注番号: '+purchaseOrders.map(po=>po.purchase_order_number||'未採番').join('、')+'。入荷一覧で発注番号を確認してください。');
     },
     openLinked:async(kind,id)=>{
