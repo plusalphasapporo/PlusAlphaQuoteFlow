@@ -6,6 +6,8 @@ const REASONS={price:'価格',competitor:'競合他社',budget:'予算見送り'
 const PAYMENT_METHODS={lease:'リース',bank_transfer:'銀行振込',cash:'現金',installment:'分割',invoice:'請求後払い',other:'その他'};
 const PAYMENT_STATES={not_started:'未請求',invoiced:'請求済み',partially_paid:'一部入金',paid:'入金済み',overdue:'入金遅延'};
 const CREDIT_STATES={not_required:'対象外',pending:'審査中',conditional:'条件付き承認',approved:'承認',denied:'否決'};
+const INSTALL_STATES={tentative:'仮予約',confirmed:'確定',postponed:'延期',in_progress:'施工中',completed:'施工完了',revisit_required:'再訪問必要',cancelled:'中止'};
+const ACCEPTANCE_STATES={pending:'未検収',accepted:'検収済み',rejected:'検収不合格',not_required:'検収対象外'};
 let config=null,detailCache=null,selectedId=null;
 const e=x=>String(x??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 const requireStaff=()=>{if(!['internal_admin','internal_staff'].includes(config?.getRole?.()))throw Error('社内担当者のみ操作する権限があります。');};
@@ -87,8 +89,15 @@ async function openDetail(dealId){
  (data.deliveries||[]).map(dv=>'<div class="dealRecord"><strong>納品 '+e(dv.delivery_number||'未採番')+'</strong><span>'+e(dv.status==='delivered'?'納品済み':'納品予定・未完了')+'</span><button type="button" class="ghost" data-deal-record="delivery" data-record-id="'+e(dv.id)+'">納品詳細・完了確認</button></div>').join('')+
  (d.sales_outcome==='won'&&orders.length&&!data.deliveries?.length?'<button type="button" class="ghost" data-deal-action="procure-order" data-order-id="'+e(orders.at(-1).id)+'">受注詳細で納品予定を作成</button>':'')+'</section>'+
  '<section class="card section"><h3>工事日・施工・検収</h3>'+
- (data.installation_jobs||[]).map(j=>'<div class="dealRecord"><span>'+e(j.site_address||'工事場所未登録')+' / '+e(j.state)+'</span><button class="ghost" data-deal-job="'+e(j.id)+'">工事日程を編集</button></div>').join('')+
+ (data.installation_jobs||[]).map(j=>'<div class="dealRecord"><span>'+e(j.site_address||'工事場所未登録')+' / '+e(INSTALL_STATES[j.state]||j.state)+' / '+e(ACCEPTANCE_STATES[j.acceptance_state]||j.acceptance_state||'未検収')+'</span><button class="ghost" data-deal-job="'+e(j.id)+'">工事・検収を編集</button></div>').join('')+
  (d.sales_outcome==='won'?'<button class="primary" data-deal-action="install">工事日を登録</button>':'')+'</section>'+
+'<section class="card section"><h3>機器台帳・保守・サポート</h3>'+
+ (data.assets||[]).map(a=>'<div class="dealRecord"><strong>機器 '+e(a.asset_number||a.serial_number||'番号未設定')+'</strong><span>'+e(a.model_name||a.name||'')+'</span><button class="ghost" type="button" data-deal-record="asset" data-record-id="'+e(a.id)+'">機器詳細</button></div>').join('')+
+ (data.contracts||[]).map(ct=>'<div class="dealRecord"><strong>保守契約 '+e(ct.contract_number||'番号未設定')+'</strong><span>'+e(ct.status||'状態未設定')+'</span><button class="ghost" type="button" data-deal-record="contract" data-record-id="'+e(ct.id)+'">契約詳細</button></div>').join('')+
+ (data.support_tickets||[]).map(t=>'<div class="dealRecord"><strong>サポート '+e(t.ticket_number||t.subject||'番号未設定')+'</strong><button class="ghost" type="button" data-deal-record="ticket" data-record-id="'+e(t.id)+'">対応カルテ</button></div>').join('')+
+ ((data.installation_jobs||[]).some(j=>j.state==='completed'&&['accepted','not_required'].includes(j.acceptance_state))?
+ '<div class="row"><button class="ghost" type="button" data-deal-action="assets">機器台帳を確認</button><button class="ghost" type="button" data-deal-action="contracts">契約・保守を確認</button><button class="ghost" type="button" data-deal-action="support">サポートへ進む</button></div>':
+ '<p class="muted">施工完了と検収状況を確認してから機器・保守・サポートの引継ぎを進めてください。</p>')+'</section>'+
  '<section class="card section"><h3>既存データとの関連付け</h3><p class="muted">受注・発注・納品など、関連元が確認できた記録だけを表示します。</p>'+
  [['発注','purchase_orders','purchase','purchase_order_number'],['納品','deliveries','delivery','delivery_number'],
  ['機器','assets','asset','asset_number'],['保守契約','contracts','contract','contract_number'],['サポート','support_tickets','ticket','ticket_number']].map(([label,key,kind,num])=>
@@ -112,6 +121,7 @@ async function openDetail(dealId){
   if(action==='procure-order')return openOrderProcurement(dealId,btn.dataset.orderId);
   if(action==='receiving')return openReceivingForDeal(dealId);
   if(action==='install')return openInstallationDialog(dealId);
+  if(['assets','contracts','support'].includes(action))return config.navigate(action);
  });
  h.querySelectorAll?.('[data-deal-quote]').forEach(btn=>btn.onclick=()=>config.editQuote(btn.dataset.dealQuote));
  h.querySelectorAll?.('[data-deal-job]').forEach(btn=>btn.onclick=()=>openInstallationDialog(dealId,btn.dataset.dealJob));
