@@ -28,7 +28,8 @@ BEGIN
  ) THEN
   RAISE EXCEPTION USING errcode='42501',message='quote is not linked to deal';
  END IF;
- IF EXISTS(SELECT 1 FROM public.orders o WHERE o.deal_id=p_deal_id OR o.quote_id=p_quote_id) THEN
+ IF EXISTS(SELECT 1 FROM public.orders o WHERE o.deal_id=p_deal_id OR o.quote_id=p_quote_id
+   OR o.quote_id IN (SELECT q.id FROM public.quotes q WHERE q.deal_id=p_deal_id)) THEN
   RAISE EXCEPTION USING errcode='42501',message='order already exists';
  END IF;
  UPDATE public.deals SET sales_outcome='lost',current_stage='lost',next_action=NULL,updated_at=now()
@@ -59,7 +60,8 @@ BEGIN
  IF d.sales_outcome<>'lost' THEN
   RAISE EXCEPTION USING errcode='42501',message='only lost deal can reopen';
  END IF;
- IF EXISTS(SELECT 1 FROM public.orders o WHERE o.deal_id=p_deal_id) THEN
+ IF EXISTS(SELECT 1 FROM public.orders o WHERE o.deal_id=p_deal_id
+   OR o.quote_id IN (SELECT q.id FROM public.quotes q WHERE q.deal_id=p_deal_id)) THEN
   RAISE EXCEPTION USING errcode='42501',message='ordered deal cannot reopen as quote';
  END IF;
  UPDATE public.deals SET sales_outcome='open',current_stage='quote',next_action='再提案の見積を作成',updated_at=now() WHERE id=p_deal_id;
