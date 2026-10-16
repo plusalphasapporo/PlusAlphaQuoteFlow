@@ -9,7 +9,7 @@ const requireStaff=()=>{if(!['internal_admin','internal_staff'].includes(config?
 const host=()=>{const h=config?.getHost?.();if(!h)throw Error('画面を開けません');return h;};
 const rpc=(name,args={},opts={})=>config.rpc(name,args,opts);
 const stages=(current)=>'<div class="dealStage">'+STAGES.map((x,i)=>'<span class="dealStageItem'+(x===current?' current':'')+'">'+e(x)+'</span>').join('')+'</div>';
-const listHtml=rows=>'<section class="card section"><div class="row between"><div><h2>案件進行管理</h2><p class="sectionDesc">見積から工事・保守までを案件ごとに追跡します。</p></div><div class="row"><button id="dealOpenQuotePicker" class="primary" type="button">見積から案件を作成</button><button id="dealGoSales" class="ghost" type="button">見積画面へ</button></div></div>'+
+const listHtml=rows=>'<section class="card section"><div class="row between"><div><h2>案件進行管理</h2><p class="sectionDesc">見積から工事・保守までを案件ごとに追跡します。</p></div><div class="row"><button id="dealOpenQuotePicker" class="primary" type="button">顧客情報確認から見積作成</button><button id="dealGoSales" class="ghost" type="button">見積画面へ</button></div></div>'+
 '<div class="field"><label>案件検索</label><input type="search" id="dealSearch" placeholder="顧客・本支店・見積番号・案件名"></div>'+
 '<div class="field"><label>進捗を絞り込む</label><select id="dealFilter"><option value="all">すべて</option><option value="open">商談中</option><option value="won">受注</option><option value="lost">失注</option><option value="cancelled_after_order">受注後キャンセル</option></select></div>'+
 '<div id="dealTable"></div></section>';
@@ -31,7 +31,7 @@ async function openList(){
  };
  document.getElementById('dealSearch')?.addEventListener('input',rerender);
  document.getElementById('dealFilter')?.addEventListener('change',rerender);
- const picker=document.getElementById('dealOpenQuotePicker');if(picker)picker.onclick=()=>openQuotePicker();
+ const picker=document.getElementById('dealOpenQuotePicker');if(picker)picker.onclick=()=>window.QuoteFlowDealCustomerStep?.open();
  const sales=document.getElementById('dealGoSales');if(sales)sales.onclick=()=>config.navigate('sales');
  rerender();
 }
