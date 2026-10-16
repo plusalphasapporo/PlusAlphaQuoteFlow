@@ -57,6 +57,11 @@ async function openDetail(dealId){
  '<section class="card section"><h3>見積・受注</h3>'+
  '<div class="dealRecords">'+quotes.map(q=>'<div class="dealRecord"><strong>'+e(q.quote_number||'下書き')+'</strong><span>'+e(q.project_name||'')+'</span><span>'+e(q.status==='finalized'?'見積発行済み':q.status==='draft'?'下書き':q.status==='accepted'?'既存承諾記録':q.status)+'</span></div>').join('')+'</div>'+
  '<div class="dealRecords">'+orders.map(o=>'<div class="dealRecord">受注番号 '+e(o.order_number||'未採番')+'</div>').join('')+'</div></section>'+
+ '<section class="card section"><h3>支払・リース</h3><p>支払方法：'+e(data.financing?.method||'未設定')+' / '+e(data.financing?.payment_state||'未設定')+' / '+e(data.financing?.lease_company||'')+'</p>'+
+ (d.sales_outcome==='won'?'<button class="primary" data-deal-action="finance">支払・リースを'+(data.financing?'編集':'登録')+'</button>':'')+'</section>'+
+ '<section class="card section"><h3>工事日・施工</h3>'+
+ (data.installation_jobs||[]).map(j=>'<div class="dealRecord"><span>'+e(j.site_address||'工事場所未登録')+' / '+e(j.state)+'</span><button class="ghost" data-deal-job="'+e(j.id)+'">工事日程を編集</button></div>').join('')+
+ (d.sales_outcome==='won'?'<button class="primary" data-deal-action="install">工事日を登録</button>':'')+'</section>'+
  '<section class="card section"><h3>案件に紐づく情報</h3><div class="dealLinked">'+
  [['仕入・納品','purchase_orders','procurement'],['工事日・施工','deliveries','procurement'],['機器・保守','assets','assets'],['保守契約','contracts','contracts'],['サポート','support_tickets','support']].map(([label,key,page])=>'<button type="button" data-deal-nav="'+page+'" class="ghost">'+e(label)+' ('+e((data[key]||[]).length)+')</button>').join('')+
  '</div><p class="muted">支払・リースと施工工程の登録は後続開発で追加します。</p></section>'+
@@ -69,7 +74,10 @@ async function openDetail(dealId){
   if(action==='loss')return openLossDialog(dealId,quoteId);
   if(action==='reopen')return openReopenDialog(dealId);
   if(action==='sales')return config.navigate('sales');
+  if(action==='finance')return openFinancingDialog(dealId);
+  if(action==='install')return openInstallationDialog(dealId);
  });
+ h.querySelectorAll?.('[data-deal-job]').forEach(btn=>btn.onclick=()=>openInstallationDialog(dealId,btn.dataset.dealJob));
  h.querySelectorAll?.('[data-deal-nav]').forEach(btn=>btn.onclick=()=>config.navigate(btn.dataset.dealNav));
 }
 function openLossDialog(dealId,quoteId){
@@ -119,6 +127,79 @@ async function openFromQuote(quoteId){
  requireStaff();const created=await rpc('internal_deal_open_from_quote',{p_quote_id:quoteId});
  config.closeModal?.();return openDetail(created.id);
 }
+
+function openFinancingDialog(dealId){
+ requireStaff();
+ const f=detailCache?.financing||{};
+ const options=(id,entries,active)=>'<select id="'+id+'">'+entries.map(([v,l])=>'<option value="'+v+'"'+(v===active?' selected':'')+'>'+l+'</option>').join('')+'</select>';
+ config.openModal({title:'支払・リースを登録・編集',confirmLabel:'支払条件を保存',
+ body:'<div class="modalGrid2"><div class="field"><label>支払方法</label>'+
+ options('dealFinanceMethod',[['lease','リース'],['bank_transfer','振込'],['cash','現金'],['installment','分割'],['invoice','後払い'],['other','その他']],f.method||'lease')+
+ '</div><div class="field"><label>入金状況</label>'+
+ options('dealPaymentState',[['not_started','未請求'],['invoiced','請求済み'],['partially_paid','一部入金'],['paid','入金済み'],['overdue','入金遅延']],f.payment_state||'not_started')+
+ '</div><div class="field"><label>リース会社</label><input id="dealLeaseCompany" value="'+e(f.lease_company||'')+'"></div>'+
+ '<div class="field"><label>与信結果</label>'+
+ options('dealCreditStatus',[['pending','審査中'],['conditional','条件付承認'],['approved','承認'],['denied','否決']],f.credit_status==='not_required'?'pending':f.credit_status||'pending')+
+ '</div><div class="field"><label>期間（月）</label><input id="dealLeaseMonths" type="number" min="1" value="'+e(f.lease_months||'')+'"></div>'+
+ '<div class="field"><label>月額</label><input id="dealMonthlyAmount" type="number" min="0" value="'+e(f.monthly_amount||'')+'"></div>'+
+ '<div class="field"><label>備考</label><textarea id="dealPaymentNote">'+e(f.note||'')+'</textarea></div></div>',
+ onSubmit:async()=>{
+ const v=id=>document.getElementById(id)?.value?.trim()||'';
+ const method=v('dealFinanceMethod');
+ const payload={method,payment_state:v('dealPaymentState'),note:v('dealPaymentNote')||null,
+   credit_status:method==='lease'?v('dealCreditStatus'):'not_required',
+   lease_company:method==='lease'?v('dealLeaseCompany')||null:null,
+   lease_months:method==='lease'&&v('dealLeaseMonths')?Number(v('dealLeaseMonths')):null,
+   monthly_amount:method==='lease'&&v('dealMonthlyAmount')?Number(v('dealMonthlyAmount')):null};
+ await rpc('internal_deal_set_financing',{p_deal_id:dealId,p_payload:payload});
+ config.closeModal?.();await openDetail(dealId);
+ }});
+}
+function toTokyoLocal(iso){
+ if(!iso)return '';
+ const d=new Date(iso);
+ if(!Number.isFinite(d.getTime()))return '';
+ return new Intl.DateTimeFormat('sv-SE',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',timeZone:'Asia/Tokyo',hourCycle:'h23'}).format(d).replace(' ','T');
+}
+function tokyoUtc(v){
+ if(!v)return null;
+ if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v))throw Error('工事日付の形式を確認してください');
+ const d=new Date(v+':00+09:00');
+ if(!Number.isFinite(d.getTime()))throw Error('工事日付を確認してください');
+ return d.toISOString();
+}
+function openInstallationDialog(dealId,jobId=null){
+ requireStaff();
+ const job=(detailCache?.installation_jobs||[]).find(x=>x.id===jobId)||{};
+ const opts=(id,items,active)=>'<select id="'+id+'">'+items.map(([k,v])=>'<option value="'+k+'"'+(k===active?' selected':'')+'>'+v+'</option>').join('')+'</select>';
+ config.openModal({title:jobId?'工事日程を編集':'工事日を登録',confirmLabel:'保存',
+ body:'<div class="modalGrid2"><div class="field"><label>工事開始（日本時間）</label><input id="dealInstallStart" type="datetime-local" value="'+e(toTokyoLocal(job.scheduled_start_at))+'"></div>'+
+ '<div class="field"><label>工事終了（日本時間）</label><input id="dealInstallEnd" type="datetime-local" value="'+e(toTokyoLocal(job.scheduled_end_at))+'"></div>'+
+ '<div class="field"><label>状態</label>'+opts('dealInstallState',[['tentative','仮予約'],['confirmed','確定'],['postponed','延期'],['in_progress','作業中'],['completed','完了'],['revisit_required','再訪問必要'],['cancelled','中止']],job.state||'tentative')+'</div>'+
+ '<div class="field"><label>検収</label>'+opts('dealInstallAcceptance',[['pending','未検収'],['accepted','検収済み'],['rejected','不合格'],['not_required','対象外']],job.acceptance_state||'pending')+'</div>'+
+ '<div class="field"><label>工事場所</label><input id="dealInstallSite" value="'+e(job.site_address||'')+'"></div>'+
+ '<div class="field"><label>納品記録</label><select id="dealInstallDelivery"><option value="">紐付けなし</option>'+
+ (detailCache?.deliveries||[]).map(d=>'<option value="'+e(d.id)+'"'+(d.id===job.delivery_id?' selected':'')+'>'+e(d.delivery_number||d.id)+'</option>').join('')+'</select></div>'+
+ '<div class="field"><label>担当者ID</label><input id="dealInstallAssignee" value="'+e(job.assigned_user_id||'')+'"></div>'+
+ '<div class="field"><label>検収確認者</label><input id="dealInstallAcceptanceBy" value="'+e(job.accepted_by||'')+'"></div>'+
+ '<div class="field"><label>作業記録・延期理由</label><textarea id="dealInstallNote">'+e(job.work_note||'')+'</textarea></div></div>',
+ onSubmit:async()=>{
+ const v=id=>document.getElementById(id)?.value?.trim()||'';
+ const start=tokyoUtc(v('dealInstallStart')),end=tokyoUtc(v('dealInstallEnd'));
+ if(start&&end&&Date.parse(end)<=Date.parse(start))throw Error('終了時刻は開始時刻より後にしてください');
+ const state=v('dealInstallState'),note=v('dealInstallNote'),acceptance=v('dealInstallAcceptance');
+ if(state==='postponed'&&!note)throw Error('延期理由を入力してください');
+ if(acceptance==='accepted'&&(state!=='completed'||!v('dealInstallAcceptanceBy')))throw Error('完了後に検収担当者を入力してください');
+ const payload={id:jobId||null,state,scheduled_start_at:start,scheduled_end_at:end,
+   site_address:v('dealInstallSite')||null,work_note:note||null,acceptance_state:acceptance,
+   accepted_by:v('dealInstallAcceptanceBy')||null,delivery_id:v('dealInstallDelivery')||null,
+   assigned_user_id:v('dealInstallAssignee')||null,
+   completed_at:state==='completed'?(job.completed_at||new Date().toISOString()):null};
+ await rpc('internal_deal_save_installation',{p_deal_id:dealId,p_job:payload});
+ config.closeModal?.();await openDetail(dealId);
+ }});
+}
+
 function configure(deps){config=deps;}
-window.QuoteFlowDeals={configure,openList,openDetail,openLossDialog,openIssueDialog,openOrderDialog,openReopenDialog,openQuotePicker,openFromQuote};
+window.QuoteFlowDeals={configure,openList,openDetail,openLossDialog,openIssueDialog,openOrderDialog,openReopenDialog,openQuotePicker,openFromQuote,openFinancingDialog,openInstallationDialog};
 })();
