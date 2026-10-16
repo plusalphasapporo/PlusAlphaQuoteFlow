@@ -18,6 +18,7 @@ async function open({preselectedCustomerId=null}={}){
  const notify=message=>{if(msg)msg.textContent=message||'';};
  const next=$('dealCustomerNext');
  const choice=$('dealCustomerChoice'),search=$('dealCustomerSearch');
+ if(choice&&preselectedCustomerId)choice.value=preselectedCustomerId;
  if(choice){
   choice.onchange=async()=>{const id=choice.value,version=++requestVersion;const rec=customers.find(c=>c.id===id);const info=$('dealCustomerInfo');const contact=$('dealCustomerContact');
    notify('');if(next)next.disabled=true;
