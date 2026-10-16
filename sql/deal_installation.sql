@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS public.deal_installation_jobs(
 );
 CREATE INDEX IF NOT EXISTS deal_installation_jobs_deal_idx ON public.deal_installation_jobs(deal_id,created_at DESC);
 ALTER TABLE public.deal_installation_jobs ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON public.deal_installation_jobs FROM PUBLIC,anon,authenticated;
+REVOKE ALL ON public.deal_installation_jobs FROM PUBLIC, anon, authenticated;
 GRANT SELECT ON public.deal_installation_jobs TO authenticated;
 DROP POLICY IF EXISTS installation_internal_aal2 ON public.deal_installation_jobs;
 CREATE POLICY installation_internal_aal2 ON public.deal_installation_jobs FOR SELECT TO authenticated
