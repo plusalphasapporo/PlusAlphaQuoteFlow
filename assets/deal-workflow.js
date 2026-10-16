@@ -3,6 +3,9 @@
 const STAGES=['見積','受注','支払・リース','発注・入荷','工事日','施工','検収','機器・保守','サポート'];
 const OUTCOMES={open:'商談中',won:'受注',lost:'失注',cancelled_after_order:'受注後キャンセル'};
 const REASONS={price:'価格',competitor:'競合他社',budget:'予算見送り',postponed:'導入時期延期',customer:'顧客都合',specification:'仕様不一致',unreachable:'連絡不通',other:'その他'};
+const PAYMENT_METHODS={lease:'リース',bank_transfer:'銀行振込',cash:'現金',installment:'分割',invoice:'請求後払い',other:'その他'};
+const PAYMENT_STATES={not_started:'未請求',invoiced:'請求済み',partially_paid:'一部入金',paid:'入金済み',overdue:'入金遅延'};
+const CREDIT_STATES={not_required:'対象外',pending:'審査中',conditional:'条件付き承認',approved:'承認',denied:'否決'};
 let config=null,detailCache=null,selectedId=null;
 const e=x=>String(x??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 const requireStaff=()=>{if(!['internal_admin','internal_staff'].includes(config?.getRole?.()))throw Error('社内担当者のみ操作する権限があります。');};
@@ -59,7 +62,7 @@ async function openDetail(dealId){
  '<section class="card section"><h3>見積・受注</h3>'+
  '<div class="dealRecords">'+quotes.map(q=>'<div class="dealRecord"><strong>'+e(q.quote_number||'下書き')+'</strong><span>'+e(q.project_name||'')+'</span><span>'+e(q.status==='finalized'?'見積発行済み':q.status==='draft'?'下書き':q.status==='accepted'?'既存承諾記録':q.status)+'</span><button type="button" class="ghost" data-deal-quote="'+e(q.id)+'">見積を開く</button></div>').join('')+'</div>'+
  '<div class="dealRecords">'+orders.map(o=>'<div class="dealRecord">受注番号 '+e(o.order_number||'未採番')+'</div>').join('')+'</div></section>'+
- '<section class="card section"><h3>支払・リース</h3><p>支払方法：'+e(data.financing?.method||'未設定')+' / '+e(data.financing?.payment_state||'未設定')+' / '+e(data.financing?.lease_company||'')+'</p>'+
+ '<section class="card section"><h3>支払・リース</h3><p>支払方法：'+e(PAYMENT_METHODS[data.financing?.method]||'未設定')+' / 請求・入金：'+e(PAYMENT_STATES[data.financing?.payment_state]||'未設定')+(data.financing?.method==='lease'?' / 与信：'+e(CREDIT_STATES[data.financing?.credit_status]||'未設定')+' / '+e(data.financing?.lease_company||'リース会社未設定'):'')+'</p>'+
  (d.sales_outcome==='won'?'<button class="primary" data-deal-action="finance">支払・リースを'+(data.financing?'編集':'登録')+'</button>':'')+'</section>'+
  '<section class="card section"><h3>工事日・施工</h3>'+
  (data.installation_jobs||[]).map(j=>'<div class="dealRecord"><span>'+e(j.site_address||'工事場所未登録')+' / '+e(j.state)+'</span><button class="ghost" data-deal-job="'+e(j.id)+'">工事日程を編集</button></div>').join('')+
@@ -73,7 +76,7 @@ async function openDetail(dealId){
  '<section class="card section"><h3>案件に紐づく情報</h3><div class="dealLinked">'+
  [['仕入・納品','purchase_orders','procurement'],['工事日・施工','deliveries','procurement'],['機器・保守','assets','assets'],['保守契約','contracts','contracts'],['サポート','support_tickets','support']].map(([label,key,page])=>'<button type="button" data-deal-nav="'+page+'" class="ghost">'+e(label)+' ('+e((data[key]||[]).length)+')</button>').join('')+
  '</div><p class="muted">支払・リースと施工工程の登録は後続開発で追加します。</p></section>'+
- '<section class="card section"><h3>案件の履歴</h3>'+[...(data.events||[]),...(data.loss_events||[])].map(x=>'<div class="dealRecord">'+e(x.message||x.event_type)+' '+e(x.created_at||'')+'</div>').join('')+'</section>';
+ '<section class="card section"><h3>案件の履歴</h3>'+[...(data.events||[]),...(data.loss_events||[])].map(x=>'<div class="dealRecord">'+e(x.event_type==='lost'?'失注理由：'+(REASONS[x.reason_category]||x.reason_category||'未設定')+(x.detail?' / '+x.detail:''):x.message||x.event_type)+' '+e(x.created_at||'')+'</div>').join('')+'</section>';
  const back=document.getElementById('dealBack');if(back)back.onclick=()=>openList();
  h.querySelectorAll?.('[data-deal-action]').forEach(btn=>btn.onclick=()=>{
   const action=btn.dataset.dealAction,quoteId=btn.dataset.quoteId;
@@ -94,7 +97,7 @@ async function openDetail(dealId){
 function openLossDialog(dealId,quoteId){
  requireStaff();
  config.openModal({title:'失注登録',confirmLabel:'失注を確定',
-  description:'見積を削除せず、失注理由と再提案予定を保存します。',
+  description:'対象見積 '+e((detailCache?.quotes||[]).find(q=>q.id===quoteId)?.quote_number||'下書き')+' を失注登録します。見積を削除せず、理由と再提案予定を残します。',
   body:'<div class="modalGrid2"><div class="field"><label>失注日</label><input id="dealLostDate" type="date" required value="'+new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Tokyo'})+'"></div>'+
    '<div class="field"><label>失注理由</label><select id="dealLostReason" required><option value="">選択してください</option>'+Object.entries(REASONS).map(([k,v])=>'<option value="'+e(k)+'">'+e(v)+'</option>').join('')+'</select></div>'+
    '<div class="field"><label>具体的な経緯</label><textarea id="dealLostDetail" rows="3"></textarea></div>'+
@@ -115,8 +118,11 @@ function openIssueDialog(dealId,quoteId){
  }});
 }
 function openOrderDialog(dealId,quoteId){
- requireStaff();config.openModal({title:'受注登録',confirmLabel:'受注を確定',body:'<p>顧客との合意を確認したうえで受注を登録します。管理者承認は不要です。</p>',onSubmit:async()=>{
-  await rpc('deal_create_order_from_quote',{p_deal_id:dealId,p_quote_id:quoteId});config.closeModal?.();return openDetail(dealId);
+ requireStaff();config.openModal({title:'受注登録',confirmLabel:'受注を確定',body:'<p>対象見積 '+e((detailCache?.quotes||[]).find(q=>q.id===quoteId)?.quote_number||'下書き')+' を受注登録します。顧客との合意を確認してください。社内承認は不要です。</p>',onSubmit:async()=>{
+  const result=await rpc('deal_create_order_from_quote',{p_deal_id:dealId,p_quote_id:quoteId});
+  config.closeModal?.();await openDetail(dealId);
+  if(result?.id&&detailCache?.deal?.sales_outcome==='won'&&(detailCache?.orders||[]).length&&!detailCache?.financing)openFinancingDialog(dealId);
+  return result;
  }});
 }
 function openReopenDialog(dealId){
@@ -152,7 +158,7 @@ function openFinancingDialog(dealId){
  const options=(id,entries,active)=>'<select id="'+id+'">'+entries.map(([v,l])=>'<option value="'+v+'"'+(v===active?' selected':'')+'>'+l+'</option>').join('')+'</select>';
  config.openModal({title:'支払・リースを登録・編集',confirmLabel:'支払条件を保存',
  body:'<div class="modalGrid2"><div class="field"><label>支払方法</label>'+
- options('dealFinanceMethod',[['lease','リース'],['bank_transfer','振込'],['cash','現金'],['installment','分割'],['invoice','後払い'],['other','その他']],f.method||'lease')+
+ options('dealFinanceMethod',[['lease','リース'],['bank_transfer','銀行振込'],['cash','現金'],['installment','分割'],['invoice','請求後払い'],['other','その他']],f.method||'lease')+
  '</div><div class="field"><label>入金状況</label>'+
  options('dealPaymentState',[['not_started','未請求'],['invoiced','請求済み'],['partially_paid','一部入金'],['paid','入金済み'],['overdue','入金遅延']],f.payment_state||'not_started')+
  '</div><div class="field"><label>リース会社</label><input id="dealLeaseCompany" value="'+e(f.lease_company||'')+'"></div>'+
@@ -164,6 +170,8 @@ function openFinancingDialog(dealId){
  onSubmit:async()=>{
  const v=id=>document.getElementById(id)?.value?.trim()||'';
  const method=v('dealFinanceMethod');
+ if(!Object.hasOwn(PAYMENT_METHODS,method))throw Error('支払方法を選択してください');
+ if(method==='lease'&&!v('dealLeaseCompany'))throw Error('リース会社を入力してください');
  const payload={method,payment_state:v('dealPaymentState'),note:v('dealPaymentNote')||null,
    credit_status:method==='lease'?v('dealCreditStatus'):'not_required',
    lease_company:method==='lease'?v('dealLeaseCompany')||null:null,
