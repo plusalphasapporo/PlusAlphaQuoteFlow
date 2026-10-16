@@ -21,6 +21,9 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Support first-line stage transitions
+        run: node --test tests/support-flow-state.test.mjs
+
       - name: Legacy and direct order synchronization regressions
         run: node --test tests/deal-order-sync.test.mjs
 
