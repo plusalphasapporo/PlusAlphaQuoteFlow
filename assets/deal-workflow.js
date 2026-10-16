@@ -45,7 +45,7 @@ function nextActions(d,quotes,orders){
  return '<div class="row">'+(latest.status==='draft'?'<button class="primary" data-deal-action="issue" data-quote-id="'+e(latest.id)+'">見積発行</button>':'')+
  ((latest.status==='finalized'||latest.status==='accepted')?'<button class="primary" data-deal-action="order" data-quote-id="'+e(latest.id)+'">受注登録</button>':'')+
  '<button class="ghost" data-deal-action="loss" data-quote-id="'+e(latest.id)+'">失注登録</button>'+
- '<button class="ghost" data-deal-action="sales">見積画面</button></div>';
+ '<button class="ghost" data-deal-action="quote" data-quote-id="'+e(latest.id)+'">見積を編集・確認</button></div>';
 }
 async function openDetail(dealId){
  requireStaff();const data=await rpc('internal_deal_detail',{p_deal_id:dealId},{readOnly:true});
@@ -57,7 +57,7 @@ async function openDetail(dealId){
  '<div class="dealSummary"><div><small>営業結果</small><strong>'+e(OUTCOMES[d.sales_outcome]||d.sales_outcome)+'</strong></div><div><small>現在の工程</small><strong>'+e(state)+'</strong></div><div><small>次に行うこと</small><strong>'+e(guidance.nextAction||'進行状況を確認')+'</strong></div></div>'+
  stages(state)+'<div class="dealActions">'+nextActions(d,quotes,orders)+'</div></section>'+
  '<section class="card section"><h3>見積・受注</h3>'+
- '<div class="dealRecords">'+quotes.map(q=>'<div class="dealRecord"><strong>'+e(q.quote_number||'下書き')+'</strong><span>'+e(q.project_name||'')+'</span><span>'+e(q.status==='finalized'?'見積発行済み':q.status==='draft'?'下書き':q.status==='accepted'?'既存承諾記録':q.status)+'</span></div>').join('')+'</div>'+
+ '<div class="dealRecords">'+quotes.map(q=>'<div class="dealRecord"><strong>'+e(q.quote_number||'下書き')+'</strong><span>'+e(q.project_name||'')+'</span><span>'+e(q.status==='finalized'?'見積発行済み':q.status==='draft'?'下書き':q.status==='accepted'?'既存承諾記録':q.status)+'</span><button type="button" class="ghost" data-deal-quote="'+e(q.id)+'">見積を開く</button></div>').join('')+'</div>'+
  '<div class="dealRecords">'+orders.map(o=>'<div class="dealRecord">受注番号 '+e(o.order_number||'未採番')+'</div>').join('')+'</div></section>'+
  '<section class="card section"><h3>支払・リース</h3><p>支払方法：'+e(data.financing?.method||'未設定')+' / '+e(data.financing?.payment_state||'未設定')+' / '+e(data.financing?.lease_company||'')+'</p>'+
  (d.sales_outcome==='won'?'<button class="primary" data-deal-action="finance">支払・リースを'+(data.financing?'編集':'登録')+'</button>':'')+'</section>'+
@@ -82,9 +82,11 @@ async function openDetail(dealId){
   if(action==='loss')return openLossDialog(dealId,quoteId);
   if(action==='reopen')return openReopenDialog(dealId);
   if(action==='sales')return config.navigate('sales');
+  if(action==='quote')return config.editQuote(quoteId);
   if(action==='finance')return openFinancingDialog(dealId);
   if(action==='install')return openInstallationDialog(dealId);
  });
+ h.querySelectorAll?.('[data-deal-quote]').forEach(btn=>btn.onclick=()=>config.editQuote(btn.dataset.dealQuote));
  h.querySelectorAll?.('[data-deal-job]').forEach(btn=>btn.onclick=()=>openInstallationDialog(dealId,btn.dataset.dealJob));
  h.querySelectorAll?.('[data-deal-record]').forEach(btn=>btn.onclick=()=>config.openLinked?.(btn.dataset.dealRecord,btn.dataset.recordId));
  h.querySelectorAll?.('[data-deal-nav]').forEach(btn=>btn.onclick=()=>config.navigate(btn.dataset.dealNav));
@@ -132,9 +134,16 @@ async function openQuotePicker(){
   if(!id)throw Error('見積を選んでください');await openFromQuote(id);
  }});
 }
+async function linkQuote(quoteId){
+ requireStaff();
+ if(typeof quoteId!=='string'||!quoteId.trim())throw Error('案件に登録する見積を選択してください');
+ const linked=await rpc('internal_deal_open_from_quote',{p_quote_id:quoteId});
+ if(!linked?.id)throw Error('案件への紐づけ結果を確認できません。見積は削除・再登録せず、既存見積を確認してください。');
+ return linked;
+}
 async function openFromQuote(quoteId){
- requireStaff();const created=await rpc('internal_deal_open_from_quote',{p_quote_id:quoteId});
- config.closeModal?.();return openDetail(created.id);
+ const linked=await linkQuote(quoteId);
+ config.closeModal?.();return openDetail(linked.id);
 }
 
 function openFinancingDialog(dealId){
@@ -210,5 +219,5 @@ function openInstallationDialog(dealId,jobId=null){
 }
 
 function configure(deps){config=deps;}
-window.QuoteFlowDeals={configure,openList,openDetail,openLossDialog,openIssueDialog,openOrderDialog,openReopenDialog,openQuotePicker,openFromQuote,openFinancingDialog,openInstallationDialog};
+window.QuoteFlowDeals={configure,openList,openDetail,linkQuote,openLossDialog,openIssueDialog,openOrderDialog,openReopenDialog,openQuotePicker,openFromQuote,openFinancingDialog,openInstallationDialog};
 })();

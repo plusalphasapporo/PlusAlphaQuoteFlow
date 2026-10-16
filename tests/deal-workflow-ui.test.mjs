@@ -82,7 +82,7 @@ test('openDetail displays end-to-end stages and quote operations without approva
   assert.match(f.host.innerHTML,/見積発行済み/);
   assert.match(f.host.innerHTML,/受注登録/);
   assert.match(f.host.innerHTML,/失注登録/);
-  assert.match(f.host.innerHTML,/見積画面/);
+  assert.match(f.host.innerHTML,/見積を編集・確認/);
   assert.doesNotMatch(f.host.innerHTML,/管理者承認|承認待ち/);
 });
 test('loss dialog requires date, reason and conditional details, then calls only loss RPC',async()=>{
@@ -141,4 +141,26 @@ test('lost case shows reopening, never presents an order action',async()=>{
   assert.match(f.host.innerHTML,/失注/);
   assert.match(f.host.innerHTML,/再開/);
   assert.doesNotMatch(f.host.innerHTML,/data-deal-action="order"/);
+});
+
+test('quote-to-deal linking accepts returned deal ID and protects against missing IDs',async()=>{
+ const f=fixture();
+ f.api.configure({
+  rpc:async(name,args)=>{f.calls.push({name,args});return name==='internal_deal_open_from_quote'?{id:'deal-1',already_exists:true}:null;},
+  getRole:()=> 'internal_staff',getHost:()=>f.host,navigate:()=>{},editQuote:()=>{}
+ });
+ const linked=await f.api.linkQuote('quote-1');
+ assert.equal(linked.id,'deal-1');
+ assert.equal(linked.already_exists,true);
+ assert.equal(f.calls.at(-1).args.p_quote_id,'quote-1');
+ await assert.rejects(()=>f.api.linkQuote(''),/見積/);
+});
+test('sales UI retains an explicit route from existing quotes into the deal flow',()=>{
+ assert.match(html,/createdQuote=await rpc\('create_quote_full'/);
+ assert.match(html,/QuoteFlowDeals\.linkQuote\(createdQuote\.id\)/);
+ assert.match(html,/QuoteFlowDeals\.linkQuote\(q\.id\)/);
+ assert.match(html,/id="quoteFlowLinkNotice"/);
+ assert.match(html,/見積は保存済みですが、案件への紐づけを確認できません/);
+ assert.match(source,/data-deal-quote/);
+ assert.match(source,/config\.editQuote\(btn\.dataset\.dealQuote\)/);
 });
