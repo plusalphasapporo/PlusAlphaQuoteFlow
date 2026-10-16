@@ -21,6 +21,9 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Legacy and direct order synchronization regressions
+        run: node --test tests/deal-order-sync.test.mjs
+
       - name: Release asset completeness regression
         run: node --test tests/deal-release-readiness.test.mjs
 
