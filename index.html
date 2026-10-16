@@ -5580,11 +5580,18 @@
     nodes.forEach(n=>$('#salesInner').appendChild(n)); bindUnifiedTabs(t=>renderSalesWorkspace(t));
   }
 
-  async function renderProcurementWorkspace(tab='purchase'){
+  async function renderProcurementWorkspace(tab='purchase',receivingScope=null){
     const tabs=[['purchase','発注'],['receiving','入荷・シリアル'],['delivery','納品'],['ledger','機器台帳']];
 
     if(tab==='receiving'){
-      const items=await rpc('internal_receiving_workspace');
+      const allItems=await rpc('internal_receiving_workspace');
+      const items=receivingScope
+        ? window.QuoteFlowDealProgress.scopeReceiving(allItems,receivingScope.purchaseOrderIds)
+        : allItems;
+      if(receivingScope&&!(items||[]).length)throw new Error('対象案件に紐づく入荷明細はありません。発注番号と登録状況を確認してください。');
+      const scopeHeader=receivingScope
+        ? '<div class="notice ok">案件 '+esc(receivingScope.dealId)+' の発注のみ表示中 <button id="receivingShowAll" class="ghost" type="button">全件表示に戻る</button></div>'
+        : '';
       const rows=(items||[]).map(x=>
         '<tr>'+
           '<td>'+esc(x.purchase_order_number||'未採番')+'</td>'+
@@ -5600,9 +5607,10 @@
       $('#home').innerHTML=
         pageIntro('仕入・納品','受注から発注・入荷・シリアル・納品・機器台帳までを一続きで管理します。')+
         unifiedTabs(tabs,tab,'procurement')+
-        '<section class="card section"><h2>入荷・シリアル</h2><p class="sectionDesc">シリアル管理対象の商品は、累計入荷数量とシリアル件数が一致しないと保存できません。納品完了するとシリアル単位で機器台帳へ自動登録します。</p>'+
+        '<section class="card section"><h2>入荷・シリアル</h2>'+scopeHeader+'<p class="sectionDesc">シリアル管理対象の商品は、累計入荷数量とシリアル件数が一致しないと保存できません。納品完了するとシリアル単位で機器台帳へ自動登録します。</p>'+
         dataTable(['発注番号','仕入先','顧客','明細','入荷数量','シリアル','納期','操作'],rows)+'</section>';
       bindUnifiedTabs(t=>renderProcurementWorkspace(t));
+      if(receivingScope)$('#receivingShowAll').onclick=()=>renderProcurementWorkspace('receiving');
       document.querySelectorAll('.receiveItemBtn').forEach(btn=>{
         btn.onclick=()=>{
           const item=(items||[]).find(x=>x.item_id===btn.dataset.id);
@@ -5631,7 +5639,7 @@
               const qty=Number($('#recvQty').value||0);
               if(item.track_serials && serials.length!==qty) throw new Error('シリアル管理対象は、入荷数量とシリアル件数を一致させてください。');
               await rpc('receive_purchase_item_full',{p_purchase_order_item_id:item.item_id,p_received_quantity:qty,p_serials:serials});
-              closeModal();toast('入荷情報を保存しました');await renderProcurementWorkspace('receiving');
+              closeModal();toast('入荷情報を保存しました');await renderProcurementWorkspace('receiving',receivingScope);
             }
           });
         };
@@ -14945,10 +14953,9 @@
     },
     openReceivingForDeal:async({purchaseOrders})=>{
       if(!Array.isArray(purchaseOrders)||!purchaseOrders.length)throw new Error('対象案件の発注がありません');
+      if(!purchaseOrders.every(po=>typeof po.id==='string'&&po.id))throw new Error('発注IDを確認できません');
       await go('procurement');
-      await renderProcurementWorkspace('receiving');
-      // Receiving items are shared in this legacy screen; identify the target purchase order without creating records.
-      toast('対象発注番号: '+purchaseOrders.map(po=>po.purchase_order_number||'未採番').join('、')+'。入荷一覧で発注番号を確認してください。');
+      await renderProcurementWorkspace('receiving',{dealId:purchaseOrders[0].deal_id||'選択案件',purchaseOrderIds:purchaseOrders.map(po=>po.id)});
     },
     openLinked:async(kind,id)=>{
       if(kind==='purchase'){await go('procurement');await renderPurchaseOrderDetail(id);return;}
