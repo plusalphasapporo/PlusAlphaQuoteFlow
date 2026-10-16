@@ -50,9 +50,10 @@ async function openDetail(dealId){
  requireStaff();const data=await rpc('internal_deal_detail',{p_deal_id:dealId},{readOnly:true});
  detailCache=data;selectedId=dealId;
  const d=data.deal||{},c=data.customer||{},quotes=data.quotes||[],orders=data.orders||[];
- let state=d.sales_outcome==='lost'?'失注':d.current_stage==='quote'?'見積':d.current_stage==='order'?'受注':d.current_stage;
+ const guidance=window.QuoteFlowDealProgress?.derive(data)||{stage:d.current_stage,nextAction:d.next_action};
+ let state=guidance.stage;
  const h=host();h.innerHTML='<section class="card section"><div class="row between"><div><h2>'+e(d.title||'案件')+'</h2><p class="sectionDesc">'+e(c.customer_code||'')+' / '+e(c.name||'')+(c.parent_customer_name?' / '+e(c.parent_customer_name):'')+'</p></div><button id="dealBack" class="ghost">案件一覧へ戻る</button></div>'+
- '<div class="dealSummary"><div><small>営業結果</small><strong>'+e(OUTCOMES[d.sales_outcome]||d.sales_outcome)+'</strong></div><div><small>現在の工程</small><strong>'+e(state)+'</strong></div><div><small>次に行うこと</small><strong>'+e(d.next_action||'進行状況を確認')+'</strong></div></div>'+
+ '<div class="dealSummary"><div><small>営業結果</small><strong>'+e(OUTCOMES[d.sales_outcome]||d.sales_outcome)+'</strong></div><div><small>現在の工程</small><strong>'+e(state)+'</strong></div><div><small>次に行うこと</small><strong>'+e(guidance.nextAction||'進行状況を確認')+'</strong></div></div>'+
  stages(state)+'<div class="dealActions">'+nextActions(d,quotes,orders)+'</div></section>'+
  '<section class="card section"><h3>見積・受注</h3>'+
  '<div class="dealRecords">'+quotes.map(q=>'<div class="dealRecord"><strong>'+e(q.quote_number||'下書き')+'</strong><span>'+e(q.project_name||'')+'</span><span>'+e(q.status==='finalized'?'見積発行済み':q.status==='draft'?'下書き':q.status==='accepted'?'既存承諾記録':q.status)+'</span></div>').join('')+'</div>'+
@@ -62,6 +63,12 @@ async function openDetail(dealId){
  '<section class="card section"><h3>工事日・施工</h3>'+
  (data.installation_jobs||[]).map(j=>'<div class="dealRecord"><span>'+e(j.site_address||'工事場所未登録')+' / '+e(j.state)+'</span><button class="ghost" data-deal-job="'+e(j.id)+'">工事日程を編集</button></div>').join('')+
  (d.sales_outcome==='won'?'<button class="primary" data-deal-action="install">工事日を登録</button>':'')+'</section>'+
+ '<section class="card section"><h3>既存データとの関連付け</h3><p class="muted">受注・発注・納品など、関連元が確認できた記録だけを表示します。</p>'+
+ [['発注','purchase_orders','purchase','purchase_order_number'],['納品','deliveries','delivery','delivery_number'],
+ ['機器','assets','asset','asset_number'],['保守契約','contracts','contract','contract_number'],['サポート','support_tickets','ticket','ticket_number']].map(([label,key,kind,num])=>
+ (data[key]||[]).map(r=>'<div class="dealRecord"><span>'+e(label)+'：'+e(r[num]||r.id)+' / 関連元：'+e(r.link_source||'確認済み')+'</span>'+
+ '<button class="ghost" data-deal-record="'+kind+'" data-record-id="'+e(r.id)+'">詳細を開く</button></div>').join('')).join('')+
+ '</section>'+
  '<section class="card section"><h3>案件に紐づく情報</h3><div class="dealLinked">'+
  [['仕入・納品','purchase_orders','procurement'],['工事日・施工','deliveries','procurement'],['機器・保守','assets','assets'],['保守契約','contracts','contracts'],['サポート','support_tickets','support']].map(([label,key,page])=>'<button type="button" data-deal-nav="'+page+'" class="ghost">'+e(label)+' ('+e((data[key]||[]).length)+')</button>').join('')+
  '</div><p class="muted">支払・リースと施工工程の登録は後続開発で追加します。</p></section>'+
@@ -78,6 +85,7 @@ async function openDetail(dealId){
   if(action==='install')return openInstallationDialog(dealId);
  });
  h.querySelectorAll?.('[data-deal-job]').forEach(btn=>btn.onclick=()=>openInstallationDialog(dealId,btn.dataset.dealJob));
+ h.querySelectorAll?.('[data-deal-record]').forEach(btn=>btn.onclick=()=>config.openLinked?.(btn.dataset.dealRecord,btn.dataset.recordId));
  h.querySelectorAll?.('[data-deal-nav]').forEach(btn=>btn.onclick=()=>config.navigate(btn.dataset.dealNav));
 }
 function openLossDialog(dealId,quoteId){
