@@ -4153,8 +4153,21 @@
           ' / 連絡先: '+esc(customer?.phone||customer?.mobile||'未登録')+
           ' / 担当者: '+esc((contacts||[]).find(x=>x.is_primary)?.name||(contacts||[])[0]?.name||'未登録')+'</span>';
       }
+      return contacts||[];
     };
 
+    const loadConfirmedCustomer=async()=>{
+      if(preselectedCustomerId) $('#quoteCreateCustomer').value=preselectedCustomerId;
+      const contacts=await loadCustomer();
+      if(customerContext?.contactId){
+        const c=contacts.find(x=>x.id===customerContext.contactId&&x.customer_id===preselectedCustomerId&&x.active!==false);
+        if(!c) throw new Error('担当者が顧客に一致しません');
+        $('#quoteCreateContact').value=c.name;
+      }
+      if(customerContext?.installationAddress){
+        $('#quoteCreateNote').value=[$('#quoteCreateNote').value.trim(),'設置場所: '+customerContext.installationAddress].filter(Boolean).join('\n');
+      }
+    };
 
     const activeProducts=(products||[]).filter(p=>p.is_active!==false);
     const renderProductOptions=()=>{
@@ -4336,7 +4349,7 @@
     };
     $('#quoteCreateClose').onclick=closeAppModal;
     $('#quoteCreateCancel').onclick=closeAppModal;
-    $('#quoteCreateDraftClear').onclick=()=>{
+    $('#quoteCreateDraftClear').onclick=async()=>{
       if(!confirm('入力途中の見積内容をクリアしますか？')) return;
       localStorage.removeItem(draftKey);
       form.reset();
@@ -4351,14 +4364,16 @@
       $('#quoteCreateContact').innerHTML='<option value="">指定なし</option>';
       $('#quoteCustomerSummary').classList.add('hidden');
       $('#quoteDraftNotice').classList.add('hidden');
+      if(preselectedCustomerId){
+        try{await loadConfirmedCustomer();}
+        catch(err){notice('#quoteCreateMsg',err.message||String(err));}
+      }
       renderProductOptions();
       recalc();
       updateQuoteRequired();
     };
     if(preselectedCustomerId){
-      await loadCustomer();
-      if(customerContext?.contactId){const c=(await rpc('internal_customer_contacts',{p_customer_id:preselectedCustomerId})||[]).find(x=>x.id===customerContext.contactId&&x.customer_id===preselectedCustomerId);if(!c)throw new Error('担当者が顧客に一致しません');$('#quoteCreateContact').value=c.name;}
-      if(customerContext?.installationAddress)$('#quoteCreateNote').value=[($('#quoteCreateNote').value||''),'設置場所: '+customerContext.installationAddress].filter(Boolean).join('\n');
+      await loadConfirmedCustomer();
     }else{
       await restoreQuoteDraft();
     }
