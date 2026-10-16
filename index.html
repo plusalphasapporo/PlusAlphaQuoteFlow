@@ -5818,6 +5818,7 @@
         '<div class="quoteDetailHead">'+
           '<div><h2>見積詳細</h2><p class="sectionDesc">'+esc(customer.name||customer.customer_code||'')+' / '+esc(q.quote_number||'下書き')+' / '+esc(statusText(q.status))+'</p></div>'+
           '<div class="row">'+
+            (internal && !editable ? '<button id="quoteDuplicateDraftBtn" class="primary" type="button">改訂用の下書きを作成</button>' : '')+
             (q.quote_number?'<button id="quotePrintBtn" class="ghost" type="button">見積書 印刷/PDF</button>':'')+
             '<button id="quoteDetailClose" class="ghost" type="button">閉じる</button>'+
           '</div>'+
@@ -5913,6 +5914,25 @@
         })),
         totals:{subtotal:q.subtotal,tax:q.tax_amount,total:q.total_amount}
       });
+    }
+    const duplicateBtn=$('#quoteDuplicateDraftBtn');
+    if(duplicateBtn){
+      duplicateBtn.onclick=async()=>{
+        if(!confirm('元の見積書を残し、別の新規下書きを作成します。よろしいですか？'))return;
+        duplicateBtn.disabled=true;
+        try{
+          const today=new Date();
+          const localDate=new Date(today.getTime()-today.getTimezoneOffset()*60000).toISOString().slice(0,10);
+          const revisionPayload=window.QuoteFlowQuoteRevision.buildPayload(q,items,residuals,localDate);
+          const created=await rpc('create_quote_full',revisionPayload);
+          if(!created?.id)throw new Error('改訂用の下書きを確認できません。');
+          toast('元見積を残して改訂用の下書きを作成しました。');
+          await renderSalesWorkspace('quotes');
+          await renderQuoteEditor(created.id,cmap);
+        }catch(err){
+          toast('改訂用下書きの作成に失敗しました: '+(err?.message||String(err)));
+        }finally{duplicateBtn.disabled=false;}
+      };
     }
     await appendEntityAuditHistory('#quoteDetailHost','quote',q.id);
     host.scrollIntoView({behavior:'smooth',block:'start'});
@@ -15615,6 +15635,7 @@
   healthTimer=setInterval(checkHealth,60000);
   await boot();
 </script>
+<script src="./assets/workspace-fixes.js"></script>
 <script src="./assets/support-ticket-tabs.js"></script>
 <script src="./assets/notification-center.js"></script>
 </body>
