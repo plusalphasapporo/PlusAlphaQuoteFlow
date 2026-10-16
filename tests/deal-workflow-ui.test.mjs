@@ -164,3 +164,18 @@ test('sales UI retains an explicit route from existing quotes into the deal flow
  assert.match(source,/data-deal-quote/);
  assert.match(source,/config\.editQuote\(btn\.dataset\.dealQuote\)/);
 });
+
+test('quote editor uses direct issuance and preserves legacy approval history as read-only',()=>{
+ const html=readFileSync('index.html','utf8');
+ const editor=html.slice(html.indexOf('async function renderQuoteEditor('),html.indexOf('async function renderQuotes('));
+ assert.match(editor,/最新内容を保存して見積発行/);
+ assert.match(editor,/rpc\('deal_issue_quote',\{p_deal_id:linked.id,p_quote_id:q.id\}\)/);
+ assert.match(editor,/QuoteFlowDeals\.linkQuote\(q.id\)/);
+ assert.doesNotMatch(editor,/rpc\('finalize_quote'/);
+ assert.doesNotMatch(editor,/rpc\('approve_quote'/);
+ assert.doesNotMatch(editor,/rpc\('return_quote_for_revision'/);
+ assert.doesNotMatch(editor,/管理者承認待ち|見積を承認|承認申請/);
+ assert.match(editor,/過去の承諾記録/);
+ assert.match(editor,/quoteDealOpenBtn/);
+ assert.match(html,/editQuote:async id=>\{await go\('sales'\);const cmap=await customerMap\(\);await renderQuoteEditor\(id,cmap\);\}/);
+});
