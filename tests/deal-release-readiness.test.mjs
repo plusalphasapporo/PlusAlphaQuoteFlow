@@ -30,7 +30,7 @@ test('GitHub Pages verifies every browser asset that is rendered by the app',()=
 });
 test('static validator checks syntax for all JS runtime assets and the deal stylesheets',()=>{
  const validator=readFileSync('scripts/validate-static.mjs','utf8');
- assert.match(validator,/matchAll\(\/<(?:script|link)/);
+ assert.ok(validator.includes('matchAll(/<(?:script|link)'), 'runtime asset validator must inspect script/link tags');
  assert.match(validator,/node.*--check|--check.*asset/);
  for(const file of publicAssets){
   if(!file.endsWith('.js'))continue;
