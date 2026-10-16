@@ -74,6 +74,13 @@ async function openDetail(dealId){
  const d=data.deal||{},c=data.customer||{},quotes=data.quotes||[],orders=data.orders||[];
  const guidance=window.QuoteFlowDealProgress?.derive(data)||{stage:d.current_stage,nextAction:d.next_action};
  let state=guidance.stage;
+ const jobs=data.installation_jobs||[];
+ const allInstallationsAccepted=jobs.length>0&&jobs.every(j=>
+  j.state==='completed'&&['accepted','not_required'].includes(j.acceptance_state));
+ // The progress engine also checks payment, receiving and deliveries. Never hand off
+ // a deal merely because one of multiple installation jobs was accepted.
+ const aftercareReady=d.sales_outcome==='won'&&allInstallationsAccepted&&
+  (!window.QuoteFlowDealProgress?.derive||['機器・保守','サポート'].includes(state));
  const h=host();h.innerHTML='<section class="card section"><div class="row between"><div><h2>'+e(d.title||'案件')+'</h2><p class="sectionDesc">'+e(c.customer_code||'')+' / '+e(c.name||'')+(c.parent_customer_name?' / '+e(c.parent_customer_name):'')+'</p></div><button id="dealBack" class="ghost">案件一覧へ戻る</button></div>'+
  '<div class="dealSummary"><div><small>営業結果</small><strong>'+e(OUTCOMES[d.sales_outcome]||d.sales_outcome)+'</strong></div><div><small>現在の工程</small><strong>'+e(state)+'</strong></div><div><small>次に行うこと</small><strong>'+e(guidance.nextAction||'進行状況を確認')+'</strong></div></div>'+
  stages(state)+'<div class="dealActions">'+nextActions(data)+'</div></section>'+
@@ -95,7 +102,7 @@ async function openDetail(dealId){
  (data.assets||[]).map(a=>'<div class="dealRecord"><strong>機器 '+e(a.asset_number||a.serial_number||'番号未設定')+'</strong><span>'+e(a.model_name||a.name||'')+'</span><button class="ghost" type="button" data-deal-record="asset" data-record-id="'+e(a.id)+'">機器詳細</button></div>').join('')+
  (data.contracts||[]).map(ct=>'<div class="dealRecord"><strong>保守契約 '+e(ct.contract_number||'番号未設定')+'</strong><span>'+e(ct.status||'状態未設定')+'</span><button class="ghost" type="button" data-deal-record="contract" data-record-id="'+e(ct.id)+'">契約詳細</button></div>').join('')+
  (data.support_tickets||[]).map(t=>'<div class="dealRecord"><strong>サポート '+e(t.ticket_number||t.subject||'番号未設定')+'</strong><button class="ghost" type="button" data-deal-record="ticket" data-record-id="'+e(t.id)+'">対応カルテ</button></div>').join('')+
- ((data.installation_jobs||[]).some(j=>j.state==='completed'&&['accepted','not_required'].includes(j.acceptance_state))?
+ (aftercareReady?
  '<div class="row"><button class="ghost" type="button" data-deal-action="assets">機器台帳を確認</button><button class="ghost" type="button" data-deal-action="contracts">契約・保守を確認</button><button class="ghost" type="button" data-deal-action="support">サポートへ進む</button></div>':
  '<p class="muted">施工完了と検収状況を確認してから機器・保守・サポートの引継ぎを進めてください。</p>')+'</section>'+
  '<section class="card section"><h3>既存データとの関連付け</h3><p class="muted">受注・発注・納品など、関連元が確認できた記録だけを表示します。</p>'+
