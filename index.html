@@ -632,6 +632,7 @@
 </script>
 
 <link rel="stylesheet" href="./assets/deal-workflow.css">
+<script src="./assets/deal-progress.js"></script>
 <script src="./assets/deal-workflow.js"></script>
 <script type="module">
   import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -14931,6 +14932,15 @@
     rpc, getHost:()=>$('#home'),getRole:()=>bootData?.context?.role,
     openModal:o=>window.openModal(o),closeModal:()=>window.closeModal(),toast,
     navigate:page=>go(page),editQuote:async id=>{await go('sales');},
+    openLinked:async(kind,id)=>{
+      if(kind==='purchase'){await go('procurement');await renderPurchaseOrderDetail(id);return;}
+      if(kind==='delivery'){await go('procurement');await renderDeliveryDetail(id);return;}
+      if(kind==='asset'){await go('assets');await renderAssetDetail(id);return;}
+      if(kind==='contract'){await go('contracts');await renderContractDetail(id);return;}
+      if(kind==='ticket'){await go('support');await renderTicketDetail(id);return;}
+      if(kind==='order'){await go('sales');await renderOrderDetail(id);return;}
+      throw new Error('対応していない関連レコードです。');
+    },
     listQuotes:async()=>{const result=await supabase.from('quotes').select('id,deal_id,quote_number,project_name,customer_id,status').order('created_at',{ascending:false});if(result.error)throw result.error;return result.data||[];}
   });
   async function go(page){
