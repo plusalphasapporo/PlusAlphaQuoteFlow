@@ -56,6 +56,9 @@ BEGIN
       'phone',c.phone,'email',c.email),
     'quotes',(SELECT coalesce(jsonb_agg(to_jsonb(q) ORDER BY q.created_at),'[]'::jsonb)
       FROM public.quotes q WHERE q.deal_id=p_deal_id),
+    'financing',(SELECT to_jsonb(f) FROM public.deal_financing f WHERE f.deal_id=p_deal_id),
+    'installation_jobs',(SELECT coalesce(jsonb_agg(to_jsonb(j) ORDER BY j.scheduled_start_at,j.created_at),'[]'::jsonb)
+      FROM public.deal_installation_jobs j WHERE j.deal_id=p_deal_id),
     'orders',(SELECT coalesce(jsonb_agg(to_jsonb(o) ORDER BY o.created_at),'[]'::jsonb)
       FROM public.orders o WHERE o.deal_id=p_deal_id),
     'purchase_orders',(SELECT coalesce(jsonb_agg(to_jsonb(po) ORDER BY po.created_at),'[]'::jsonb)
