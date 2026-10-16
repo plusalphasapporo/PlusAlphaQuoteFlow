@@ -64,6 +64,8 @@ test('openList loads deal records and shows customer branch, current stage, and 
   assert.match(f.table.innerHTML,/本店/);
   assert.match(f.table.innerHTML,/商談/);
   assert.match(f.host.innerHTML,/顧客情報確認から見積作成/);
+  assert.match(f.host.innerHTML,/既存見積から案件を作成/);
+  assert.match(source,/picker\.onclick=\(\)=>openQuotePicker\(\)/);
   assert.doesNotMatch(f.host.innerHTML,/社内承認待ち|管理者承認申請/);
 });
 test('support company cannot use internal sales deal workflow',async()=>{
