@@ -205,3 +205,29 @@ test('financing method labels and loss reasons remain readable in deal detail',a
  assert.match(f.host.innerHTML,/失注理由：価格/);
  assert.doesNotMatch(f.host.innerHTML,/与信：/);
 });
+
+test('won case shows actionable purchasing route and independent installation scheduling',async()=>{
+ const f=fixture({handlers:{internal_deal_detail:async()=>({
+  deal:{id:'deal-1',sales_outcome:'won'},customer:{name:'営業先株式会社'},
+  quotes:[],orders:[{id:'order-1',order_number:'O-1'}],financing:{method:'bank_transfer',payment_state:'not_started'},
+  purchase_orders:[],deliveries:[],assets:[],contracts:[],support_tickets:[],events:[],loss_events:[]
+ })}});
+ await f.api.openDetail('deal-1');
+ assert.match(f.host.innerHTML,/受注から発注を作成/);
+ assert.match(f.host.innerHTML,/工事日を調整（発注と並行可）/);
+ assert.doesNotMatch(f.host.innerHTML,/data-deal-action="receiving"/);
+});
+test('existing purchase orders offer receiving without creating duplicate orders',async()=>{
+ const f=fixture({handlers:{internal_deal_detail:async()=>({
+  deal:{id:'deal-1',sales_outcome:'won'},customer:{name:'営業先株式会社'},
+  quotes:[],orders:[{id:'order-1',order_number:'O-1'}],financing:{method:'bank_transfer'},
+  purchase_orders:[{id:'po-1',purchase_order_number:'PO-1'}],deliveries:[],assets:[],contracts:[],support_tickets:[],events:[],loss_events:[]
+ })}});
+ await f.api.openDetail('deal-1');
+ assert.match(f.host.innerHTML,/入荷・シリアルを確認/);
+ let got=null;
+ f.api.configure({getRole:()=> 'internal_staff',getHost:()=>f.host,
+  openReceivingForDeal:async x=>{got=x;}});
+ await f.api.openReceivingForDeal('deal-1');
+ assert.equal(got.purchaseOrders[0].id,'po-1');
+});
