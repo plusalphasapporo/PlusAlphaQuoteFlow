@@ -129,3 +129,14 @@ if (failures.length) {
 }
 
 console.log('QuoteFlow static validation passed.');
+
+// Require every referenced JavaScript runtime to pass syntax validation.
+const referencedAssets = [...html.matchAll(/<(?:script|link)\b[^>]*(?:src|href)=["'](\.\/assets\/[^"']+)["'][^>]*>/g)].map(m=>m[1].slice(2));
+for(const asset of referencedAssets){
+  if(!fs.existsSync(asset)){failures.push('Referenced asset missing: '+asset);continue;}
+  if(asset.endsWith('.js')){
+    const checked=spawnSync(process.execPath,['--check',asset],{encoding:'utf8'});
+    if(checked.status!==0)failures.push('Asset syntax error: '+asset+' '+(checked.stderr||checked.stdout));
+  }
+}
+if(failures.length){console.error('Deal runtime validation failed: '+failures.join('; '));process.exit(1);}
