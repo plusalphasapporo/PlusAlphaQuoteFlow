@@ -21,6 +21,9 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Unified deal workflow schema, linking, loss and direct order tests
+        run: node --test tests/deal-workflow-*.test.mjs
+
       - name: Registration and quote revision regression tests
         run: node --test tests/workspace-registration.test.mjs
 
