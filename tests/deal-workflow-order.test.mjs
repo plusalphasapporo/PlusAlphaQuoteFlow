@@ -46,7 +46,7 @@ test('direct order requires issued quote, retains existing order on repeat, and 
   assert.match(body,/app_private\.next_document_number\('order'\)/i);
   assert.match(body,/insert\s+into\s+public\.orders/i);
   assert.match(body,/deal_id/i);
-  assert.match(body,/sales_outcome\s*=\s*'won'/i);
+  assert.match(sql,/UPDATE public\.deals SET sales_outcome='won'/i);
   assert.match(body,/'deal\.order_created'/i);
   assert.match(body,/auth\.uid\(\)/i);
   assert.doesNotMatch(body,/approve_quote|quote\.admin_approved/i);
