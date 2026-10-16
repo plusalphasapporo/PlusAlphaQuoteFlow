@@ -303,3 +303,21 @@ test('receiving navigation preserves selected deal ID rather than a placeholder'
  assert.match(html,/renderProcurementWorkspace\('receiving',\{dealId,purchaseOrderIds:purchaseOrders\.map\(po=>po\.id\)\}\)/);
  assert.doesNotMatch(html,/purchaseOrders\[0\]\.deal_id\|\|'選択案件'/);
 });
+
+test('linked aftercare records open a detail page with a mounted host',()=>{
+ const html=readFileSync('index.html','utf8');
+ const linked=html.slice(html.indexOf('openLinked:async(kind,id)=>'),html.indexOf('listQuotes:async()=>',html.indexOf('openLinked:async(kind,id)=>')));
+ for(const [kind,page,detail] of [
+  ['asset','assets','renderAssetDetail'],['contract','contracts','renderContractDetail'],['ticket','support','renderTicketDetail']
+ ]){
+  assert.ok(linked.includes("if(kind==='"+kind+"'){await go('"+page+"');await "+detail+"(id)"),kind);
+ }
+ for(const [page,host] of [
+  ['renderAssets','assetDetailHost'],['renderContractsWorkspace','contractDetailHost'],['renderSupport','ticketDetailHost']
+ ]){
+  const start=html.indexOf('async function '+page+'(');
+  const end=html.indexOf('\n  async function ',start+10);
+  const block=html.slice(start,end<0?undefined:end);
+  assert.ok(block.includes('id="'+host+'"'),page+' missing host '+host);
+ }
+});
