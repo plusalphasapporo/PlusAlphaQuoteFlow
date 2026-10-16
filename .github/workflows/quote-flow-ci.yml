@@ -21,6 +21,9 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Release asset completeness regression
+        run: node --test tests/deal-release-readiness.test.mjs
+
       - name: Deal linkage and next-step guidance tests
         run: node --test tests/deal-workflow-linkage.test.mjs
 
