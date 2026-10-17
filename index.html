@@ -3490,7 +3490,7 @@
       '</section>';
 
     $('#customerDetailClose').onclick=()=>{$('#customerDetailHost').innerHTML='';};
-    $('#customerQuoteCreateBtn').onclick=()=>renderCustomerQuoteCreate(c.id);
+    $('#customerQuoteCreateBtn').onclick=()=>window.QuoteFlowDealCustomerStep.open({preselectedCustomerId:c.id});
     await appendEntityAuditHistory('#customerDetailHost','customer',c.id);
     $('#customerDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
 
@@ -4905,7 +4905,7 @@
         '</section>';
 
       $('#customerDetailClose').onclick=()=>{host.innerHTML='';};
-      $('#customerOverviewNewQuote').onclick=()=>renderCustomerQuoteCreate(customerId);
+      $('#customerOverviewNewQuote').onclick=()=>window.QuoteFlowDealCustomerStep.open({preselectedCustomerId:customerId});
       $('#customerOverviewTransactions').onclick=()=>renderCustomerDetail(customerId,'transactions');
       $('#customerOverviewHistory').onclick=()=>renderCustomerDetail(customerId,'history');
       document.querySelectorAll('.customerRelatedOpen').forEach(btn=>btn.onclick=()=>renderCustomerDetail(btn.dataset.id,'overview'));
@@ -5170,7 +5170,7 @@
     }
 
     const newQuoteBtn=$('#customerTxnNewQuote');
-    if(newQuoteBtn) newQuoteBtn.onclick=()=>renderCustomerQuoteCreate(customerId);
+    if(newQuoteBtn) newQuoteBtn.onclick=()=>window.QuoteFlowDealCustomerStep.open({preselectedCustomerId:customerId});
 
     document.querySelectorAll('.customerQuoteOpen').forEach(btn=>btn.onclick=async()=>{
       const cmap=await customerMap();
