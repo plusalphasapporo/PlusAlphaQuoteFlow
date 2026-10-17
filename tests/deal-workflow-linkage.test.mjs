@@ -126,3 +126,25 @@ test('actual production navigation adapter opens corresponding record detail aft
  assert.match(index,/openLinked:\s*async\s*\(/);
  assert.match(index,/\.\/assets\/deal-progress\.js/);
 });
+
+test('missing purchase order line items prevent false installation progress',()=>{
+ const p=policy();
+ const base=deal({
+  purchase_orders:[{id:'po-1',purchase_order_number:'PO-1'},{id:'po-2',purchase_order_number:'PO-2'}],
+  receiving_items:[{id:'line-1',purchase_order_id:'po-1',quantity:2,received_quantity:2}],
+  deliveries:[{id:'dv-1',status:'delivered'}]
+ });
+ const gap=p.derive(base);
+ assert.equal(gap.stage,'発注・入荷');
+ assert.equal(gap.target,'procurement');
+ assert.match(gap.nextAction,/発注.*明細/);
+ const done=p.derive({...base,receiving_items:[
+  ...base.receiving_items,
+  {id:'line-2',purchase_order_id:'po-2',quantity:1,received_quantity:1}
+ ]});
+ assert.equal(done.stage,'工事日','all orders fully received and delivery completed should reach installation scheduling');
+ assert.equal(done.target,'installation');
+ const empty=p.derive({...base,receiving_items:[]});
+ assert.equal(empty.stage,'発注・入荷');
+ assert.equal(empty.target,'procurement');
+});
