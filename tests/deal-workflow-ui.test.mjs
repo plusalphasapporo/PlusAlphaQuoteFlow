@@ -15,6 +15,7 @@ function fixture(overrides={}){
   const host={innerHTML:'',onclick:null,contains(){return true;},querySelector(){return null;}};
   const table={innerHTML:'',querySelectorAll(){return [];}};
   const calls=[];
+  let closedCount=0;
   const quote={id:'quote-1',deal_id:'deal-1',customer_id:'customer-1',status:'finalized',
     quote_number:'Q-1001',project_name:'複合機入替',total_amount:250000,valid_until:'2026-12-30'};
   const detail={deal:{id:'deal-1',title:'複合機入替',sales_outcome:'open',current_stage:'quote',next_action:'商談結果を登録'},
@@ -41,11 +42,11 @@ function fixture(overrides={}){
   if(typeof api.configure==='function')api.configure({
     rpc:async(name,args,opts)=>{calls.push({name,args,opts});return handlers[name]?.(args,opts);},
     getHost:()=>host,getRole:()=>overrides.role||'internal_staff',
-    openModal:o=>{options=o;return {};},closeModal:()=>{},toast:()=>{},
+    openModal:o=>{options=o;return {};},closeModal:()=>{closedCount++;},toast:()=>{},
     navigate:async page=>nav.push(page),editQuote:async()=>{},
     listQuotes:async()=>overrides.listQuotes||[]
   });
-  return {api,host,table,calls,fields,nav,quote,detail,rows,get modal(){return options;}};
+  return {api,host,table,calls,fields,nav,quote,detail,rows,get modal(){return options;},get closedCount(){return closedCount;}};
 }
 
 test('routes include separate internal-only deal management and relative assets',()=>{
@@ -432,4 +433,25 @@ test('issued quote does not proceed into a blocked deal page or request reissuan
  assert.match(section,/見積は発行済みです。案件画面を開けませんでした/);
  assert.match(section,/if\(\$\('#quoteEditMsg'\)\) notice\('#quoteEditMsg',message\)/);
  assert.match(section,/else toast\(message\)/);
+});
+
+test('order registration rejects missing or invalid order IDs without closing or refreshing',async()=>{
+ for(const invalid of [undefined,null,{}, {id:''},{id:'   '},{id:42}]){
+  const f=fixture({handlers:{deal_create_order_from_quote:async()=>invalid}});
+  await f.api.openDetail('deal-1');
+  f.api.openOrderDialog('deal-1','quote-1');
+  await assert.rejects(()=>f.modal.onSubmit(),/受注|確認|再登録/);
+  assert.equal(f.closedCount,0,'invalid response must not close the registration modal');
+  assert.equal(f.calls.filter(x=>x.name==='internal_deal_detail').length,1,
+   'invalid response must not show a successful deal refresh');
+  assert.equal(f.calls.filter(x=>x.name==='deal_create_order_from_quote').length,1);
+ }
+});
+test('valid order ID closes the dialog and reloads deal detail',async()=>{
+ const f=fixture();
+ await f.api.openDetail('deal-1');
+ f.api.openOrderDialog('deal-1','quote-1');
+ await f.modal.onSubmit();
+ assert.equal(f.closedCount,1);
+ assert.equal(f.calls.filter(x=>x.name==='internal_deal_detail').length,2);
 });
