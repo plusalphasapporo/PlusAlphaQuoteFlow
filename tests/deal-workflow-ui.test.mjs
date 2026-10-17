@@ -407,3 +407,29 @@ test('loss and reopen history is shown once, correctly localized and HTML-escape
  assert.match(f.host.innerHTML,/価格 &lt; 再見積 &amp; 比較/);
  assert.match(f.host.innerHTML,/再提案予定：2026-11-01/);
 });
+
+
+test('saving a customer-confirmed quote stops detail loading when deal page cannot open',()=>{
+ const html=readFileSync('index.html','utf8');
+ const begin=html.indexOf('const createdQuote=await rpc(\'create_quote_full\'');
+ const end=html.indexOf("\n    };\n  }\n",begin);
+ assert.ok(begin>0&&end>begin,'new quote save handler');
+ const section=html.slice(begin,end);
+ assert.match(section,/const linked=await window\.QuoteFlowDeals\.linkQuote\(createdQuote\.id\)/);
+ assert.match(section,/if\(!await goForDeal\('deals'\)\)\{[\s\S]*?見積は保存済みです/);
+ assert.match(section,/if\(await goForDeal\('sales'\)\) notice\('#quoteFlowLinkNotice',message\)/);
+ assert.match(section,/else toast\(message\)/);
+ assert.doesNotMatch(section,/await go\('deals'\);\s*await window\.QuoteFlowDeals\.openDetail/);
+ assert.equal((section.match(/rpc\('create_quote_full'/g)||[]).length,1);
+});
+test('issued quote does not proceed into a blocked deal page or request reissuance',()=>{
+ const html=readFileSync('index.html','utf8');
+ const start=html.indexOf("$('#quoteFinalizeBtn').onclick=async()=>");
+ const end=html.indexOf('\n      };\n',start);
+ const section=html.slice(start,end);
+ assert.match(section,/rpc\('deal_issue_quote',\{p_deal_id:linked\.id,p_quote_id:q\.id\}\)/);
+ assert.match(section,/if\(!await goForDeal\('deals'\)\)\{/);
+ assert.match(section,/見積は発行済みです。案件画面を開けませんでした/);
+ assert.match(section,/if\(\$\('#quoteEditMsg'\)\) notice\('#quoteEditMsg',message\)/);
+ assert.match(section,/else toast\(message\)/);
+});
