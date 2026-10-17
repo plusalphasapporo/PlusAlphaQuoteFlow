@@ -68,6 +68,26 @@ function nextActions(data){
  '<button class="ghost" data-deal-action="loss" data-quote-id="'+e(latest.id)+'">失注登録</button>'+
  '<button class="ghost" data-deal-action="quote" data-quote-id="'+e(latest.id)+'">見積を編集・確認</button></div>';
 }
+function dealHistoryHtml(data){
+ const lossEvents=Array.isArray(data.loss_events)?data.loss_events:[];
+ const mappedTypes=new Set(lossEvents.map(x=>x.event_type));
+ const records=[
+  ...(data.events||[]).filter(x=>!['lost','reopened'].includes(x.event_type)||!mappedTypes.has(x.event_type))
+   .map(x=>({created_at:x.created_at,label:x.message||x.event_type||'案件更新'})),
+  ...lossEvents.map(x=>({
+   created_at:x.created_at,
+   label:x.event_type==='lost'
+    ?'失注理由：'+(REASONS[x.reason_category]||x.reason_category||'未設定')+
+     (x.detail?' / '+x.detail:'')+(x.competitor?' / 競合先：'+x.competitor:'')+
+     (x.reproposal_on?' / 再提案予定：'+x.reproposal_on:'')
+    :x.event_type==='reopened'?'案件再開：'+(x.detail||'再開理由未入力')
+    :x.detail||x.event_type||'案件更新'
+  }))
+ ];
+ records.sort((a,b)=>Date.parse(b.created_at||0)-Date.parse(a.created_at||0));
+ return records.length?records.map(x=>'<div class="dealRecord">'+e(x.label)+' '+e(x.created_at||'')+'</div>').join('')
+  :'<p class="muted">履歴はありません。</p>';
+}
 async function openDetail(dealId){
  requireStaff();const data=await rpc('internal_deal_detail',{p_deal_id:dealId},{readOnly:true});
  detailCache=data;selectedId=dealId;
@@ -86,7 +106,7 @@ async function openDetail(dealId){
  stages(state)+'<div class="dealActions">'+nextActions(data)+'</div></section>'+
  '<section class="card section"><h3>見積・受注</h3>'+
  '<div class="dealRecords">'+quotes.map(q=>'<div class="dealRecord"><strong>'+e(q.quote_number||'下書き')+'</strong><span>'+e(q.project_name||'')+'</span><span>'+e(q.status==='finalized'?'見積発行済み':q.status==='draft'?'下書き':q.status==='accepted'?'既存承諾記録':q.status)+'</span><button type="button" class="ghost" data-deal-quote="'+e(q.id)+'">見積を開く</button></div>').join('')+'</div>'+
- '<div class="dealRecords">'+orders.map(o=>'<div class="dealRecord">受注番号 '+e(o.order_number||'未採番')+'</div>').join('')+'</div></section>'+
+ '<div class="dealRecords">'+orders.map(o=>'<div class="dealRecord"><strong>受注番号 '+e(o.order_number||'未採番')+'</strong><button type="button" class="ghost" data-deal-record="order" data-record-id="'+e(o.id)+'">受注詳細・発注へ</button></div>').join('')+'</div></section>'+
  '<section class="card section"><h3>支払・リース</h3><p>支払方法：'+e(PAYMENT_METHODS[data.financing?.method]||'未設定')+' / 請求・入金：'+e(PAYMENT_STATES[data.financing?.payment_state]||'未設定')+(data.financing?.method==='lease'?' / 与信：'+e(CREDIT_STATES[data.financing?.credit_status]||'未設定')+' / '+e(data.financing?.lease_company||'リース会社未設定'):'')+'</p>'+
  (d.sales_outcome==='won'?'<button class="primary" data-deal-action="finance">支払・リースを'+(data.financing?'編集':'登録')+'</button>':'')+'</section>'+
  '<section class="card section"><h3>発注・入荷・納品</h3>'+
@@ -114,7 +134,7 @@ async function openDetail(dealId){
  '<section class="card section"><h3>案件に紐づく情報</h3><div class="dealLinked">'+
  [['仕入・納品','purchase_orders','procurement'],['工事日・施工','deliveries','procurement'],['機器・保守','assets','assets'],['保守契約','contracts','contracts'],['サポート','support_tickets','support']].map(([label,key,page])=>'<button type="button" data-deal-nav="'+page+'" class="ghost">'+e(label)+' ('+e((data[key]||[]).length)+')</button>').join('')+
  '</div><p class="muted">登録済みの受注・発注・納品を参照します。工事日調整は発注と並行して実施できます。</p></section>'+
- '<section class="card section"><h3>案件の履歴</h3>'+[...(data.events||[]),...(data.loss_events||[])].map(x=>'<div class="dealRecord">'+e(x.event_type==='lost'?'失注理由：'+(REASONS[x.reason_category]||x.reason_category||'未設定')+(x.detail?' / '+x.detail:''):x.message||x.event_type)+' '+e(x.created_at||'')+'</div>').join('')+'</section>';
+ '<section class="card section"><h3>案件の履歴</h3>'+dealHistoryHtml(data)+'</section>';
  const back=document.getElementById('dealBack');if(back)back.onclick=()=>openList();
  h.querySelectorAll?.('[data-deal-action]').forEach(btn=>btn.onclick=()=>{
   const action=btn.dataset.dealAction,quoteId=btn.dataset.quoteId;
