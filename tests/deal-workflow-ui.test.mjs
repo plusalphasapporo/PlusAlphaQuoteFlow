@@ -160,7 +160,7 @@ test('sales UI retains an explicit route from existing quotes into the deal flow
  assert.match(html,/QuoteFlowDeals\.linkQuote\(createdQuote\.id\)/);
  assert.match(html,/QuoteFlowDeals\.linkQuote\(q\.id\)/);
  assert.match(html,/id="quoteFlowLinkNotice"/);
- assert.match(html,/見積は保存済みですが、案件への紐づけを確認できません/);
+ assert.match(html,/見積は保存済みですが、案件の表示または紐づけを確認できません/);
  assert.match(source,/data-deal-quote/);
  assert.match(source,/config\.editQuote\(btn\.dataset\.dealQuote\)/);
 });
