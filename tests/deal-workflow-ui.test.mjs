@@ -455,3 +455,35 @@ test('valid order ID closes the dialog and reloads deal detail',async()=>{
  assert.equal(f.closedCount,1);
  assert.equal(f.calls.filter(x=>x.name==='internal_deal_detail').length,2);
 });
+
+test('purchase and delivery receipts must contain a persisted ID before clearing drafts',()=>{
+ const f=fixture();
+ assert.equal(typeof f.api.requireCreatedRecordId,'function','record receipt validator must be exported');
+ for(const bad of [undefined,null,{}, {id:null},{id:''},{id:'   '},{id:0},{id:12}]){
+  assert.throws(()=>f.api.requireCreatedRecordId(bad,'発注'),/発注.*確認.*再登録/);
+  assert.throws(()=>f.api.requireCreatedRecordId(bad,'納品予定'),/納品予定.*確認.*再登録/);
+ }
+ assert.equal(f.api.requireCreatedRecordId({id:'po-123'},'発注'),'po-123');
+ assert.equal(f.api.requireCreatedRecordId({id:'delivery-123'},'納品予定'),'delivery-123');
+});
+test('purchase and delivery submission handlers validate receipts before draft deletion and navigate to the correct tabs',()=>{
+ const poStart=html.indexOf("$('#orderCreatePOForm').onsubmit=async e=>{");
+ const deliveryStart=html.indexOf("$('#orderCreateDeliveryForm').onsubmit=async e=>{",poStart);
+ const deliveryEnd=html.indexOf("\n  async function renderCustomerOrderDetail",deliveryStart);
+ assert.ok(poStart>0&&deliveryStart>poStart&&deliveryEnd>deliveryStart);
+ const po=html.slice(poStart,deliveryStart);
+ const delivery=html.slice(deliveryStart,deliveryEnd);
+ const purchaseCheck="window.QuoteFlowDeals.requireCreatedRecordId(createdPO,'発注');";
+ const deliveryCheck="window.QuoteFlowDeals.requireCreatedRecordId(createdDelivery,'納品予定');";
+ assert.ok(po.includes(purchaseCheck),'purchase order must verify the returned ID');
+ assert.ok(delivery.includes(deliveryCheck),'delivery must verify the returned ID');
+ assert.ok(po.indexOf(purchaseCheck)<po.indexOf('localStorage.removeItem(poDraftKey)'),
+   'purchase order must preserve the input draft on an unconfirmed response');
+ assert.ok(delivery.indexOf(deliveryCheck)<delivery.indexOf('localStorage.removeItem(deliveryDraftKey)'),
+   'delivery must preserve the input draft on an unconfirmed response');
+ assert.match(po,/await renderProcurementWorkspace\('purchase'\)/,'active procurement tab must exist');
+ assert.doesNotMatch(po,/await renderProcurementWorkspace\('purchase_orders'\)/);
+ assert.match(delivery,/await renderProcurementWorkspace\('delivery'\)/);
+ assert.match(po,/if\(createdPO\?\.id\) await renderPurchaseOrderDetail\(createdPO\.id\)/);
+ assert.match(delivery,/if\(createdDelivery\?\.id\) await renderDeliveryDetail\(createdDelivery\.id\)/);
+});
