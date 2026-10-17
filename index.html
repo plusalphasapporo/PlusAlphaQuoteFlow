@@ -3952,7 +3952,10 @@
           else if(syncResult?.duplicate_count>0) toast('CallConnect：登録済み電話番号を確認しました');
         }
         if(created?.id && typeof onCreated==='function'){
-          await go('deals');
+          if(!await goForDeal('deals')){
+            toast('顧客は登録済みです。案件画面を開けませんでした。顧客を重複登録せず画面の再読み込みを確認してください。');
+            return;
+          }
           await onCreated(created.id);
         }else{
           await renderCustomers();
@@ -4422,17 +4425,20 @@
         if(customerContext?.customerId){
           try{
             const linked=await window.QuoteFlowDeals.linkQuote(createdQuote.id);
-            await go('deals');
+            if(!await goForDeal('deals')){
+              toast('見積は保存済みです。案件一覧を表示できませんでした。見積を再登録しないでください。');
+              return;
+            }
             await window.QuoteFlowDeals.openDetail(linked.id);
             return;
           }catch(linkError){
-            await go('sales');
-            await renderSalesWorkspace('quotes');
-            notice('#quoteFlowLinkNotice','見積は保存済みですが、案件への紐づけを確認できません。見積を再登録せず「既存見積から案件を作成」から確認してください。'+(linkError?.message||String(linkError)));
+            const message='見積は保存済みですが、案件の表示または紐づけを確認できません。見積を再登録せず「既存見積から案件を作成」で確認してください。'+(linkError?.message||String(linkError));
+            if(await goForDeal('sales')) notice('#quoteFlowLinkNotice',message);
+            else toast(message);
             return;
           }
         }
-        await go('sales');
+        await goForDeal('sales');
       }catch(err){
         notice('#quoteCreateMsg',err.message||String(err));
       }finally{
@@ -5954,7 +5960,10 @@
       openDealBtn.disabled=true;
       try{
         const linked=await window.QuoteFlowDeals.linkQuote(q.id);
-        await go('deals');
+        if(!await goForDeal('deals')){
+          toast('見積は保存済みです。案件画面を開けませんでした。再登録せず、画面の読み込み状態を確認してください。');
+          return;
+        }
         await window.QuoteFlowDeals.openDetail(linked.id);
       }catch(err){toast('案件の確認に失敗しました。見積を再登録しないでください: '+(err?.message||String(err)));}
       finally{openDealBtn.disabled=false;}
@@ -6287,10 +6296,15 @@
           const linked=await window.QuoteFlowDeals.linkQuote(q.id);
           const finalized=await rpc('deal_issue_quote',{p_deal_id:linked.id,p_quote_id:q.id});
           toast('見積を発行しました '+String(finalized?.quote_number||''));
-          await go('deals');
+          if(!await goForDeal('deals')){
+            toast('見積は発行済みです。案件画面を開けませんでした。再発行せず見積番号を確認してください。');
+            return;
+          }
           await window.QuoteFlowDeals.openDetail(linked.id);
         }catch(err){
-          notice('#quoteEditMsg','見積の保存・発行状況を確認してください。重複登録せず対象の見積を開いてください。'+(err?.message||String(err)));
+          const message='見積の保存・発行状況を確認してください。重複登録せず対象の見積を開いてください。'+(err?.message||String(err));
+          if($('#quoteEditMsg')) notice('#quoteEditMsg',message);
+          else toast(message);
         }finally{btn.disabled=false;}
       };
     }
