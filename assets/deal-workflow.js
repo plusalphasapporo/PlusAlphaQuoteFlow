@@ -181,6 +181,9 @@ function openIssueDialog(dealId,quoteId){
 function openOrderDialog(dealId,quoteId){
  requireStaff();config.openModal({title:'受注登録',confirmLabel:'受注を確定',body:'<p>対象見積 '+e((detailCache?.quotes||[]).find(q=>q.id===quoteId)?.quote_number||'下書き')+' を受注登録します。顧客との合意を確認してください。社内承認は不要です。</p>',onSubmit:async()=>{
   const result=await rpc('deal_create_order_from_quote',{p_deal_id:dealId,p_quote_id:quoteId});
+  if(typeof result?.id!=='string'||!result.id.trim()){
+   throw Error('受注登録結果の受注IDを確認できません。登録済みの可能性があるため、再登録せず受注一覧で確認してください。');
+  }
   config.closeModal?.();await openDetail(dealId);
   if(result?.id&&detailCache?.deal?.sales_outcome==='won'&&(detailCache?.orders||[]).length&&!detailCache?.financing)openFinancingDialog(dealId);
   return result;
