@@ -307,6 +307,12 @@ function openInstallationDialog(dealId,jobId=null){
  }});
 }
 
+function requireCreatedRecordId(record,label){
+ if(typeof record?.id!=='string'||!record.id.trim()){
+  throw Error(label+'の登録結果を確認できません。保存済みの可能性があるため、再登録せず一覧で確認してください。');
+ }
+ return record.id;
+}
 function configure(deps){config=deps;}
-window.QuoteFlowDeals={configure,openList,openDetail,linkQuote,openLossDialog,openIssueDialog,openOrderDialog,openReopenDialog,openQuotePicker,openFromQuote,openFinancingDialog,openInstallationDialog,openOrderProcurement,openReceivingForDeal};
+window.QuoteFlowDeals={configure,openList,openDetail,linkQuote,openLossDialog,openIssueDialog,openOrderDialog,openReopenDialog,openQuotePicker,openFromQuote,openFinancingDialog,openInstallationDialog,openOrderProcurement,openReceivingForDeal,requireCreatedRecordId};
 })();
