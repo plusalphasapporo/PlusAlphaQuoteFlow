@@ -30,8 +30,10 @@ function derive(x={}){
  else if(jobs.some(j=>j.state==='revisit_required')){stage='施工';nextAction='再訪問の予定を登録';target='installation';}
  else if(jobs.some(j=>j.state==='tentative')){stage='工事日';nextAction='工事日時を確定';target='installation';}
  else if(jobs.some(j=>j.state==='confirmed'||j.state==='in_progress')){stage='施工';nextAction='施工状況を記録';target='installation';}
- else if(jobs.some(j=>j.state==='completed'&&j.acceptance_state==='pending')){stage='検収';nextAction='施工後の検収を登録';target='installation';}
+ else if(jobs.some(j=>j.state==='cancelled')){stage='工事日';nextAction='中止した工事の再手配・対応要否を確認';target='installation';}
  else if(jobs.some(j=>j.state==='completed'&&j.acceptance_state==='rejected')){stage='検収';nextAction='検収不合格の対応を記録';target='installation';}
+ else if(jobs.some(j=>j.state==='completed'&&!['accepted','not_required'].includes(j.acceptance_state))){stage='検収';nextAction='未検収の工事を確認してください';target='installation';}
+ else if(jobs.some(j=>j.state!=='completed')){stage='施工';nextAction='未完了の工事状況を確認';target='installation';}
  else if(!assets.length){stage='機器・保守';nextAction='機器台帳を確認してください';target='assets';}
  else if(!contracts.length){stage='機器・保守';nextAction='保守契約または対象外を確認';target='contracts';}
  else {stage='機器・保守';nextAction='サポートへ引継ぎ・運用管理';target='support';}

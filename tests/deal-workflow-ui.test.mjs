@@ -15,6 +15,7 @@ function fixture(overrides={}){
   const host={innerHTML:'',onclick:null,contains(){return true;},querySelector(){return null;}};
   const table={innerHTML:'',querySelectorAll(){return [];}};
   const calls=[];
+  let closedCount=0;
   const quote={id:'quote-1',deal_id:'deal-1',customer_id:'customer-1',status:'finalized',
     quote_number:'Q-1001',project_name:'複合機入替',total_amount:250000,valid_until:'2026-12-30'};
   const detail={deal:{id:'deal-1',title:'複合機入替',sales_outcome:'open',current_stage:'quote',next_action:'商談結果を登録'},
@@ -41,11 +42,11 @@ function fixture(overrides={}){
   if(typeof api.configure==='function')api.configure({
     rpc:async(name,args,opts)=>{calls.push({name,args,opts});return handlers[name]?.(args,opts);},
     getHost:()=>host,getRole:()=>overrides.role||'internal_staff',
-    openModal:o=>{options=o;return {};},closeModal:()=>{},toast:()=>{},
+    openModal:o=>{options=o;return {};},closeModal:()=>{closedCount++;},toast:()=>{},
     navigate:async page=>nav.push(page),editQuote:async()=>{},
     listQuotes:async()=>overrides.listQuotes||[]
   });
-  return {api,host,table,calls,fields,nav,quote,detail,rows,get modal(){return options;}};
+  return {api,host,table,calls,fields,nav,quote,detail,rows,get modal(){return options;},get closedCount(){return closedCount;}};
 }
 
 test('routes include separate internal-only deal management and relative assets',()=>{
@@ -160,7 +161,7 @@ test('sales UI retains an explicit route from existing quotes into the deal flow
  assert.match(html,/QuoteFlowDeals\.linkQuote\(createdQuote\.id\)/);
  assert.match(html,/QuoteFlowDeals\.linkQuote\(q\.id\)/);
  assert.match(html,/id="quoteFlowLinkNotice"/);
- assert.match(html,/見積は保存済みですが、案件への紐づけを確認できません/);
+ assert.match(html,/見積は保存済みですが、案件の表示または紐づけを確認できません/);
  assert.match(source,/data-deal-quote/);
  assert.match(source,/config\.editQuote\(btn\.dataset\.dealQuote\)/);
 });
@@ -177,7 +178,7 @@ test('quote editor uses direct issuance and preserves legacy approval history as
  assert.doesNotMatch(editor,/管理者承認待ち|見積を承認|承認申請/);
  assert.match(editor,/過去の承諾記録/);
  assert.match(editor,/quoteDealOpenBtn/);
- assert.match(html,/editQuote:async id=>\{await go\('sales'\);const cmap=await customerMap\(\);await renderQuoteEditor\(id,cmap\);\}/);
+ assert.match(html,/editQuote:async id=>\{if\(!await goForDeal\('sales'\)\)return;const cmap=await customerMap\(\);await renderQuoteEditor\(id,cmap\);\}/);
 });
 
 test('order success refreshes actual deal and launches finance setup only for won records without terms',async()=>{
@@ -285,4 +286,204 @@ test('incomplete installation must not offer automatic aftercare handoff',async(
  assert.match(f.host.innerHTML,/検収不合格/);
  assert.doesNotMatch(f.host.innerHTML,/data-deal-action="support"/);
  assert.doesNotMatch(f.host.innerHTML,/data-deal-action="contracts"/);
+});
+
+test('linked order, purchase order and delivery navigation mounts the matching detail host',()=>{
+ const html=readFileSync('index.html','utf8');
+ assert.match(html,/openOrderProcurement:async\(\{orderId\}\)=>\{[\s\S]*?if\(!await goForDeal\('sales'\)\)return;[\s\S]*?await renderOrders\(\);[\s\S]*?await renderOrderDetail\(orderId\)/);
+ assert.match(html,/if\(kind==='order'\)\{if\(!await goForDeal\('sales'\)\)return;await renderOrders\(\);await renderOrderDetail\(id\)/);
+ assert.match(html,/if\(kind==='purchase'\)\{if\(!await goForDeal\('procurement'\)\)return;await renderPurchaseOrders\(\);await renderPurchaseOrderDetail\(id\)/);
+ assert.match(html,/if\(kind==='delivery'\)\{if\(!await goForDeal\('procurement'\)\)return;await renderDeliveries\(\);await renderDeliveryDetail\(id\)/);
+ assert.match(html,/async function renderOrders\(\)[\s\S]*?id="orderDetailHost"/);
+ assert.match(html,/async function renderPurchaseOrders\(\)[\s\S]*?id="purchaseOrderDetailHost"/);
+ assert.match(html,/async function renderDeliveries\(\)[\s\S]*?id="deliveryDetailHost"/);
+});
+test('receiving navigation preserves selected deal ID rather than a placeholder',()=>{
+ const html=readFileSync('index.html','utf8');
+ assert.match(html,/openReceivingForDeal:async\(\{dealId,purchaseOrders\}\)=>/);
+ assert.match(html,/renderProcurementWorkspace\('receiving',\{dealId,purchaseOrderIds:purchaseOrders\.map\(po=>po\.id\)\}\)/);
+ assert.doesNotMatch(html,/purchaseOrders\[0\]\.deal_id\|\|'選択案件'/);
+});
+
+test('linked aftercare records open a detail page with a mounted host',()=>{
+ const html=readFileSync('index.html','utf8');
+ const linked=html.slice(html.indexOf('openLinked:async(kind,id)=>'),html.indexOf('listQuotes:async()=>',html.indexOf('openLinked:async(kind,id)=>')));
+ for(const [kind,page,detail] of [
+  ['asset','assets','renderAssetDetail'],['contract','contracts','renderContractDetail'],['ticket','support','renderTicketDetail']
+ ]){
+  assert.ok(linked.includes("if(kind==='"+kind+"'){if(!await goForDeal('"+page+"'))return;await "+detail+"(id)"),kind);
+ }
+ for(const [page,host] of [
+  ['renderAssets','assetDetailHost'],['renderContractsWorkspace','contractDetailHost'],['renderSupport','ticketDetailHost']
+ ]){
+  const start=html.indexOf('async function '+page+'(');
+  const end=html.indexOf('\n  async function ',start+10);
+  const block=html.slice(start,end<0?undefined:end);
+  assert.ok(block.includes('id="'+host+'"'),page+' missing host '+host);
+ }
+});
+
+test('aftercare handoff is blocked when any installation is unaccepted',async()=>{
+ const detail={deal:{id:'deal-1',sales_outcome:'won'},customer:{name:'顧客'},
+ quotes:[],orders:[{id:'order-1'}],financing:{method:'bank_transfer'},
+ purchase_orders:[],receiving_items:[],deliveries:[],
+ installation_jobs:[{id:'job-1',state:'completed',acceptance_state:'accepted'},
+ {id:'job-2',state:'completed',acceptance_state:'rejected'}],
+ assets:[],contracts:[],support_tickets:[],events:[],loss_events:[]};
+ const f=fixture({handlers:{internal_deal_detail:async()=>detail}});
+ await f.api.openDetail('deal-1');
+ assert.doesNotMatch(f.host.innerHTML,/data-deal-action="support"/);
+ assert.doesNotMatch(f.host.innerHTML,/data-deal-action="contracts"/);
+ detail.installation_jobs[1].acceptance_state='accepted';
+ await f.api.openDetail('deal-1');
+ assert.match(f.host.innerHTML,/data-deal-action="support"/);
+});
+test('aftercare handoff rejects a cancelled or lost deal even if one job is accepted',async()=>{
+ for(const outcome of ['lost','cancelled_after_order']){
+  const f=fixture({handlers:{internal_deal_detail:async()=>({
+   deal:{id:'deal-1',sales_outcome:outcome},customer:{name:'顧客'},
+   quotes:[],orders:[{id:'o-1'}],financing:{method:'bank_transfer'},
+   purchase_orders:[],deliveries:[],installation_jobs:[{id:'j-1',state:'completed',acceptance_state:'accepted'}],
+   assets:[],contracts:[],support_tickets:[],events:[],loss_events:[]
+  })}});
+  await f.api.openDetail('deal-1');
+  assert.doesNotMatch(f.host.innerHTML,/data-deal-action="support"/);
+ }
+});
+
+test('progress stage never skips cancelled or unverified installations',()=>{
+ const win={};
+ runInNewContext(readFileSync('assets/deal-progress.js','utf8'),{window:win,console});
+ const derive=win.QuoteFlowDealProgress.derive;
+ const base={deal:{sales_outcome:'won'},quotes:[],orders:[{id:'o'}],
+  financing:{method:'bank_transfer'},purchase_orders:[],receiving_items:[],
+  deliveries:[],assets:[{id:'a'}],contracts:[{id:'c'}]};
+ const evaluate=jobs=>derive({...base,installation_jobs:jobs});
+ assert.equal(evaluate([{state:'completed',acceptance_state:'accepted'},{state:'cancelled',acceptance_state:'pending'}]).target,'installation');
+ assert.equal(evaluate([{state:'completed',acceptance_state:'accepted'},{state:'completed',acceptance_state:null}]).stage,'検収');
+ assert.equal(evaluate([{state:'completed',acceptance_state:'accepted'},{state:'completed',acceptance_state:'rejected'}]).stage,'検収');
+ assert.equal(evaluate([{state:'completed',acceptance_state:'accepted'}]).target,'support');
+});
+
+test('navigation guard protects unsent edits before any deal-linked detail replaces the screen',()=>{
+ const html=readFileSync('index.html','utf8');
+ assert.match(html,/const goForDeal=async page=>\{[\s\S]*?result!==false&&currentPage===page/);
+ assert.match(html,/if\(activeTicketId && window\.QuoteFlowTicketTabs\?\.confirmLeave\(activeTicketId\)===false\) return false/);
+ for(const kind of ['purchase','delivery','asset','contract','ticket','order'])
+  assert.ok(html.includes("if(kind==='"+kind+"'){if(!await goForDeal("),kind);
+ assert.match(html,/openReceivingForDeal:async\(\{dealId,purchaseOrders\}\)=>\{[\s\S]*?if\(!await goForDeal\('procurement'\)\)return/);
+});
+
+
+test('won deal shows each linked order with a direct order-detail action',async()=>{
+ const f=fixture({handlers:{internal_deal_detail:async()=>({
+  deal:{id:'deal-1',title:'設備更新',sales_outcome:'won'},customer:{name:'テスト顧客'},
+  quotes:[],orders:[{id:'order-1',order_number:'ORDER-101'},{id:'order-2',order_number:'ORDER-102'}],
+  financing:{method:'bank_transfer'},purchase_orders:[],receiving_items:[],deliveries:[],
+  assets:[],contracts:[],support_tickets:[],events:[],loss_events:[]
+ })}});
+ await f.api.openDetail('deal-1');
+ assert.match(f.host.innerHTML,/受注番号 ORDER-101/);
+ assert.match(f.host.innerHTML,/受注番号 ORDER-102/);
+ assert.match(f.host.innerHTML,/data-deal-record="order" data-record-id="order-1"/);
+ assert.match(f.host.innerHTML,/data-deal-record="order" data-record-id="order-2"/);
+ assert.match(f.host.innerHTML,/受注詳細・発注へ/);
+});
+test('loss and reopen history is shown once, correctly localized and HTML-escaped',async()=>{
+ const f=fixture({handlers:{internal_deal_detail:async()=>({
+  deal:{id:'deal-1',sales_outcome:'open'},customer:{name:'顧客'},quotes:[],orders:[],
+  purchase_orders:[],receiving_items:[],deliveries:[],assets:[],contracts:[],support_tickets:[],
+  events:[{event_type:'lost',message:'price',created_at:'2026-10-16T08:00:00Z'},
+          {event_type:'reopened',message:'旧再開イベント',created_at:'2026-10-17T08:00:00Z'},
+          {event_type:'quote.issued',message:'見積発行',created_at:'2026-10-16T07:00:00Z'}],
+  loss_events:[{event_type:'lost',reason_category:'price',detail:'価格 < 再見積 & 比較',competitor:'A社',
+                reproposal_on:'2026-11-01',created_at:'2026-10-16T08:00:00Z'},
+               {event_type:'reopened',detail:'再提案の合意',created_at:'2026-10-17T08:00:00Z'}]
+ })}});
+ await f.api.openDetail('deal-1');
+ assert.equal((f.host.innerHTML.match(/失注理由：価格/g)||[]).length,1);
+ assert.equal((f.host.innerHTML.match(/案件再開：/g)||[]).length,1);
+ assert.doesNotMatch(f.host.innerHTML,/旧再開イベント/);
+ assert.match(f.host.innerHTML,/見積発行/);
+ assert.match(f.host.innerHTML,/価格 &lt; 再見積 &amp; 比較/);
+ assert.match(f.host.innerHTML,/再提案予定：2026-11-01/);
+});
+
+
+test('saving a customer-confirmed quote stops detail loading when deal page cannot open',()=>{
+ const html=readFileSync('index.html','utf8');
+ const begin=html.indexOf('const createdQuote=await rpc(\'create_quote_full\'');
+ const end=html.indexOf("\n    };\n  }\n",begin);
+ assert.ok(begin>0&&end>begin,'new quote save handler');
+ const section=html.slice(begin,end);
+ assert.match(section,/const linked=await window\.QuoteFlowDeals\.linkQuote\(createdQuote\.id\)/);
+ assert.match(section,/if\(!await goForDeal\('deals'\)\)\{[\s\S]*?見積は保存済みです/);
+ assert.match(section,/if\(await goForDeal\('sales'\)\) notice\('#quoteFlowLinkNotice',message\)/);
+ assert.match(section,/else toast\(message\)/);
+ assert.doesNotMatch(section,/await go\('deals'\);\s*await window\.QuoteFlowDeals\.openDetail/);
+ assert.equal((section.match(/rpc\('create_quote_full'/g)||[]).length,1);
+});
+test('issued quote does not proceed into a blocked deal page or request reissuance',()=>{
+ const html=readFileSync('index.html','utf8');
+ const start=html.indexOf("$('#quoteFinalizeBtn').onclick=async()=>");
+ const end=html.indexOf('\n      };\n',start);
+ const section=html.slice(start,end);
+ assert.match(section,/rpc\('deal_issue_quote',\{p_deal_id:linked\.id,p_quote_id:q\.id\}\)/);
+ assert.match(section,/if\(!await goForDeal\('deals'\)\)\{/);
+ assert.match(section,/見積は発行済みです。案件画面を開けませんでした/);
+ assert.match(section,/if\(\$\('#quoteEditMsg'\)\) notice\('#quoteEditMsg',message\)/);
+ assert.match(section,/else toast\(message\)/);
+});
+
+test('order registration rejects missing or invalid order IDs without closing or refreshing',async()=>{
+ for(const invalid of [undefined,null,{}, {id:''},{id:'   '},{id:42}]){
+  const f=fixture({handlers:{deal_create_order_from_quote:async()=>invalid}});
+  await f.api.openDetail('deal-1');
+  f.api.openOrderDialog('deal-1','quote-1');
+  await assert.rejects(()=>f.modal.onSubmit(),/受注|確認|再登録/);
+  assert.equal(f.closedCount,0,'invalid response must not close the registration modal');
+  assert.equal(f.calls.filter(x=>x.name==='internal_deal_detail').length,1,
+   'invalid response must not show a successful deal refresh');
+  assert.equal(f.calls.filter(x=>x.name==='deal_create_order_from_quote').length,1);
+ }
+});
+test('valid order ID closes the dialog and reloads deal detail',async()=>{
+ const f=fixture();
+ await f.api.openDetail('deal-1');
+ f.api.openOrderDialog('deal-1','quote-1');
+ await f.modal.onSubmit();
+ assert.equal(f.closedCount,1);
+ assert.equal(f.calls.filter(x=>x.name==='internal_deal_detail').length,2);
+});
+
+test('purchase and delivery receipts must contain a persisted ID before clearing drafts',()=>{
+ const f=fixture();
+ assert.equal(typeof f.api.requireCreatedRecordId,'function','record receipt validator must be exported');
+ for(const bad of [undefined,null,{}, {id:null},{id:''},{id:'   '},{id:0},{id:12}]){
+  assert.throws(()=>f.api.requireCreatedRecordId(bad,'発注'),/発注.*確認.*再登録/);
+  assert.throws(()=>f.api.requireCreatedRecordId(bad,'納品予定'),/納品予定.*確認.*再登録/);
+ }
+ assert.equal(f.api.requireCreatedRecordId({id:'po-123'},'発注'),'po-123');
+ assert.equal(f.api.requireCreatedRecordId({id:'delivery-123'},'納品予定'),'delivery-123');
+});
+test('purchase and delivery submission handlers validate receipts before draft deletion and navigate to the correct tabs',()=>{
+ const poStart=html.indexOf("$('#orderCreatePOForm').onsubmit=async e=>{");
+ const deliveryStart=html.indexOf("$('#orderCreateDeliveryForm').onsubmit=async e=>{",poStart);
+ const deliveryEnd=html.indexOf("\n  async function renderCustomerOrderDetail",deliveryStart);
+ assert.ok(poStart>0&&deliveryStart>poStart&&deliveryEnd>deliveryStart);
+ const po=html.slice(poStart,deliveryStart);
+ const delivery=html.slice(deliveryStart,deliveryEnd);
+ const purchaseCheck="window.QuoteFlowDeals.requireCreatedRecordId(createdPO,'発注');";
+ const deliveryCheck="window.QuoteFlowDeals.requireCreatedRecordId(createdDelivery,'納品予定');";
+ assert.ok(po.includes(purchaseCheck),'purchase order must verify the returned ID');
+ assert.ok(delivery.includes(deliveryCheck),'delivery must verify the returned ID');
+ assert.ok(po.indexOf(purchaseCheck)<po.indexOf('localStorage.removeItem(poDraftKey)'),
+   'purchase order must preserve the input draft on an unconfirmed response');
+ assert.ok(delivery.indexOf(deliveryCheck)<delivery.indexOf('localStorage.removeItem(deliveryDraftKey)'),
+   'delivery must preserve the input draft on an unconfirmed response');
+ assert.match(po,/await renderProcurementWorkspace\('purchase'\)/,'active procurement tab must exist');
+ assert.doesNotMatch(po,/await renderProcurementWorkspace\('purchase_orders'\)/);
+ assert.match(delivery,/await renderProcurementWorkspace\('delivery'\)/);
+ assert.match(po,/if\(createdPO\?\.id\) await renderPurchaseOrderDetail\(createdPO\.id\)/);
+ assert.match(delivery,/if\(createdDelivery\?\.id\) await renderDeliveryDetail\(createdDelivery\.id\)/);
 });

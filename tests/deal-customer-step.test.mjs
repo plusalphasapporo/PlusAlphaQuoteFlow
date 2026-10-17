@@ -40,3 +40,18 @@ test('clearing a confirmed quote reloads the fixed customer, contact and install
  assert.match(html,/customerContext\?\.contactId/);
  assert.match(html,/customerContext\?\.installationAddress/);
 });
+
+test('customer detail and transaction pages use the confirmed customer-first quote path',()=>{
+ const html=readFileSync('index.html','utf8');
+ for(const [label,source] of [
+  ['customer detail',"$('#customerQuoteCreateBtn').onclick=()=>window.QuoteFlowDealCustomerStep.open({preselectedCustomerId:c.id})"],
+  ['customer overview',"$('#customerOverviewNewQuote').onclick=()=>window.QuoteFlowDealCustomerStep.open({preselectedCustomerId:customerId})"],
+  ['customer transactions',"newQuoteBtn.onclick=()=>window.QuoteFlowDealCustomerStep.open({preselectedCustomerId:customerId})"]
+ ]){
+  assert.ok(html.includes(source),label+' should require customer confirmation before quote registration');
+ }
+ assert.doesNotMatch(html,/\$\('#customerQuoteCreateBtn'\)\.onclick=\(\)=>renderCustomerQuoteCreate\(c\.id\)/);
+ assert.doesNotMatch(html,/\$\('#customerOverviewNewQuote'\)\.onclick=\(\)=>renderCustomerQuoteCreate\(customerId\)/);
+ assert.doesNotMatch(html,/newQuoteBtn\.onclick=\(\)=>renderCustomerQuoteCreate\(customerId\)/);
+ assert.match(html,/const linked=await window\.QuoteFlowDeals\.linkQuote\(createdQuote\.id\)/);
+});

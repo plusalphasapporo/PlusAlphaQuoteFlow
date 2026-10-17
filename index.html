@@ -3490,7 +3490,7 @@
       '</section>';
 
     $('#customerDetailClose').onclick=()=>{$('#customerDetailHost').innerHTML='';};
-    $('#customerQuoteCreateBtn').onclick=()=>renderCustomerQuoteCreate(c.id);
+    $('#customerQuoteCreateBtn').onclick=()=>window.QuoteFlowDealCustomerStep.open({preselectedCustomerId:c.id});
     await appendEntityAuditHistory('#customerDetailHost','customer',c.id);
     $('#customerDetailHost').scrollIntoView({behavior:'smooth',block:'start'});
 
@@ -3952,7 +3952,10 @@
           else if(syncResult?.duplicate_count>0) toast('CallConnect：登録済み電話番号を確認しました');
         }
         if(created?.id && typeof onCreated==='function'){
-          await go('deals');
+          if(!await goForDeal('deals')){
+            toast('顧客は登録済みです。案件画面を開けませんでした。顧客を重複登録せず画面の再読み込みを確認してください。');
+            return;
+          }
           await onCreated(created.id);
         }else{
           await renderCustomers();
@@ -4422,16 +4425,20 @@
         if(customerContext?.customerId){
           try{
             const linked=await window.QuoteFlowDeals.linkQuote(createdQuote.id);
-            await go('deals');
+            if(!await goForDeal('deals')){
+              toast('見積は保存済みです。案件一覧を表示できませんでした。見積を再登録しないでください。');
+              return;
+            }
             await window.QuoteFlowDeals.openDetail(linked.id);
             return;
           }catch(linkError){
-            await go('sales');
-            notice('#quoteFlowLinkNotice','見積は保存済みですが、案件への紐づけを確認できません。見積を再登録せず「既存見積から案件を作成」から確認してください。'+(linkError?.message||String(linkError)));
+            const message='見積は保存済みですが、案件の表示または紐づけを確認できません。見積を再登録せず「既存見積から案件を作成」で確認してください。'+(linkError?.message||String(linkError));
+            if(await goForDeal('sales')) notice('#quoteFlowLinkNotice',message);
+            else toast(message);
             return;
           }
         }
-        await go('sales');
+        await goForDeal('sales');
       }catch(err){
         notice('#quoteCreateMsg',err.message||String(err));
       }finally{
@@ -4904,7 +4911,7 @@
         '</section>';
 
       $('#customerDetailClose').onclick=()=>{host.innerHTML='';};
-      $('#customerOverviewNewQuote').onclick=()=>renderCustomerQuoteCreate(customerId);
+      $('#customerOverviewNewQuote').onclick=()=>window.QuoteFlowDealCustomerStep.open({preselectedCustomerId:customerId});
       $('#customerOverviewTransactions').onclick=()=>renderCustomerDetail(customerId,'transactions');
       $('#customerOverviewHistory').onclick=()=>renderCustomerDetail(customerId,'history');
       document.querySelectorAll('.customerRelatedOpen').forEach(btn=>btn.onclick=()=>renderCustomerDetail(btn.dataset.id,'overview'));
@@ -5169,7 +5176,7 @@
     }
 
     const newQuoteBtn=$('#customerTxnNewQuote');
-    if(newQuoteBtn) newQuoteBtn.onclick=()=>renderCustomerQuoteCreate(customerId);
+    if(newQuoteBtn) newQuoteBtn.onclick=()=>window.QuoteFlowDealCustomerStep.open({preselectedCustomerId:customerId});
 
     document.querySelectorAll('.customerQuoteOpen').forEach(btn=>btn.onclick=async()=>{
       const cmap=await customerMap();
@@ -5953,7 +5960,10 @@
       openDealBtn.disabled=true;
       try{
         const linked=await window.QuoteFlowDeals.linkQuote(q.id);
-        await go('deals');
+        if(!await goForDeal('deals')){
+          toast('見積は保存済みです。案件画面を開けませんでした。再登録せず、画面の読み込み状態を確認してください。');
+          return;
+        }
         await window.QuoteFlowDeals.openDetail(linked.id);
       }catch(err){toast('案件の確認に失敗しました。見積を再登録しないでください: '+(err?.message||String(err)));}
       finally{openDealBtn.disabled=false;}
@@ -6286,10 +6296,15 @@
           const linked=await window.QuoteFlowDeals.linkQuote(q.id);
           const finalized=await rpc('deal_issue_quote',{p_deal_id:linked.id,p_quote_id:q.id});
           toast('見積を発行しました '+String(finalized?.quote_number||''));
-          await go('deals');
+          if(!await goForDeal('deals')){
+            toast('見積は発行済みです。案件画面を開けませんでした。再発行せず見積番号を確認してください。');
+            return;
+          }
           await window.QuoteFlowDeals.openDetail(linked.id);
         }catch(err){
-          notice('#quoteEditMsg','見積の保存・発行状況を確認してください。重複登録せず対象の見積を開いてください。'+(err?.message||String(err)));
+          const message='見積の保存・発行状況を確認してください。重複登録せず対象の見積を開いてください。'+(err?.message||String(err));
+          if($('#quoteEditMsg')) notice('#quoteEditMsg',message);
+          else toast(message);
         }finally{btn.disabled=false;}
       };
     }
@@ -7280,10 +7295,11 @@
           p_internal_note:$('#orderPONote').value.trim()||null,
           p_items:items
         });
+        window.QuoteFlowDeals.requireCreatedRecordId(createdPO,'発注');
         localStorage.removeItem(poDraftKey);
         notice('#orderPOCreateMsg','発注を作成しました。',true);
         toast('発注を作成しました');
-        await renderProcurementWorkspace('purchase_orders');
+        await renderProcurementWorkspace('purchase');
         if(createdPO?.id) await renderPurchaseOrderDetail(createdPO.id);
       }catch(err){
         notice('#orderPOCreateMsg',err.message||String(err));
@@ -7312,6 +7328,7 @@
           p_notes:$('#orderDeliveryNotes').value.trim()||null,
           p_internal_note:$('#orderDeliveryInternalNote').value.trim()||null
         });
+        window.QuoteFlowDeals.requireCreatedRecordId(createdDelivery,'納品予定');
         localStorage.removeItem(deliveryDraftKey);
         notice('#orderDeliveryCreateMsg','納品予定を作成しました。',true);
         toast('納品予定を作成しました');
@@ -14935,42 +14952,48 @@
     };
   }
 
+  // Respect unsaved support-ticket changes and failed page loads before opening
+  // a linked deal record over the current screen.
+  const goForDeal=async page=>{
+    const result=await go(page);
+    return result!==false&&currentPage===page;
+  };
   window.QuoteFlowDealCustomerStep?.configure({
     rpc,getRole:()=>bootData?.context?.role,getHost:()=>$('#home'),
-    openCustomerCreate:async({onCreated}={})=>{await go('customers');await renderCustomerCreate(onCreated);},
+    openCustomerCreate:async({onCreated}={})=>{if(!await goForDeal('customers'))return;await renderCustomerCreate(onCreated);},
     createQuote:async({preselectedCustomerId,customerContext})=>renderCustomerQuoteCreate(preselectedCustomerId,customerContext)
   });
   window.QuoteFlowDeals?.configure({
     rpc, getHost:()=>$('#home'),getRole:()=>bootData?.context?.role,
     openModal:o=>window.openModal(o),closeModal:()=>window.closeModal(),toast,
-    navigate:page=>go(page),editQuote:async id=>{await go('sales');const cmap=await customerMap();await renderQuoteEditor(id,cmap);},
+    navigate:page=>go(page),editQuote:async id=>{if(!await goForDeal('sales'))return;const cmap=await customerMap();await renderQuoteEditor(id,cmap);},
     openOrderProcurement:async({orderId})=>{
       if(!orderId)throw new Error('受注番号が指定されていません');
-      await go('sales');
-      await renderSalesWorkspace('order_ops');
+      if(!await goForDeal('sales'))return;
+      await renderOrders();
       await renderOrderDetail(orderId);
       $('#orderCreatePOForm')?.scrollIntoView({behavior:'smooth',block:'start'});
     },
-    openReceivingForDeal:async({purchaseOrders})=>{
+    openReceivingForDeal:async({dealId,purchaseOrders})=>{
       if(!Array.isArray(purchaseOrders)||!purchaseOrders.length)throw new Error('対象案件の発注がありません');
       if(!purchaseOrders.every(po=>typeof po.id==='string'&&po.id))throw new Error('発注IDを確認できません');
-      await go('procurement');
-      await renderProcurementWorkspace('receiving',{dealId:purchaseOrders[0].deal_id||'選択案件',purchaseOrderIds:purchaseOrders.map(po=>po.id)});
+      if(!await goForDeal('procurement'))return;
+      await renderProcurementWorkspace('receiving',{dealId,purchaseOrderIds:purchaseOrders.map(po=>po.id)});
     },
     openLinked:async(kind,id)=>{
-      if(kind==='purchase'){await go('procurement');await renderPurchaseOrderDetail(id);return;}
-      if(kind==='delivery'){await go('procurement');await renderDeliveryDetail(id);return;}
-      if(kind==='asset'){await go('assets');await renderAssetDetail(id);return;}
-      if(kind==='contract'){await go('contracts');await renderContractDetail(id);return;}
-      if(kind==='ticket'){await go('support');await renderTicketDetail(id);return;}
-      if(kind==='order'){await go('sales');await renderOrderDetail(id);return;}
+      if(kind==='purchase'){if(!await goForDeal('procurement'))return;await renderPurchaseOrders();await renderPurchaseOrderDetail(id);return;}
+      if(kind==='delivery'){if(!await goForDeal('procurement'))return;await renderDeliveries();await renderDeliveryDetail(id);return;}
+      if(kind==='asset'){if(!await goForDeal('assets'))return;await renderAssetDetail(id);return;}
+      if(kind==='contract'){if(!await goForDeal('contracts'))return;await renderContractDetail(id);return;}
+      if(kind==='ticket'){if(!await goForDeal('support'))return;await renderTicketDetail(id);return;}
+      if(kind==='order'){if(!await goForDeal('sales'))return;await renderOrders();await renderOrderDetail(id);return;}
       throw new Error('対応していない関連レコードです。');
     },
     listQuotes:async()=>{const result=await supabase.from('quotes').select('id,deal_id,quote_number,project_name,customer_id,status').order('created_at',{ascending:false});if(result.error)throw result.error;return result.data||[];}
   });
   async function go(page){
     // Sidebar navigation also replaces the ticket DOM. Confirm before losing unsent edits.
-    if(activeTicketId && window.QuoteFlowTicketTabs?.confirmLeave(activeTicketId)===false) return;
+    if(activeTicketId && window.QuoteFlowTicketTabs?.confirmLeave(activeTicketId)===false) return false;
     const role=bootData?.context?.role;
     const allowed=(pageSets[role]||[]).map(x=>x[0]);
     const supplementalAllowed=role==='support_staff'
@@ -15016,7 +15039,8 @@
     }catch(e){
       const raw=String(e.message||e);
       if(raw.includes('AAL2_REQUIRED')){
-        return prepareMfa();
+        await prepareMfa();
+        return false;
       }
       if(raw.includes('SESSION_EXPIRED')){
         bootData=null;
@@ -15024,7 +15048,7 @@
         $('#logoutBtn').classList.add('hidden');
         $('#userBadge').classList.add('hidden');
         notice('#loginMsg','ログインセッションの有効期限が切れました。もう一度ログインしてください。');
-        return;
+        return false;
       }
 
       const offline=!navigator.onLine || e.kind==='network';
@@ -15038,6 +15062,7 @@
           '</div>'+
         '</div>';
       $('#pageRetryBtn').onclick=()=>go(page);
+      return false;
     }
   }
 
