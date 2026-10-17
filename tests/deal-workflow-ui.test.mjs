@@ -372,3 +372,38 @@ test('navigation guard protects unsent edits before any deal-linked detail repla
   assert.ok(html.includes("if(kind==='"+kind+"'){if(!await goForDeal("),kind);
  assert.match(html,/openReceivingForDeal:async\(\{dealId,purchaseOrders\}\)=>\{[\s\S]*?if\(!await goForDeal\('procurement'\)\)return/);
 });
+
+
+test('won deal shows each linked order with a direct order-detail action',async()=>{
+ const f=fixture({handlers:{internal_deal_detail:async()=>({
+  deal:{id:'deal-1',title:'設備更新',sales_outcome:'won'},customer:{name:'テスト顧客'},
+  quotes:[],orders:[{id:'order-1',order_number:'ORDER-101'},{id:'order-2',order_number:'ORDER-102'}],
+  financing:{method:'bank_transfer'},purchase_orders:[],receiving_items:[],deliveries:[],
+  assets:[],contracts:[],support_tickets:[],events:[],loss_events:[]
+ })}});
+ await f.api.openDetail('deal-1');
+ assert.match(f.host.innerHTML,/受注番号 ORDER-101/);
+ assert.match(f.host.innerHTML,/受注番号 ORDER-102/);
+ assert.match(f.host.innerHTML,/data-deal-record="order" data-record-id="order-1"/);
+ assert.match(f.host.innerHTML,/data-deal-record="order" data-record-id="order-2"/);
+ assert.match(f.host.innerHTML,/受注詳細・発注へ/);
+});
+test('loss and reopen history is shown once, correctly localized and HTML-escaped',async()=>{
+ const f=fixture({handlers:{internal_deal_detail:async()=>({
+  deal:{id:'deal-1',sales_outcome:'open'},customer:{name:'顧客'},quotes:[],orders:[],
+  purchase_orders:[],receiving_items:[],deliveries:[],assets:[],contracts:[],support_tickets:[],
+  events:[{event_type:'lost',message:'price',created_at:'2026-10-16T08:00:00Z'},
+          {event_type:'reopened',message:'旧再開イベント',created_at:'2026-10-17T08:00:00Z'},
+          {event_type:'quote.issued',message:'見積発行',created_at:'2026-10-16T07:00:00Z'}],
+  loss_events:[{event_type:'lost',reason_category:'price',detail:'価格 < 再見積 & 比較',competitor:'A社',
+                reproposal_on:'2026-11-01',created_at:'2026-10-16T08:00:00Z'},
+               {event_type:'reopened',detail:'再提案の合意',created_at:'2026-10-17T08:00:00Z'}]
+ })}});
+ await f.api.openDetail('deal-1');
+ assert.equal((f.host.innerHTML.match(/失注理由：価格/g)||[]).length,1);
+ assert.equal((f.host.innerHTML.match(/案件再開：/g)||[]).length,1);
+ assert.doesNotMatch(f.host.innerHTML,/旧再開イベント/);
+ assert.match(f.host.innerHTML,/見積発行/);
+ assert.match(f.host.innerHTML,/価格 &lt; 再見積 &amp; 比較/);
+ assert.match(f.host.innerHTML,/再提案予定：2026-11-01/);
+});
