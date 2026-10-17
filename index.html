@@ -7295,10 +7295,11 @@
           p_internal_note:$('#orderPONote').value.trim()||null,
           p_items:items
         });
+        window.QuoteFlowDeals.requireCreatedRecordId(createdPO,'発注');
         localStorage.removeItem(poDraftKey);
         notice('#orderPOCreateMsg','発注を作成しました。',true);
         toast('発注を作成しました');
-        await renderProcurementWorkspace('purchase_orders');
+        await renderProcurementWorkspace('purchase');
         if(createdPO?.id) await renderPurchaseOrderDetail(createdPO.id);
       }catch(err){
         notice('#orderPOCreateMsg',err.message||String(err));
@@ -7327,6 +7328,7 @@
           p_notes:$('#orderDeliveryNotes').value.trim()||null,
           p_internal_note:$('#orderDeliveryInternalNote').value.trim()||null
         });
+        window.QuoteFlowDeals.requireCreatedRecordId(createdDelivery,'納品予定');
         localStorage.removeItem(deliveryDraftKey);
         notice('#orderDeliveryCreateMsg','納品予定を作成しました。',true);
         toast('納品予定を作成しました');
